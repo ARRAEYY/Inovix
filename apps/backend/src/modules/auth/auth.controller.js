@@ -11,6 +11,10 @@ async function googleLogin(req, res, next) {
         const googleUser = await verifyGoogleCredential(credential);
         const { user, isNew } = await findOrCreateGoogleUser(googleUser);
 
+        if (user.status === 'SUSPENDED') {
+            return res.status(403).json({ success: false, message: 'Your account has been suspended' });
+        }
+
         const accessToken = jwt.sign(
             { id: user.id, email: user.email },
             JWT_SECRET,
@@ -58,6 +62,20 @@ async function devLogin(req, res, next) {
         const user = mockUsers.find(u => u.email === email);
         if (!user) {
             return res.status(404).json({ success: false, message: 'Dev user not found' });
+        }
+
+        if (req.body.password && user.passwordHash) {
+            const { comparePassword } = require('../../utils/password');
+            const isMatch = await comparePassword(req.body.password, user.passwordHash);
+            if (!isMatch) {
+                return res.status(401).json({ success: false, message: 'Invalid credentials' });
+            }
+        } else if (req.body.password && !user.passwordHash) {
+            return res.status(401).json({ success: false, message: 'Invalid credentials' });
+        }
+
+        if (user.status === 'SUSPENDED') {
+            return res.status(403).json({ success: false, message: 'Your account has been suspended' });
         }
 
         const accessToken = jwt.sign(

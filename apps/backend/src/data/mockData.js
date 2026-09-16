@@ -47,6 +47,18 @@ const outlets = [
     estimatedTime: '20-25 min',
     status: 'CLOSED',
     featured: false
+  },
+  {
+    id: 'mock-outlet-adil',
+    name: 'Adilreyaz Food Hub',
+    description: 'Delicious quick bites and premium meals curated for dev.',
+    image: 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=500&q=80',
+    tags: ['Meals', 'Snacks', 'Beverages'],
+    location: 'Dev Campus, Level 42',
+    rating: 4.9,
+    estimatedTime: '10-15 min',
+    status: 'OPEN',
+    featured: true
   }
 ];
 
@@ -110,6 +122,76 @@ const menuItems = [
     popular: false,
     vegetarian: true,
     preparationTime: 20
+  },
+  {
+    id: 'dev-item-1',
+    outletId: 'mock-outlet-adil',
+    name: 'Adil Special Burger',
+    description: 'Double patty signature burger.',
+    price: 250,
+    category: 'Meals',
+    image: 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=500&q=80',
+    isAvailable: true,
+    discount: '20%',
+    popular: true,
+    vegetarian: false,
+    preparationTime: 15
+  },
+  {
+    id: 'dev-item-2',
+    outletId: 'mock-outlet-adil',
+    name: 'Paneer Wrap',
+    description: 'Spicy paneer tikka wrapped in a soft tortilla.',
+    price: 150,
+    category: 'Snacks',
+    image: 'https://images.unsplash.com/photo-1588167389502-d3b10b0ff1da?w=500&q=80',
+    isAvailable: true,
+    discount: null,
+    popular: true,
+    vegetarian: true,
+    preparationTime: 10
+  },
+  {
+    id: 'dev-item-3',
+    outletId: 'mock-outlet-adil',
+    name: 'Masala Fries',
+    description: 'Crispy fries tossed in secret masala.',
+    price: 80,
+    category: 'Snacks',
+    image: 'https://images.unsplash.com/photo-1576107232684-1279f390859f?w=500&q=80',
+    isAvailable: true,
+    discount: null,
+    popular: false,
+    vegetarian: true,
+    preparationTime: 5
+  },
+  {
+    id: 'dev-item-4',
+    outletId: 'mock-outlet-adil',
+    name: 'Cold Coffee',
+    description: 'Classic creamy cold coffee.',
+    price: 120,
+    category: 'Beverages',
+    image: 'https://images.unsplash.com/photo-1517701604599-bb29b565090c?w=500&q=80',
+    isAvailable: true,
+    discount: null,
+    popular: true,
+    vegetarian: true,
+    preparationTime: 5
+  },
+  {
+    id: 'dev-item-5',
+    outletId: 'mock-outlet-adil',
+    name: 'Chocolate Brownie',
+    description: 'Fudgy walnut brownie served warm.',
+    price: 90,
+    category: 'Desserts',
+    image: 'https://images.unsplash.com/photo-1606890737304-57a1ca8a5b62?w=500&q=80',
+    isAvailable: true,
+    discount: null,
+    popular: false,
+    vegetarian: true,
+    preparationTime: 2
   }
 ];
 

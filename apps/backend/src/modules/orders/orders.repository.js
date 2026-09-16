@@ -19,6 +19,10 @@ const findByUserId = async (userId) => {
   return currentOrders.filter(order => order.userId === userId);
 };
 
+const findAll = async () => {
+  return [...currentOrders];
+};
+
 const findById = async (id) => {
   return currentOrders.find(order => order.id === id) || null;
 };
@@ -42,6 +46,7 @@ const updateStatus = async (orderId, status) => {
 
 module.exports = {
   createOrder,
+  findAll,
   findByUserId,
   findById,
   findByOutletId,

@@ -1,7 +1,7 @@
 async function runTests() {
   const BASE_URL = 'http://localhost:3000/api/v1';
 
-  // 1. Outlet 1 Login
+  // 1. Outlet 1 Login (now OUTLET_ADMIN)
   const o1Res = await fetch(`${BASE_URL}/auth/dev-login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -9,10 +9,9 @@ async function runTests() {
   });
   const o1Data = await o1Res.json();
   const outlet1Token = o1Data.data.accessToken;
-  console.log('Outlet 1 logged in');
+  console.log('Outlet 1 logged in (OUTLET_ADMIN)');
 
-  // 2. Student Login (Add student1 to mockUsers if not there, or use dev-login?)
-  // Actually wait, let's use dev-login for student too! I added him to mockUsers.
+  // 2. Student Login
   const sRes = await fetch(`${BASE_URL}/auth/dev-login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -62,7 +61,7 @@ async function runTests() {
   const studentViewData = await studentViewRes.json();
   console.log('Student checked order. Status:', studentViewData.data.status);
 
-  // 7. Student tries to view Outlet endpoint (should fail)
+  // 7. Student tries to view Outlet endpoint (should fail 403)
   const studentOutletRes = await fetch(`${BASE_URL}/outlet/orders`, {
     method: 'GET',
     headers: { 'Authorization': `Bearer ${studentToken}` }
@@ -90,7 +89,7 @@ async function runTests() {
   });
   console.log('Outlet 1 tried invalid transition COMPLETED -> PREPARING. Status:', invalidRes.status);
 
-  // 10. Outlet 2 tries to access Outlet 1's order
+  // 10. Outlet 2 (OUTLET_ADMIN) tries to access Outlet 1's order
   const o2Res = await fetch(`${BASE_URL}/auth/dev-login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -103,6 +102,28 @@ async function runTests() {
     headers: { 'Authorization': `Bearer ${outlet2Token}` }
   });
   console.log('Outlet 2 tried to access Outlet 1 order. Status:', o2AccessRes.status);
+
+  // 11. OUTLET_STAFF can view orders (read-only)
+  const staffRes = await fetch(`${BASE_URL}/auth/dev-login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: 'outlet1.staff@rishihood.edu.in' })
+  });
+  const staffData = await staffRes.json();
+  const staffToken = staffData.data.accessToken;
+  const staffOrdersRes = await fetch(`${BASE_URL}/outlet/orders`, {
+    method: 'GET',
+    headers: { 'Authorization': `Bearer ${staffToken}` }
+  });
+  console.log('OUTLET_STAFF can view orders. Status:', staffOrdersRes.status, '(expected 200)');
+
+  // 12. OUTLET_STAFF cannot manage menu
+  const staffMenuRes = await fetch(`${BASE_URL}/outlet/menu`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${staffToken}` },
+    body: JSON.stringify({ name: 'Test', price: 100, category: 'Meals' })
+  });
+  console.log('OUTLET_STAFF tried to create menu item. Status:', staffMenuRes.status, '(expected 403)');
 }
 
 runTests().catch(console.error);

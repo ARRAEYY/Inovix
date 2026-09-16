@@ -1,10 +1,14 @@
 const express = require('express');
-const { googleLogin, getCurrentUser } = require('./auth.controller');
-const authMiddleware = require('../../middleware/auth.middleware');
+const { googleLogin, getCurrentUser, devLogin } = require('./auth.controller');
+const { protect } = require('../../middleware/auth.middleware');
 
 const router = express.Router();
 
 router.post('/google', googleLogin);
-router.get('/me', authMiddleware, getCurrentUser);
+router.get('/me', protect, getCurrentUser);
+
+if (process.env.NODE_ENV !== 'production') {
+    router.post('/dev-login', devLogin);
+}
 
 module.exports = router;

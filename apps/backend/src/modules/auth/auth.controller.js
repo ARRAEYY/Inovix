@@ -46,7 +46,41 @@ async function getCurrentUser(req, res, next) {
     }
 }
 
+async function devLogin(req, res, next) {
+    if (process.env.NODE_ENV === 'production') {
+        return res.status(403).json({ success: false, message: 'Not available in production' });
+    }
+
+    try {
+        const { email } = req.body;
+        const mockUsers = require('../../data/mockUsers');
+        
+        const user = mockUsers.find(u => u.email === email);
+        if (!user) {
+            return res.status(404).json({ success: false, message: 'Dev user not found' });
+        }
+
+        const accessToken = jwt.sign(
+            { id: user.id, email: user.email },
+            JWT_SECRET,
+            { expiresIn: '7d' }
+        );
+
+        return res.status(200).json({
+            success: true,
+            message: 'Dev login successful',
+            data: {
+                user,
+                accessToken
+            }
+        });
+    } catch (error) {
+        next(error);
+    }
+}
+
 module.exports = {
     googleLogin,
-    getCurrentUser
+    getCurrentUser,
+    devLogin
 };

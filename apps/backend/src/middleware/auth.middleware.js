@@ -1,8 +1,9 @@
 const jwt = require('jsonwebtoken');
+const mockUsers = require('../data/mockUsers');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback-secret-for-development';
 
-function authMiddleware(req, res, next) {
+function protect(req, res, next) {
     const authHeader = req.headers.authorization;
 
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -15,7 +16,20 @@ function authMiddleware(req, res, next) {
 
     try {
         const decoded = jwt.verify(token, JWT_SECRET);
-        req.user = decoded; // Contains id, email
+        
+        // Load fresh user data
+        const user = mockUsers.find(u => u.id === decoded.id);
+        if (!user) {
+            throw new Error('User not found');
+        }
+
+        req.user = {
+            id: user.id,
+            email: user.email,
+            role: user.role || 'STUDENT',
+            outletId: user.outletId || null
+        };
+        
         next();
     } catch (err) {
         const error = new Error('Invalid or expired authentication token');
@@ -24,4 +38,15 @@ function authMiddleware(req, res, next) {
     }
 }
 
-module.exports = authMiddleware;
+function authorizeRole(...roles) {
+    return (req, res, next) => {
+        if (!req.user || !roles.includes(req.user.role)) {
+            const error = new Error('You do not have permission to access this area.');
+            error.statusCode = 403;
+            return next(error);
+        }
+        next();
+    };
+}
+
+module.exports = { protect, authorizeRole };

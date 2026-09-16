@@ -1,9 +1,9 @@
 const express = require('express');
 const { completeOnboarding } = require('./onboarding.controller');
-const authMiddleware = require('../../middleware/auth.middleware');
+const { protect } = require('../../middleware/auth.middleware');
 
 const router = express.Router();
 
-router.post('/', authMiddleware, completeOnboarding);
+router.post('/', protect, completeOnboarding);
 
 module.exports = router;

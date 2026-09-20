@@ -70,8 +70,6 @@ async function devLogin(req, res, next) {
             if (!isMatch) {
                 return res.status(401).json({ success: false, message: 'Invalid credentials' });
             }
-        } else if (req.body.password && !user.passwordHash) {
-            return res.status(401).json({ success: false, message: 'Invalid credentials' });
         }
 
         if (user.status === 'SUSPENDED') {

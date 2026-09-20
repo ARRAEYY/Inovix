@@ -1,6 +1,25 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../../hooks/useAuth';
 
-const Login = () => {
+const StudentLogin = () => {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  
+  const navigate = useNavigate();
+  const { login } = useAuth();
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setError('');
+    try {
+      await login(email, password);
+      navigate('/student');
+    } catch (err) {
+      setError(err.message || 'Login failed. Please check your credentials.');
+    }
+  };
   return (
     <div className="login-container">
       <div className="login-left">
@@ -26,19 +45,35 @@ const Login = () => {
           <p className="card-subheading">Student Login</p>
           <h2 className="card-title">Welcome</h2>
 
-          <form className="login-form">
+          <form className="login-form" onSubmit={handleLogin}>
             <div className="input-group">
               <label htmlFor="email">College email</label>
-              <input type="email" id="email" placeholder="you@campus.edu" />
+              <input 
+                type="email" 
+                id="email" 
+                placeholder="you@campus.edu" 
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
             </div>
 
             <div className="input-group">
               <label htmlFor="password">Password</label>
-              <input type="password" id="password" placeholder="Your password" />
+              <input 
+                type="password" 
+                id="password" 
+                placeholder="Your password" 
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
               <div className="forgot-password-container">
                 <a href="#" className="forgot-password">Forgot password?</a>
               </div>
             </div>
+
+            {error && <p style={{ color: 'var(--primary)', fontSize: '0.85rem', fontWeight: 500, marginTop: '0.25rem' }}>{error}</p>}
 
             <button type="submit" className="primary-btn">
               Sign in <span className="arrow">→</span>
@@ -64,4 +99,4 @@ const Login = () => {
   );
 };
 
-export default Login;
+export default StudentLogin;

@@ -57,7 +57,7 @@ const mockUsers = [
   {
     id: 'user-student-1',
     name: 'Student One',
-    email: 'student1@example.com',
+    email: 'maa',
     role: 'STUDENT',
     onboardingCompleted: true,
     passwordHash: null,

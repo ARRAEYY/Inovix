@@ -95,13 +95,22 @@ const CartDrawer = ({ isOpen, onClose, cart, menuItems, outletName, onUpdateQuan
             <span className="total-value">₹{total}</span>
           </div>
           
-          <button 
-            className="checkout-btn" 
-            disabled={cartEntries.length === 0}
-            onClick={() => alert('Proceeding to checkout!')}
-          >
-            Checkout <span className="arrow">›</span>
-          </button>
+          <div className="cart-action-buttons">
+            <button 
+              className="checkout-btn schedule-btn" 
+              disabled={cartEntries.length === 0}
+              onClick={() => alert('Scheduling order!')}
+            >
+              Schedule
+            </button>
+            <button 
+              className="checkout-btn order-now-btn" 
+              disabled={cartEntries.length === 0}
+              onClick={() => alert('Ordering now!')}
+            >
+              Order Now <span className="arrow">›</span>
+            </button>
+          </div>
           <p className="checkout-note">Pickup only · no delivery fee</p>
         </div>
       </div>

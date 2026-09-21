@@ -102,4 +102,8 @@ module.exports = {
   listForUser,
   markRead,
   markAllRead,
+  // Exported for reuse by the transition service (architectural refactor —
+  // single transactional order-transition service owns notification
+  // creation inside the same tx as the order update).
+  NOTIFICATION_TEMPLATES: TYPE_TEMPLATES,
 };

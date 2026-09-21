@@ -117,13 +117,13 @@ Each refresh token can be used exactly once. Using it issues a new access + new 
 | Transition              | Refund? | Trigger                |
 |-------------------------|---------|------------------------|
 | PENDING → REJECTED      | Yes     | `OUTLET_REJECT`        |
-| PENDING → CANCELLED     | Yes     | `OUTLET_CANCEL`        |
+| PENDING → CANCELLED     | Yes     | `CUSTOMER_CANCEL` / `OUTLET_CANCEL` |
 | ACCEPTED → CANCELLED    | Yes     | `OUTLET_CANCEL`        |
 | PREPARING → CANCELLED   | Yes     | `OUTLET_CANCEL`        |
-| READY → CANCELLED       | NO      | (no-show; food wasted) |
+| READY → CANCELLED       | NO      | (no-show / timeout; food wasted) |
 | READY → COMPLETED       | NO      | (student picked up)    |
 
-Spec §14 decision 6: there is **no student-initiated cancellation in V1**. Once payment is captured, the order is committed. Only outlet staff/admin can reject (pre-ACCEPTED) or cancel (pre-READY).
+**Student Cancellation**: Students are allowed to cancel an order **only while it is in the `PENDING` state** (before outlet acceptance) via `POST /api/v1/orders/:orderId/cancel`, which triggers an automatic full refund (`CUSTOMER_CANCEL`). Once an order reaches `ACCEPTED` or beyond, student cancellation is disabled and returns `400 INVALID_TRANSITION`. Only outlet staff/admin can cancel after acceptance.
 
 ## 6. Realtime strategy (spec §6.2)
 

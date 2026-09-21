@@ -32,6 +32,29 @@ app.use(helmet());
 // accepted only when NODE_ENV !== 'production' so dev workflows keep working.
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
 const isProduction = process.env.NODE_ENV === 'production';
+
+function safeDecode(val) {
+  try {
+    return decodeURIComponent(val);
+  } catch {
+    return val;
+  }
+}
+
+function parseCookies(req) {
+  const header = req.headers.cookie;
+  if (!header) return {};
+  return Object.fromEntries(header.split(';').map((part) => {
+    const index = part.indexOf('=');
+    if (index === -1) return [part.trim(), ''];
+    return [part.slice(0, index).trim(), safeDecode(part.slice(index + 1).trim())];
+  }));
+}
+
+app.use((req, _res, next) => {
+  req.cookies = parseCookies(req);
+  next();
+});
 const corsOrigins = isProduction
   ? [FRONTEND_URL]
   : Array.from(new Set([FRONTEND_URL, 'http://localhost:5173', 'http://localhost:3001']));
@@ -39,12 +62,6 @@ app.use(cors({
   origin: corsOrigins,
   credentials: true,
 }));
-
-// ── Body Parsing ──────────────────────────────────────────────────────────────
-// The Razorpay webhook route overrides this with express.raw() — see
-// payments.routes.js. The JSON parser here is for everything else.
-app.use(express.json({ limit: '10kb' }));
-app.use(express.urlencoded({ extended: true, limit: '10kb' }));
 
 // ── Health Check ─────────────────────────────────────────────────────────────
 app.get('/health', (req, res) => {
@@ -57,7 +74,28 @@ app.get('/health', (req, res) => {
 });
 
 // ── API Rate Limiting ─────────────────────────────────────────────────────────
+// Apply before any route mounts so every /api/v1/* request is throttled.
 app.use('/api/v1/', apiRateLimit);
+
+// ── Routes — payments FIRST (raw-body webhook) ───────────────────────────────
+// INO-P0-1 fix: the Razorpay webhook route needs the *raw* request body to
+// verify the X-Razorpay-Signature HMAC. The previous ordering mounted the
+// global `express.json()` parser BEFORE the payments router, which meant
+// `req.body` was already a parsed object by the time the webhook's
+// `express.raw()` middleware ran — so `req.body.toString('utf8')` in the
+// webhook controller produced `"[object Object]"` and signature verification
+// always failed.
+//
+// Fix: mount the payments router (which carries the webhook route with its
+// own `express.raw()` middleware) BEFORE the global JSON parser. Other
+// routes mounted on the same router (e.g. /razorpay/order, /razorpay/verify)
+// fall through to the global JSON parser as normal — they don't need the raw
+// body. The webhook route itself short-circuits with `express.raw()`.
+app.use('/api/v1/payments', paymentsRoutes);
+
+// ── Body Parsing ──────────────────────────────────────────────────────────────
+app.use(express.json({ limit: '10kb' }));
+app.use(express.urlencoded({ extended: true, limit: '10kb' }));
 
 // ── Routes ────────────────────────────────────────────────────────────────────
 app.use('/api/v1/auth', authRateLimit, authRoutes);
@@ -68,12 +106,9 @@ app.use('/api/v1/orders', ordersRoutes);
 app.use('/api/v1/outlet/orders', outletOrdersRoutes);
 app.use('/api/v1/outlet/menu', outletMenuRoutes);
 app.use('/api/v1/admin', adminRoutes);
-app.use('/api/v1/payments', paymentsRoutes);
 app.use('/api/v1/notifications', notificationsRoutes);
 app.use('/api/v1/audit', auditRoutes);
 app.use('/api/v1/uploads', uploadsRoutes);
-// Webhook mounted at root for cleaner URL (Razorpay config):
-//   POST /api/v1/payments/razorpay/webhook (see payments.routes.js)
 
 // ── 404 Handler ───────────────────────────────────────────────────────────────
 app.use((req, res) => {

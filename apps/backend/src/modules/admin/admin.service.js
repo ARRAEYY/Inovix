@@ -7,46 +7,86 @@
 const prisma = require('../../lib/prisma');
 const menuRepo = require('../menu/menu.repository');
 const ordersRepo = require('../orders/orders.repository');
-const { ROLES, OUTLET_STATUS, USER_STATUS } = require('../../lib/constants');
+const { getOutletRazorpayClient, markPaymentRefundedIfFullyRefunded } = require('../payments/payments.service');
+const { audit } = require('../../lib/audit');
+const {
+  ROLES,
+  OUTLET_STATUS,
+  USER_STATUS,
+  PAYMENT_STATUS,
+  REFUND_TRIGGER,
+  REFUND_STATUS,
+  ORDER_STATUS,
+} = require('../../lib/constants');
 
+// INO-P1-31 fix: previously getOverview loaded EVERY user, outlet, order,
+// and menu item into memory and counted in JS via `.filter().length`. For
+// a deployment with 100k orders / 100k users, every dashboard refresh
+// pulled the entire tables across the wire and looped through them — slow
+// and memory-heavy. Now we push the counts to the DB via groupBy/count
+// aggregation queries. The response shape is unchanged so the admin
+// frontend doesn't need updating.
 async function getOverview() {
-  const [users, outlets, menu, orders] = await Promise.all([
-    prisma.user.findMany(),
-    prisma.outlet.findMany(),
-    menuRepo.findAll(),
-    prisma.order.findMany(),
+  const [
+    userRoleGroups,
+    outletStatusGroups,
+    orderStatusGroups,
+    menuAvailableCount,
+    menuUnavailableCount,
+    userTotal,
+    outletTotal,
+    orderTotal,
+    menuTotal,
+  ] = await Promise.all([
+    prisma.user.groupBy({ by: ['role'], _count: true }),
+    prisma.outlet.groupBy({ by: ['status'], _count: true }),
+    prisma.order.groupBy({ by: ['status'], _count: true }),
+    prisma.menuItem.count({ where: { isAvailable: true } }),
+    prisma.menuItem.count({ where: { isAvailable: false } }),
+    prisma.user.count(),
+    prisma.outlet.count(),
+    prisma.order.count(),
+    prisma.menuItem.count(),
   ]);
+
+  // Reassemble the groupBy results into the same response shape as before.
+  const usersByRole = {};
+  for (const g of userRoleGroups) usersByRole[g.role] = g._count;
+  const outletsByStatus = {};
+  for (const g of outletStatusGroups) outletsByStatus[g.status] = g._count;
+  const ordersByStatus = {};
+  for (const g of orderStatusGroups) ordersByStatus[g.status] = g._count;
 
   return {
     users: {
-      students: users.filter((u) => u.role === ROLES.STUDENT).length,
-      outletAdmins: users.filter((u) => u.role === ROLES.OUTLET_ADMIN).length,
-      outletStaff: users.filter((u) => u.role === ROLES.OUTLET_STAFF).length,
-      superAdmins: users.filter((u) => u.role === ROLES.SUPER_ADMIN).length,
-      total: users.length,
+      students: usersByRole[ROLES.STUDENT] || 0,
+      outletAdmins: usersByRole[ROLES.OUTLET_ADMIN] || 0,
+      outletStaff: usersByRole[ROLES.OUTLET_STAFF] || 0,
+      superAdmins: usersByRole[ROLES.SUPER_ADMIN] || 0,
+      total: userTotal,
     },
     outlets: {
-      total: outlets.length,
-      open: outlets.filter((o) => o.status === 'OPEN').length,
-      busy: outlets.filter((o) => o.status === 'BUSY').length,
-      closed: outlets.filter((o) => o.status === 'CLOSED').length,
-      pending: outlets.filter((o) => o.status === 'PENDING').length,
-      suspended: outlets.filter((o) => o.status === 'SUSPENDED').length,
+      total: outletTotal,
+      open: outletsByStatus[OUTLET_STATUS.OPEN] || 0,
+      busy: outletsByStatus[OUTLET_STATUS.BUSY] || 0,
+      closed: outletsByStatus[OUTLET_STATUS.CLOSED] || 0,
+      pending: outletsByStatus[OUTLET_STATUS.PENDING] || 0,
+      suspended: outletsByStatus[OUTLET_STATUS.SUSPENDED] || 0,
     },
     menu: {
-      total: menu.length,
-      available: menu.filter((m) => m.isAvailable).length,
-      unavailable: menu.filter((m) => !m.isAvailable).length,
+      total: menuTotal,
+      available: menuAvailableCount,
+      unavailable: menuUnavailableCount,
     },
     orders: {
-      total: orders.length,
-      pending: orders.filter((o) => o.status === 'PENDING').length,
-      accepted: orders.filter((o) => o.status === 'ACCEPTED').length,
-      preparing: orders.filter((o) => o.status === 'PREPARING').length,
-      ready: orders.filter((o) => o.status === 'READY').length,
-      completed: orders.filter((o) => o.status === 'COMPLETED').length,
-      rejected: orders.filter((o) => o.status === 'REJECTED').length,
-      cancelled: orders.filter((o) => o.status === 'CANCELLED').length,
+      total: orderTotal,
+      pending: ordersByStatus[ORDER_STATUS.PENDING] || 0,
+      accepted: ordersByStatus[ORDER_STATUS.ACCEPTED] || 0,
+      preparing: ordersByStatus[ORDER_STATUS.PREPARING] || 0,
+      ready: ordersByStatus[ORDER_STATUS.READY] || 0,
+      completed: ordersByStatus[ORDER_STATUS.COMPLETED] || 0,
+      rejected: ordersByStatus[ORDER_STATUS.REJECTED] || 0,
+      cancelled: ordersByStatus[ORDER_STATUS.CANCELLED] || 0,
     },
   };
 }
@@ -175,6 +215,180 @@ async function updateMenuItemStatus(itemId, isAvailable) {
   return { item: updated, before };
 }
 
+// ─── INO-P0-7 / INO-P0-8 / INO-P0-9 ─────────────────────────────────────────
+// Super-admin manual refund endpoint. Serves two purposes:
+//   1. Issue a fresh manual refund for an order whose payment is PAID but
+//      no refund has been initiated (e.g. super-admin decided to refund
+//      outside the normal cancel/reject flow).
+//   2. RETRY an existing PENDING refund — the previous auto-refund flow
+//      could leave the system in:
+//        Order = CANCELLED, Payment = PAID, Refund = PENDING
+//      if the Razorpay refund API call failed. Without this endpoint,
+//      there was no application-level way to resolve the inconsistency —
+//      the only "recovery" was for someone to log into the Razorpay
+//      dashboard and manually re-trigger, with no DB record of the retry.
+//
+// The endpoint is idempotent in the sense that:
+//   - If a PENDING refund exists for this payment, we retry THAT one
+//     (don't create a duplicate Refund row).
+//   - If no PENDING refund exists, we issue a fresh one with
+//     triggeredBy = SUPER_ADMIN_MANUAL.
+//   - If a COMPLETED refund already exists, we reject (can't refund twice).
+async function issueManualRefund(orderId, { amount, reason }, actorId) {
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    include: {
+      payment: { include: { refunds: true } },
+      outlet: true,
+    },
+  });
+  if (!order) throw { statusCode: 404, message: 'Order not found' };
+  if (!order.payment) throw { statusCode: 400, message: 'Order has no payment to refund' };
+  if (order.payment.status !== PAYMENT_STATUS.PAID && order.payment.status !== PAYMENT_STATUS.REFUNDED) {
+    throw {
+      statusCode: 400,
+      message: `Cannot refund a payment in state ${order.payment.status}. Only PAID or REFUNDED payments are eligible.`,
+    };
+  }
+
+  // Refuse if a COMPLETED refund already exists — can't refund twice.
+  const completedRefund = order.payment.refunds.find(r => r.status === REFUND_STATUS.COMPLETED);
+  if (completedRefund) {
+    throw {
+      statusCode: 409,
+      code: 'REFUND_ALREADY_COMPLETED',
+      message: `Refund ${completedRefund.id} is already COMPLETED for this payment. Cannot refund again.`,
+    };
+  }
+
+  // ─── INO-AUDIT3-1 fix: enforce refund amount bounds server-side ──────
+  // The previous implementation passed `amount` straight to Razorpay without
+  // checking it against the payment's remaining refundable amount. A super-
+  // admin could submit { amount: 999999 } and the app would rely on Razorpay
+  // to reject it. The business invariant belongs to the application.
+  //
+  //   remaining = payment.amount - sum(COMPLETED refunds) - sum(PENDING refunds)
+  //
+  // PENDING refunds are subtracted too because they represent in-flight
+  // refund attempts that may still complete. If a PENDING refund exists,
+  // the retry path below handles it — the fresh-refund path is only
+  // reached when no PENDING refund exists, so remaining is just
+  // payment.amount - sum(COMPLETED refunds) in practice.
+  const paymentAmount = Number(order.payment.amount);
+  const alreadyRefunded = order.payment.refunds
+    .filter(r => r.status === REFUND_STATUS.COMPLETED || r.status === REFUND_STATUS.PENDING)
+    .reduce((sum, r) => sum + Number(r.amount), 0);
+  const remainingRefundable = paymentAmount - alreadyRefunded;
+
+  const requestedAmount = Number(amount);
+  if (!Number.isFinite(requestedAmount) || requestedAmount <= 0) {
+    throw {
+      statusCode: 400,
+      code: 'INVALID_REFUND_AMOUNT',
+      message: 'Refund amount must be a positive number.',
+    };
+  }
+  if (requestedAmount > remainingRefundable) {
+    throw {
+      statusCode: 400,
+      code: 'REFUND_AMOUNT_EXCEEDS_REMAINING',
+      message: `Refund amount ₹${requestedAmount.toFixed(2)} exceeds remaining refundable amount ₹${remainingRefundable.toFixed(2)} (payment ₹${paymentAmount.toFixed(2)} − already refunded ₹${alreadyRefunded.toFixed(2)}).`,
+    };
+  }
+
+  // Retry path: a PENDING refund exists (likely from a failed auto-refund).
+  // The existing PENDING refund's amount was already validated when it
+  // was created, so we don't re-check here — we just retry the gateway call.
+  const existingPending = order.payment.refunds.find(r => r.status === REFUND_STATUS.PENDING);
+  if (existingPending) {
+    let gatewayRef = existingPending.gatewayRef;
+    let refundStatus = REFUND_STATUS.PENDING;
+    try {
+      const client = await getOutletRazorpayClient(order.outletId);
+      const gatewayRefund = await client.payments.refund(order.payment.razorpayPaymentId, {
+        amount: Math.round(Number(existingPending.amount) * 100),
+        notes: {
+          orderId: order.id,
+          trigger: existingPending.triggeredBy,
+          reason: `Retry: ${reason || existingPending.reason}`,
+        },
+      });
+      gatewayRef = gatewayRefund.id;
+      refundStatus = (gatewayRefund.status || 'PENDING').toUpperCase();
+    } catch (err) {
+      console.error('[admin:refund-retry] gateway call failed:', err.message);
+      // Leave as PENDING so it can be retried again later.
+    }
+
+    const updated = await prisma.refund.update({
+      where: { id: existingPending.id },
+      data: { gatewayRef, status: refundStatus },
+    });
+
+    if (refundStatus === REFUND_STATUS.COMPLETED || refundStatus === 'PROCESSED') {
+      // INO-AUDIT4-D2 fix: only mark Payment=REFUNDED if fully refunded.
+      await markPaymentRefundedIfFullyRefunded(order.payment.id);
+    }
+
+    await audit({
+      actorId,
+      action: 'REFUND_RETRIED',
+      targetType: 'Refund',
+      targetId: updated.id,
+      after: { amount: updated.amount, status: refundStatus, gatewayRef },
+    });
+    return { refund: updated, retried: true };
+  }
+
+  // Fresh manual refund path. Amount has been validated above against
+  // the remaining refundable cap.
+  let gatewayRef = null;
+  let refundStatus = REFUND_STATUS.PENDING;
+  try {
+    const client = await getOutletRazorpayClient(order.outletId);
+    const gatewayRefund = await client.payments.refund(order.payment.razorpayPaymentId, {
+      amount: Math.round(requestedAmount * 100),
+      notes: {
+        orderId: order.id,
+        trigger: REFUND_TRIGGER.SUPER_ADMIN_MANUAL,
+        reason,
+      },
+    });
+    gatewayRef = gatewayRefund.id;
+    refundStatus = (gatewayRefund.status || 'PENDING').toUpperCase();
+  } catch (err) {
+    console.error('[admin:refund] gateway call failed:', err.message);
+    // Mark refund as PENDING so it can be retried via this same endpoint.
+  }
+
+  const refund = await prisma.refund.create({
+    data: {
+      paymentId: order.payment.id,
+      amount,
+      reason,
+      gatewayRef,
+      status: refundStatus,
+      triggeredBy: REFUND_TRIGGER.SUPER_ADMIN_MANUAL,
+      initiatedBy: actorId,
+    },
+  });
+
+  if (refundStatus === REFUND_STATUS.COMPLETED || refundStatus === 'PROCESSED') {
+    // INO-AUDIT4-D2 fix: only mark Payment=REFUNDED if fully refunded.
+    await markPaymentRefundedIfFullyRefunded(order.payment.id);
+  }
+
+  await audit({
+    actorId,
+    action: 'REFUND_ISSUED_MANUAL',
+    targetType: 'Refund',
+    targetId: refund.id,
+    after: { amount, reason, gatewayRef, trigger: REFUND_TRIGGER.SUPER_ADMIN_MANUAL },
+  });
+
+  return { refund, retried: false };
+}
+
 module.exports = {
   getOverview,
   getUsers,
@@ -188,4 +402,5 @@ module.exports = {
   getMenu,
   getMenuItem,
   updateMenuItemStatus,
+  issueManualRefund,
 };

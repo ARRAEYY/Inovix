@@ -106,8 +106,28 @@ const updateMenuItemStatus = wrap(async (req, res) => {
   res.status(200).json({ success: true, data: item });
 });
 
+// INO-P0-7 / INO-P0-9: manual super-admin refund endpoint.
+// Body (refundCreateSchema): { orderId, amount, reason, trigger }
+// We accept the schema for shape compatibility but ignore client-supplied
+// `trigger` — the service always sets triggeredBy = SUPER_ADMIN_MANUAL so
+// a compromised super-admin token can't masquerade as an OUTLET_CANCEL.
+const issueManualRefund = wrap(async (req, res) => {
+  const { orderId, amount, reason } = req.body;
+  const result = await adminService.issueManualRefund(orderId, { amount, reason }, req.user.id);
+  await audit({
+    actorId: req.user.id,
+    action: result.retried ? 'ADMIN_REFUND_RETRY' : 'ADMIN_REFUND_ISSUED',
+    targetType: 'Refund',
+    targetId: result.refund.id,
+    after: { amount: result.refund.amount, retried: result.retried },
+    req,
+  });
+  res.status(200).json({ success: true, data: result.refund });
+});
+
 module.exports = {
   getOverview, getUsers, getUser, updateUserStatus,
   getOutlets, getOutlet, updateOutletStatus,
   getOrders, getOrder, getMenu, getMenuItem, updateMenuItemStatus,
+  issueManualRefund,
 };

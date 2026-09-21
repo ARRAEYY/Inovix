@@ -384,12 +384,23 @@ async function verifyRazorpayPayment({ razorpayOrderId, razorpayPaymentId, razor
       };
     }
   } catch (err) {
-    if (err.statusCode && err.code) throw err; // re-throw our structured errors
-    // If the fetch itself fails (network / 5xx), log but DON'T block —
-    // the signature already proved authenticity; the amount+status fetch
-    // is defense-in-depth. The webhook path will reconcile on the next
-    // payment.captured event.
-    console.error('[payments] gateway fetch (amount+status) failed:', err.message);
+    if (err.statusCode && err.code) throw err; // re-throw our structured errors (AMOUNT_MISMATCH, NOT_CAPTURED)
+    // INO-AUDIT7: fail-CLOSED, not fail-open. The previous implementation
+    // logged the gateway-fetch error and continued to mark PAID — meaning
+    // a valid signature + unreachable Razorpay API = PAID without amount
+    // or capture-status confirmation. That's a fail-open security gap.
+    //
+    // Fix: if the gateway fetch fails (network / 5xx), DON'T mark PAID.
+    // Return 503 so the frontend knows to retry. The payment stays PENDING.
+    // The payment.captured webhook (if the gateway eventually sends it) or
+    // the reconciliation worker (which polls for stale PENDING payments)
+    // will confirm the payment independently.
+    console.error('[payments] gateway fetch (amount+status) failed — NOT marking PAID:', err.message);
+    throw {
+      statusCode: 503,
+      code: 'GATEWAY_VERIFICATION_UNAVAILABLE',
+      message: 'Could not verify payment amount and capture status with Razorpay. The payment signature is valid, but the gateway is temporarily unreachable. Please retry — the payment will also be confirmed automatically via webhook or reconciliation if it was captured.',
+    };
   }
 
   const claimed = await prisma.payment.updateMany({

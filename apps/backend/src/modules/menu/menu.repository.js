@@ -1,52 +1,44 @@
-const { menuItems } = require('../../data/mockData.js');
+/**
+ * Menu repository — Prisma-backed. All queries are outlet-scoped via the
+ * `outletId` parameter (spec §3.2 Layer 3 — row-level filters).
+ */
 
-let currentMenuItems = [...menuItems];
+const prisma = require('../../lib/prisma');
 
-const findAllByOutletId = async (outletId) => {
-  return currentMenuItems.filter(item => item.outletId === outletId);
-};
+async function findAllByOutletId(outletId) {
+  return prisma.menuItem.findMany({
+    where: { outletId },
+    orderBy: [{ category: { sortOrder: 'asc' } }, { name: 'asc' }],
+    include: { category: true },
+  });
+}
 
-const findAll = async () => {
-  return [...currentMenuItems];
-};
+async function findAll() {
+  return prisma.menuItem.findMany({ include: { category: true } });
+}
 
-const findById = async (itemId) => {
-  return currentMenuItems.find(item => item.id === itemId) || null;
-};
+async function findById(itemId) {
+  return prisma.menuItem.findUnique({
+    where: { id: itemId },
+    include: { category: true, customizationGroups: { include: { options: true } } },
+  });
+}
 
-const create = async (itemData) => {
-  const newItem = {
-    ...itemData,
-    id: `item_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
-  };
-  
-  // Save to in-memory array (prepend to show newest first)
-  currentMenuItems.unshift(newItem);
-  return newItem;
-};
+async function create(itemData) {
+  return prisma.menuItem.create({ data: itemData, include: { category: true } });
+}
 
-const update = async (itemId, data) => {
-  const itemIndex = currentMenuItems.findIndex(i => i.id === itemId);
-  if (itemIndex === -1) return null;
+async function update(itemId, updates) {
+  return prisma.menuItem.update({
+    where: { id: itemId },
+    data: updates,
+    include: { category: true },
+  });
+}
 
-  // Preserve id and outletId
-  const { id, outletId, ...updates } = data;
-
-  currentMenuItems[itemIndex] = {
-    ...currentMenuItems[itemIndex],
-    ...updates,
-  };
-
-  return currentMenuItems[itemIndex];
-};
-
-const remove = async (itemId) => {
-  const itemIndex = currentMenuItems.findIndex(i => i.id === itemId);
-  if (itemIndex === -1) return false;
-
-  currentMenuItems.splice(itemIndex, 1);
-  return true;
-};
+async function remove(itemId) {
+  return prisma.menuItem.delete({ where: { id: itemId } });
+}
 
 module.exports = {
   findAll,
@@ -54,5 +46,5 @@ module.exports = {
   findById,
   create,
   update,
-  delete: remove
+  delete: remove,
 };

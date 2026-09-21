@@ -62,7 +62,14 @@ model StudentProfile {
   // different name spellings (e.g. "Rahul" and "Rahul Kumar"), which
   // defeated the collegeId-as-unique-identifier intent.
   collegeId   String   @unique
-  verifiedAt  DateTime?
+  // INO-P1-29 fix: renamed from `verifiedAt` to `submittedAt` to be
+  // honest about semantics. The previous name implied the profile was
+  // verified by a college directory or admin — but onboarding just
+  // stamps `new Date()` when the student submits the form, with no
+  // actual verification step. If a real verification flow is added
+  // later, add a separate `verifiedAt` column set only when an admin
+  // or directory-check approves the profile.
+  submittedAt  DateTime?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

@@ -7,7 +7,9 @@
 const prisma = require('../../lib/prisma');
 const menuRepo = require('../menu/menu.repository');
 const ordersRepo = require('../orders/orders.repository');
-const { ROLES, OUTLET_STATUS, USER_STATUS } = require('../../lib/constants');
+const { getOutletRazorpayClient } = require('../payments/payments.service');
+const { audit } = require('../../lib/audit');
+const { ROLES, OUTLET_STATUS, USER_STATUS, PAYMENT_STATUS, REFUND_TRIGGER, REFUND_STATUS } = require('../../lib/constants');
 
 async function getOverview() {
   const [users, outlets, menu, orders] = await Promise.all([
@@ -175,6 +177,146 @@ async function updateMenuItemStatus(itemId, isAvailable) {
   return { item: updated, before };
 }
 
+// ─── INO-P0-7 / INO-P0-8 / INO-P0-9 ─────────────────────────────────────────
+// Super-admin manual refund endpoint. Serves two purposes:
+//   1. Issue a fresh manual refund for an order whose payment is PAID but
+//      no refund has been initiated (e.g. super-admin decided to refund
+//      outside the normal cancel/reject flow).
+//   2. RETRY an existing PENDING refund — the previous auto-refund flow
+//      could leave the system in:
+//        Order = CANCELLED, Payment = PAID, Refund = PENDING
+//      if the Razorpay refund API call failed. Without this endpoint,
+//      there was no application-level way to resolve the inconsistency —
+//      the only "recovery" was for someone to log into the Razorpay
+//      dashboard and manually re-trigger, with no DB record of the retry.
+//
+// The endpoint is idempotent in the sense that:
+//   - If a PENDING refund exists for this payment, we retry THAT one
+//     (don't create a duplicate Refund row).
+//   - If no PENDING refund exists, we issue a fresh one with
+//     triggeredBy = SUPER_ADMIN_MANUAL.
+//   - If a COMPLETED refund already exists, we reject (can't refund twice).
+async function issueManualRefund(orderId, { amount, reason }, actorId) {
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    include: {
+      payment: { include: { refunds: true } },
+      outlet: true,
+    },
+  });
+  if (!order) throw { statusCode: 404, message: 'Order not found' };
+  if (!order.payment) throw { statusCode: 400, message: 'Order has no payment to refund' };
+  if (order.payment.status !== PAYMENT_STATUS.PAID && order.payment.status !== PAYMENT_STATUS.REFUNDED) {
+    throw {
+      statusCode: 400,
+      message: `Cannot refund a payment in state ${order.payment.status}. Only PAID or REFUNDED payments are eligible.`,
+    };
+  }
+
+  // Refuse if a COMPLETED refund already exists — can't refund twice.
+  const completedRefund = order.payment.refunds.find(r => r.status === REFUND_STATUS.COMPLETED);
+  if (completedRefund) {
+    throw {
+      statusCode: 409,
+      code: 'REFUND_ALREADY_COMPLETED',
+      message: `Refund ${completedRefund.id} is already COMPLETED for this payment. Cannot refund again.`,
+    };
+  }
+
+  // Retry path: a PENDING refund exists (likely from a failed auto-refund).
+  const existingPending = order.payment.refunds.find(r => r.status === REFUND_STATUS.PENDING);
+  if (existingPending) {
+    let gatewayRef = existingPending.gatewayRef;
+    let refundStatus = REFUND_STATUS.PENDING;
+    try {
+      const client = await getOutletRazorpayClient(order.outletId);
+      const gatewayRefund = await client.payments.refund(order.payment.razorpayPaymentId, {
+        amount: Math.round(Number(existingPending.amount) * 100),
+        notes: {
+          orderId: order.id,
+          trigger: existingPending.triggeredBy,
+          reason: `Retry: ${reason || existingPending.reason}`,
+        },
+      });
+      gatewayRef = gatewayRefund.id;
+      refundStatus = (gatewayRefund.status || 'PENDING').toUpperCase();
+    } catch (err) {
+      console.error('[admin:refund-retry] gateway call failed:', err.message);
+      // Leave as PENDING so it can be retried again later.
+    }
+
+    const updated = await prisma.refund.update({
+      where: { id: existingPending.id },
+      data: { gatewayRef, status: refundStatus },
+    });
+
+    if (refundStatus === REFUND_STATUS.COMPLETED || refundStatus === 'PROCESSED') {
+      await prisma.payment.update({
+        where: { id: order.payment.id },
+        data: { status: PAYMENT_STATUS.REFUNDED },
+      });
+    }
+
+    await audit({
+      actorId,
+      action: 'REFUND_RETRIED',
+      targetType: 'Refund',
+      targetId: updated.id,
+      after: { amount: updated.amount, status: refundStatus, gatewayRef },
+    });
+    return { refund: updated, retried: true };
+  }
+
+  // Fresh manual refund path.
+  let gatewayRef = null;
+  let refundStatus = REFUND_STATUS.PENDING;
+  try {
+    const client = await getOutletRazorpayClient(order.outletId);
+    const gatewayRefund = await client.payments.refund(order.payment.razorpayPaymentId, {
+      amount: Math.round(Number(amount) * 100),
+      notes: {
+        orderId: order.id,
+        trigger: REFUND_TRIGGER.SUPER_ADMIN_MANUAL,
+        reason,
+      },
+    });
+    gatewayRef = gatewayRefund.id;
+    refundStatus = (gatewayRefund.status || 'PENDING').toUpperCase();
+  } catch (err) {
+    console.error('[admin:refund] gateway call failed:', err.message);
+    // Mark refund as PENDING so it can be retried via this same endpoint.
+  }
+
+  const refund = await prisma.refund.create({
+    data: {
+      paymentId: order.payment.id,
+      amount,
+      reason,
+      gatewayRef,
+      status: refundStatus,
+      triggeredBy: REFUND_TRIGGER.SUPER_ADMIN_MANUAL,
+      initiatedBy: actorId,
+    },
+  });
+
+  if (refundStatus === REFUND_STATUS.COMPLETED || refundStatus === 'PROCESSED') {
+    await prisma.payment.update({
+      where: { id: order.payment.id },
+      data: { status: PAYMENT_STATUS.REFUNDED },
+    });
+  }
+
+  await audit({
+    actorId,
+    action: 'REFUND_ISSUED_MANUAL',
+    targetType: 'Refund',
+    targetId: refund.id,
+    after: { amount, reason, gatewayRef, trigger: REFUND_TRIGGER.SUPER_ADMIN_MANUAL },
+  });
+
+  return { refund, retried: false };
+}
+
 module.exports = {
   getOverview,
   getUsers,
@@ -188,4 +330,5 @@ module.exports = {
   getMenu,
   getMenuItem,
   updateMenuItemStatus,
+  issueManualRefund,
 };

@@ -10,18 +10,9 @@
 const cartRepo = require('./cart.repository');
 const menuRepo = require('../menu/menu.repository');
 const { validateAndComputeOptionsDelta, normalizeSelectedOptions } = require('../menu/customization');
+const { toPaise, fromPaise } = require('../../lib/money'); // INO-AUDIT4-D14: centralized
 const { OUTLET_STATUS, ERROR_CODES } = require('../../lib/constants');
 const prisma = require('../../lib/prisma');
-
-// INO-AUDIT3-4: cart totals use integer paise internally — same primitive
-// as orders.service.js createOrder, so the cart preview total matches the
-// eventual checkout total exactly (no floating-point drift).
-function toPaise(decimal) {
-  return Math.round(Number(decimal) * 100);
-}
-function fromPaise(paise) {
-  return (paise / 100).toFixed(2);
-}
 
 // INO-AUDIT3-5 fix: compute the priceDelta for a cart item's selectedOptions
 // using the menu item's customizationGroups + options (now included in

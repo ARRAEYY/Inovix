@@ -65,23 +65,31 @@ function signUpload(opts = {}) {
   const folder = opts.folder || 'misc';
   const timestamp = Math.floor(Date.now() / 1000);
 
-  // ─── INO-006 fix: server-controlled namespace for student uploads ──────
-  // The `students` folder accepts user-uploaded profile pictures. The previous
-  // implementation let the client choose the public_id (e.g. `students/any-name`),
-  // which means one student could request a public_id that collides with
-  // or impersonates another student's profile picture path. `overwrite=false`
-  // reduced the impact, but the namespace must be server-controlled.
+  // ─── INO-006 + INO-P1-18 fix: server-controlled namespace ───────────────
+  // The `students` folder accepts user-uploaded profile pictures. The
+  // `menu-items` and `outlet-logos` folders accept outlet-scoped uploads.
+  // For ALL three folders, the client-supplied publicId is ignored when an
+  // `ownerId` is provided — the server scopes the object name to
+  // `<folder>/<ownerId>/<timestamp>-<random>`. This means:
+  //   - students/<userId>/...        → one student can't impersonate another
+  //   - menu-items/<outletId>/...   → provably owned by that outlet
+  //   - outlet-logos/<outletId>/... → provably owned by that outlet
   //
-  // When `opts.ownerId` is supplied for the students folder, the public_id is
-  // forced to `students/<ownerId>/<timestamp>-<random>` and the client's
-  // `opts.publicId` is ignored. We also tag the asset with `owner:<id>` so
-  // the media library can filter by owner.
+  // `overwrite=false` reduces the impact of a client-controlled id, but
+  // the namespace must be server-controlled to make the path itself
+  // a verifiable ownership claim.
+  //
+  // For the `students` folder specifically, refusing to sign without an
+  // ownerId is enforced — there's no other valid owner. For other folders
+  // without an ownerId, we fall back to `<folder>/<timestamp>-<random>`
+  // (used by SUPER_ADMIN who can manage any outlet's media library
+  // directly, so client-supplied publicId is honored).
   let publicId;
-  if (folder === 'students' && opts.ownerId) {
+  if (opts.ownerId) {
     publicId = `${folder}/${opts.ownerId}/${timestamp}-${Math.random().toString(36).slice(2, 10)}`;
   } else if (folder === 'students') {
-    // No ownerId supplied — refuse to sign rather than fall back to a
-    // client-controlled id.
+    // No ownerId supplied for students — refuse to sign rather than fall
+    // back to a client-controlled id.
     throw {
       statusCode: 400,
       code: 'INVALID_UPLOAD_REQUEST',

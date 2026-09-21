@@ -56,15 +56,17 @@ model StudentProfile {
   phone       String
   course      String
   year        String
-  collegeId   String
+  // INO-P1-28 fix: collegeId is now globally unique — each college ID
+  // maps to exactly one student. The previous @@unique([collegeId, fullName])
+  // allowed the same college ID to be used by multiple students with
+  // different name spellings (e.g. "Rahul" and "Rahul Kumar"), which
+  // defeated the collegeId-as-unique-identifier intent.
+  collegeId   String   @unique
   verifiedAt  DateTime?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([collegeId])
-  @@unique([collegeId, fullName])
 }
 
 // ─── 3. Campus ────────────────────────────────────────────────────────────

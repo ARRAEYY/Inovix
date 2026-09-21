@@ -6,17 +6,30 @@
 
 | Threat                              | Mitigation                                                       |
 |-------------------------------------|------------------------------------------------------------------|
-| Brute-force login                   | `authRateLimit` (20 req / 15 min per IP on `/api/v1/auth`)      |
-| Stolen JWT                          | 15-min access TTL + rotating refresh + revoke on logout/suspend |
-| Replay attack on refresh token      | One-time-use refresh tokens; re-use triggers theft detection    |
-| Cross-outlet data access            | Layer 3 Prisma row filters: `where: { outletId }` enforced in repository |
+| Brute-force login                   | Per-endpoint rate limiters: Google 5/min, dev-login 10/min, refresh 30/15min, /me+/logout 60/min |
+| Stolen JWT                          | 15-min access TTL + rotating refresh (transactional, constant-time hash compare) + revoke on logout/suspend |
+| Replay attack on refresh token      | One-time-use refresh tokens; re-use triggers theft detection (revoke ALL for user) |
+| Cross-outlet data access            | Layer 3 Prisma row filters: `where: { outletId }` enforced in repository + STUDENT-only auth on student routes |
 | Parameter pollution                 | Zod `.strict()` schemas reject unknown keys                       |
-| Razorpay webhook forgery            | HMAC-SHA256 over raw body, verified in constant time             |
+| Razorpay webhook forgery            | HMAC-SHA256 over raw body, verified in constant time; webhook routes by event type (payment.* vs refund.*) |
+| Payment amount tampering            | Gateway fetch + amount revalidation (fail-closed: 503 if gateway unreachable, 400 if amount mismatch) |
+| Non-captured payment marked PAID    | Gateway status check: only `captured`/`processed` accepted (400 PAYMENT_NOT_CAPTURED otherwise) |
+| Concurrent gateway-order creation  | Atomic sentinel claim via `updateMany WHERE razorpayOrderId IS NULL` |
+| Concurrent refund over-payment      | `SELECT FOR UPDATE` on Payment row + remaining-refundable check inside `prisma.$transaction` |
+| Duplicate refund at gateway        | Atomic sentinel claim on Refund.gatewayRef + stale-sentinel cleanup |
+| Partial refund state inconsistency  | `markPaymentRefundedIfFullyRefunded` — Payment only REFUNDED when `sum(COMPLETED refunds) >= payment.amount` (integer paise) |
+| Refund webhook mismatch            | Fallback reconciliation: match by (payment_id, amount, PENDING, gatewayRef=NULL) when primary gatewayRef lookup fails |
+| Missed webhook (server down)       | Reconciliation worker polls gateway every 10 min for PENDING refunds + stale PENDING payments |
+| Stuck sentinel (process crash)     | Stale-sentinel cleanup every 10 min: recovers gateway order by receipt OR resets to NULL |
 | Stored-credential leak (DB breach)  | AES-256-GCM encryption for outlet Razorpay keys (separate key from JWT_SECRET) |
-| XSS in frontend storing JWT          | Frontend stores tokens in httpOnly cookies (preferred) — localStorage is fallback |
+| XSS in frontend storing JWT          | Refresh token in httpOnly cookie (not localStorage); localStorage stores only minimum UI identity (id, name, email, role) |
 | Mass-assignment (role escalation)   | Role is never read from `req.body`; always from `req.user.role` after DB lookup |
 | SQL injection                       | Prisma client — every query is parameterized                     |
-| College email spoofing              | Google OAuth + `email_verified` flag + `COLLEGE_EMAIL_DOMAIN` suffix check |
+| College email spoofing              | Google OAuth + `email_verified` flag + `COLLEGE_EMAIL_DOMAIN` domain-equality check (leading dot = subdomains allowed) |
+| Dev-login in non-dev envs           | Explicit opt-in: `NODE_ENV=development AND ENABLE_DEV_LOGIN=true` (route not mounted otherwise) |
+| Cloudinary upload abuse             | Signed uploads enforce `resource_type=image` + `allowed_formats` in signature; server-controlled publicId for student + outlet-scoped folders |
+| Money arithmetic drift              | Centralized `lib/money.js` — integer paise everywhere; `Number.isFinite` + upper bound on all monetary fields |
+| Cron double-fire (multi-instance)   | Postgres advisory locks (`pg_try_advisory_xact_lock`) on every cron job |
 
 ## 2. Authentication
 

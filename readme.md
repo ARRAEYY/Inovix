@@ -139,37 +139,44 @@ See `docs/security.md` for the full production checklist.
 
 ## Status
 
-### Implemented (M1 + M2 + M3 — full V1 backend)
+### Implemented (M1 + M2 + M3 — full V1 backend, 8 rounds of security hardening)
 
-- ✅ Prisma schema with all 19 spec tables
-- ✅ Real Zod schemas in shared `@nosh/validation` package
-- ✅ Auth: Google + dev-login + refresh token rotation + logout + revoke on suspend
-- ✅ Onboarding (first-time password + student profile)
-- ✅ Catalog (outlets, menu, search, popular) — authenticated
-- ✅ Cart (server-side, one per student per outlet, 24h expiry)
-- ✅ Orders (PENDING/ACCEPTED/PREPARING/READY/COMPLETED/REJECTED/CANCELLED state machine)
-- ✅ Outlet menu CRUD (OUTLET_ADMIN only)
-- ✅ Admin (overview, users, outlets, orders, menu, audit log)
-- ✅ Payments: Razorpay per-outlet, encrypted credentials, webhook, auto-refund on REJECTED/CANCELLED
-- ✅ Notifications: DB-persisted + socket-emitted
-- ✅ Audit log (every state-changing operation)
-- ✅ Socket.IO server with room-based emits + long-polling fallback
-- ✅ Cloudinary signed-upload endpoint (`POST /api/v1/uploads/sign`)
-- ✅ Cron jobs: audit purge (90d), refresh purge (30d), pickup timeout (auto-CANCELLED after `pickupTimeoutMins` — no refund, no-show per spec §8.6)
-- ✅ Tests: 18 unit + admin E2E
+- ✅ Prisma schema with all 19 spec tables (5 migrations: `collegeId @unique`, `verifiedAt → submittedAt`, refund partial unique index, `razorpayOrderId` unique)
+- ✅ Real Zod schemas in shared `@nosh/validation` package (strict mode, bounded money, quantity limits, phone regex env-configurable)
+- ✅ Auth: Google + dev-login (explicit opt-in via `ENABLE_DEV_LOGIN`) + refresh token rotation (transactional + constant-time hash comparison) + httpOnly cookie + logout + revoke on suspend
+- ✅ Onboarding (first-time password + student profile; `submittedAt` instead of misleading `verifiedAt`)
+- ✅ Catalog (outlets, menu, search, popular) — authenticated, OPEN/BUSY-only visibility enforced consistently
+- ✅ Cart (server-side, one per student per outlet, 24h expiry, customization pricing in preview, P2002 race handling, CLOSED/SUSPENDED/PENDING outlets rejected)
+- ✅ Orders (PENDING/ACCEPTED/PREPARING/READY/COMPLETED/REJECTED/CANCELLED state machine) — STUDENT-only authorization on student routes
+- ✅ **Single transactional order-transition service** (`transition.service.js`) — order + audit + notification + refund-intent in one `prisma.$transaction`; cron + API both use it
+- ✅ Outlet menu CRUD (OUTLET_ADMIN only) + **outlet-scoped uploads** (server-controlled publicId: `menu-items/<outletId>/<random>`)
+- ✅ Admin (overview via DB-level groupBy, users, outlets, orders, menu, audit log) + **manual refund endpoint** (`POST /api/v1/admin/refunds` with partial-refund support + concurrent-refund race protection)
+- ✅ Outlet dashboard KPIs endpoint (`GET /api/v1/outlet/orders/kpis` — single DB groupBy)
+- ✅ Payments: Razorpay per-outlet, encrypted credentials, webhook (4 event types: `payment.captured`/`payment.failed`/`refund.processed`/`refund.failed`), **fail-closed verification** (503 on gateway-fetch failure), **amount + capture-status revalidation**, **atomic gateway-order claim** (sentinel pattern), **partial refund support** (multiple `SUPER_ADMIN_MANUAL` refunds), refund state machine (PENDING→COMPLETED/FAILED only)
+- ✅ **Full financial reliability loop**: outbox worker (auto-processes orphaned PENDING refunds every 2 min) + reconciliation worker (polls gateway for missed webhooks every 10 min) + stale-sentinel cleanup (recovers stuck `in-progress-*` sentinels)
+- ✅ **Distributed locking** for all cron jobs (Postgres advisory locks; SQLite dev = no-op)
+- ✅ Notifications: DB-persisted + socket-emitted (PREPARING notification now triggered)
+- ✅ Audit log (every state-changing operation, including reconciliation actions)
+- ✅ Socket.IO server with room-based emits + long-polling fallback (Engine.IO v3 disabled)
+- ✅ Cloudinary signed-upload endpoint (resource_type=image + allowed_formats enforced in signature)
+- ✅ **Centralized money helpers** (`lib/money.js`) — integer paise arithmetic everywhere (orders, cart, payments, admin, reconciliation)
+- ✅ Cron jobs: audit purge (90d), refresh purge (30d), **cart purge**, pickup timeout (auto-CANCELLED, calls `performTransition`), **refund outbox**, **stale-sentinel cleanup**, **refund reconciliation**, **payment reconciliation**
+- ✅ Tests: pure-logic tests (signature verification, validation schemas, refund triggers, selectedOptions normalization, integer paise, refund amount validation) + concurrency tests (order transition race, token rotation race, refund race) + real student E2E (STUDENT token + explicit 403 boundary test) + admin E2E
 
 ### Frontend status
 
-The frontend is at M1 visual-complete but still uses hardcoded `MOCK_*` data — needs wiring to the new backend API. See the audit review in the conversation history for the gap list.
+The frontend is at M1 visual-complete but still uses hardcoded `MOCK_*` data — needs wiring to the new backend API. See the audit review in the conversation history for the gap list. AuthContext now stores only minimum UI identity in localStorage (id, name, email, role, outletId, onboardingCompleted).
 
 ### TODO / next steps
 
 - [ ] Wire frontend to backend API (kill `MOCK_OUTLETS`/`MOCK_MENU`/`MOCK_ORDERS`)
 - [ ] Add TanStack Query + invalidation on socket events
-- [ ] Manual refund endpoint (super-admin via Razorpay dashboard)
-- [ ] CSV export endpoint (super-admin reports)
-- [ ] Distributed lock for cron in multi-instance deployments (Redis SET NX or Postgres advisory lock)
+- [ ] Mocked integration tests for payment/refund flows (needs client factory refactor or `clientCache` export)
+- [ ] DB-level CHECK constraints for enum fields (Postgres production only)
+- [ ] `OrderStatusEvent` table (replace JSON timeline for better querying)
+- [ ] Outlet CRUD endpoints (POST/DELETE) — currently managed via DB/seed
 - [ ] Postgres-specific `@db.Decimal(10, 2)` annotations when migrating to prod
+- [ ] CSV export endpoint (super-admin reports)
 
 ## License
 

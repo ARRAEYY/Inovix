@@ -251,15 +251,24 @@ async function issueManualRefund(orderId, { amount, reason }, actorId) {
     };
   }
 
-  // Refuse if a COMPLETED refund already exists — can't refund twice.
-  const completedRefund = order.payment.refunds.find(r => r.status === REFUND_STATUS.COMPLETED);
-  if (completedRefund) {
-    throw {
-      statusCode: 409,
-      code: 'REFUND_ALREADY_COMPLETED',
-      message: `Refund ${completedRefund.id} is already COMPLETED for this payment. Cannot refund again.`,
-    };
-  }
+  // ─── INO-AUDIT4-D23 fix: allow multiple SUPER_ADMIN_MANUAL refunds ────
+  // The previous implementation rejected if ANY COMPLETED refund existed
+  // on the payment. That made partial refunds impossible to complete:
+  //   ₹1000 payment → ₹300 manual refund COMPLETED → can't refund the
+  //   remaining ₹700 because a COMPLETED refund already exists.
+  // The remaining-refundable check below (payment.amount − sum(COMPLETED
+  // + PENDING)) is the correct guard — it prevents over-refunding without
+  // blocking legitimate partial refunds. So the "reject if COMPLETED"
+  // check is removed; the remaining-refundable check is sufficient.
+  //
+  // The retry path (PENDING refund exists) still works the same way —
+  // a PENDING refund represents an in-flight refund attempt that may
+  // not have reached the gateway yet. Retrying it is correct.
+
+  // Retry path: a PENDING refund exists (likely from a failed auto-refund
+  // OR a previous manual refund attempt whose gateway response was lost).
+  // The existing PENDING refund's amount was already validated when it
+  // was created, so we don't re-check here — we just retry the gateway call.
 
   // ─── INO-AUDIT3-1 fix: enforce refund amount bounds server-side ──────
   // The previous implementation passed `amount` straight to Razorpay without

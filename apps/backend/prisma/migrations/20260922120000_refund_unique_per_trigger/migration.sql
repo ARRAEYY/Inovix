@@ -1,0 +1,27 @@
+-- INO-AUDIT3-2: enforce (paymentId, triggeredBy) uniqueness at the DB level.
+--
+-- The application-level check in transition.service.js + admin.service.js
+-- guards against the common case, but two concurrent requests could both
+-- pass the check before either INSERT runs (TOCTOU race). This unique
+-- constraint makes the guarantee airtight — the second INSERT fails with
+-- a unique-violation, which the caller catches and translates to a 409.
+--
+-- Business model: each (payment, trigger) pair can have at most one Refund
+-- row. So one OUTLET_REJECT refund, one OUTLET_CANCEL refund, one
+-- CUSTOMER_CANCEL refund, one SUPER_ADMIN_MANUAL refund per payment.
+-- Partial/manual refunds under the same trigger reuse the existing row
+-- (the retry path in adminService.issueManualRefund).
+--
+-- Production note: if the existing data contains duplicate (paymentId,
+-- triggeredBy) pairs (e.g. from before the application-level check was
+-- added in commit ab26f92), this migration will FAIL. Audit first:
+--
+--   SELECT "paymentId", "triggeredBy", COUNT(*) AS n
+--   FROM "Refund"
+--   GROUP BY "paymentId", "triggeredBy"
+--   HAVING COUNT(*) > 1;
+--
+-- Resolve duplicates manually (keep the most recent COMPLETED one, delete
+-- the others) before re-attempting the migration.
+
+CREATE UNIQUE INDEX "Refund_paymentId_triggeredBy_key" ON "Refund"("paymentId", "triggeredBy");

@@ -102,6 +102,11 @@ const PAYMENT_METHOD = Object.freeze({
   WALLET: 'WALLET',
 });
 
+// INO-AUDIT3-8: CUSTOMER_CANCEL is now a canonical refund trigger.
+// The student-cancellation flow (POST /api/v1/orders/:id/cancel) uses
+// this trigger via the transition service's triggerOverride parameter.
+// Mirror in the validation package's refundTriggerEnum so the shared
+// schema agrees with the constants.
 const REFUND_TRIGGER = Object.freeze({
   OUTLET_REJECT: 'OUTLET_REJECT',
   OUTLET_CANCEL: 'OUTLET_CANCEL',

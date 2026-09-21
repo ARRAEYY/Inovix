@@ -1,0 +1,401 @@
+// ─────────────────────────────────────────────────────────────────────────
+// Nosh — Prisma schema
+// Spec source: Campus_Food_Design_Spec.pdf §4 (19 tables)
+//
+// Provider policy:
+//   - Development: SQLite (file:./dev.db) — zero setup
+//   - Production:  switch provider to "postgresql" and set
+//     DATABASE_URL="postgresql://..." in .env
+//
+// All money fields use Decimal(scale 10, precision 2). All ids are cuid().
+// Encrypted fields are stored as String; the encryption layer is in
+// src/lib/crypto.js (AES-256-GCM with OUTLET_CREDENTIALS_KEY).
+// ─────────────────────────────────────────────────────────────────────────
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ─── 1. User ────────────────────────────────────────────────────────────────
+model User {
+  id                  String         @id @default(cuid())
+  email               String         @unique
+  passwordHash        String?
+  googleId            String?         @unique
+  googlePicture       String?
+  name                String?
+  role                String         @default("STUDENT") // STUDENT | OUTLET_STAFF | OUTLET_ADMIN | SUPER_ADMIN
+  status              String         @default("ACTIVE")  // ACTIVE | SUSPENDED | PENDING
+  onboardingCompleted Boolean        @default(false)
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+  lastLoginAt         DateTime?
+
+  studentProfile      StudentProfile?
+  outletStaff         OutletStaff?
+  refreshTokens       RefreshToken[]
+  carts               Cart[]
+  orders              Order[]
+  auditLogs           AuditLog[]
+  notifications       Notification[]
+
+  @@index([email])
+}
+
+// ─── 2. StudentProfile ─────────────────────────────────────────────────────
+model StudentProfile {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  fullName    String
+  phone       String
+  course      String
+  year        String
+  collegeId   String
+  verifiedAt  DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([collegeId])
+  @@unique([collegeId, fullName])
+}
+
+// ─── 3. Campus ────────────────────────────────────────────────────────────
+model Campus {
+  id        String   @id @default(cuid())
+  name      String
+  code      String   @unique
+  domain    String   @unique
+  createdAt DateTime @default(now())
+
+  outlets   Outlet[]
+}
+
+// ─── 4. Outlet ────────────────────────────────────────────────────────────
+model Outlet {
+  id                        String   @id @default(cuid())
+  slug                      String   @unique
+  campusId                  String?
+  name                      String
+  description               String   @default("")
+  logoUrl                   String?
+  status                    String   @default("OPEN") // OPEN | BUSY | CLOSED | PENDING | SUSPENDED
+  defaultPrepMins           Int      @default(15)
+  pickupTimeoutMins         Int      @default(30)
+  // Encrypted at rest with AES-256-GCM via OUTLET_CREDENTIALS_KEY.
+  // Plain-text Razorpay credentials NEVER touch the DB or logs.
+  razorpayKeyIdEnc          String?
+  razorpayKeySecretEnc      String?
+  razorpayWebhookSecretEnc String?
+  rating                    Float    @default(4.5)
+  estimatedTime             String   @default("15-20 min")
+  location                  String   @default("")
+  tags                      String   @default("") // comma-separated
+  featured                  Boolean  @default(false)
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+
+  campus                    Campus?  @relation(fields: [campusId], references: [id])
+  staff                     OutletStaff[]
+  operatingHours            OperatingHours[]
+  menuCategories            MenuCategory[]
+  menuItems                 MenuItem[]
+  orders                    Order[]
+  carts                     Cart[]
+
+  @@index([campusId])
+  @@index([status])
+}
+
+// ─── 5. OutletStaff ───────────────────────────────────────────────────────
+// Per spec §4.2: 1 user = 1 outlet staff role in V1 (1-1 enforced via userId @unique).
+model OutletStaff {
+  id          String    @id @default(cuid())
+  userId      String    @unique
+  outletId    String
+  role        String    @default("STAFF") // STAFF | ADMIN
+  invitedBy   String?
+  acceptedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  outlet      Outlet    @relation(fields: [outletId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, outletId])
+  @@index([outletId])
+}
+
+// ─── 6. OperatingHours ────────────────────────────────────────────────────
+model OperatingHours {
+  id         String   @id @default(cuid())
+  outletId   String
+  dayOfWeek  Int      // 0 = Sunday, 6 = Saturday
+  openTime   String   // HH:MM 24h
+  closeTime   String   // HH:MM 24h
+  isClosed   Boolean  @default(false)
+
+  outlet     Outlet   @relation(fields: [outletId], references: [id], onDelete: Cascade)
+
+  @@unique([outletId, dayOfWeek])
+}
+
+// ─── 7. MenuCategory ──────────────────────────────────────────────────────
+model MenuCategory {
+  id         String      @id @default(cuid())
+  outletId   String
+  name       String
+  sortOrder  Int         @default(0)
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  outlet     Outlet      @relation(fields: [outletId], references: [id], onDelete: Cascade)
+  items      MenuItem[]
+
+  @@unique([outletId, name])
+  @@index([outletId, sortOrder])
+}
+
+// ─── 8. MenuItem ──────────────────────────────────────────────────────────
+model MenuItem {
+  id              String            @id @default(cuid())
+  outletId        String
+  categoryId      String?
+  name            String
+  description     String            @default("")
+  price           Decimal           
+  imageUrl        String?
+  isAvailable     Boolean           @default(true)
+  prepTimeMins    Int               @default(0)
+  discount        String?
+  popular         Boolean           @default(false)
+  vegetarian      Boolean           @default(false)
+  dietaryFlags    String            @default("") // comma-separated: VEG,NONVEG,VEGAN,JAIN
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  outlet          Outlet            @relation(fields: [outletId], references: [id], onDelete: Cascade)
+  category        MenuCategory?     @relation(fields: [categoryId], references: [id])
+  customizationGroups CustomizationGroup[]
+  cartItems       CartItem[]
+  orderItems      OrderItem[]
+
+  @@index([outletId, isAvailable])
+  @@index([categoryId])
+}
+
+// ─── 9. CustomizationGroup ────────────────────────────────────────────────
+model CustomizationGroup {
+  id          String   @id @default(cuid())
+  menuItemId  String
+  name        String   // e.g. "Spice level", "Add-ons"
+  minSelect   Int      @default(0)
+  maxSelect   Int      @default(1)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  menuItem    MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  options     CustomizationOption[]
+}
+
+// ─── 10. CustomizationOption ──────────────────────────────────────────────
+model CustomizationOption {
+  id          String   @id @default(cuid())
+  groupId     String
+  label       String
+  priceDelta  Decimal   @default(0)
+  createdAt   DateTime @default(now())
+
+  group       CustomizationGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+}
+
+// ─── 11. Cart ─────────────────────────────────────────────────────────────
+// One active cart per (student, outlet). Expires after 24h of inactivity.
+model Cart {
+  id          String   @id @default(cuid())
+  studentId   String
+  outletId    String
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  student     User     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  outlet      Outlet   @relation(fields: [outletId], references: [id], onDelete: Cascade)
+  items       CartItem[]
+
+  @@unique([studentId, outletId])
+  @@index([studentId])
+  @@index([expiresAt])
+}
+
+// ─── 12. CartItem ─────────────────────────────────────────────────────────
+model CartItem {
+  id              String   @id @default(cuid())
+  cartId          String
+  menuItemId      String
+  quantity        Int
+  selectedOptions String   @default("[]") // JSON snapshot of option ids
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  cart            Cart     @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  menuItem        MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+
+  @@index([cartId])
+}
+
+// ─── 13. Order ─────────────────────────────────────────────────────────────
+model Order {
+  id              String    @id @default(cuid())
+  orderNumber     String    @unique
+  studentId       String
+  outletId        String
+  // Snapshot at order time — never changes after creation
+  outletSnapshot  String    @default("{}") // JSON
+  status          String    @default("PENDING")
+  // PENDING → ACCEPTED → PREPARING → READY → COMPLETED
+  //        ↘ REJECTED (pre-ACCEPTED only, full refund)
+  //          ↘ CANCELLED (pre-READY only, full refund; READY→CANCELLED is no-show, no refund)
+  totalAmount     Decimal   
+  subtotal        Decimal   
+  discount        Decimal    @default(0)
+  platformFee     Decimal    @default(0)
+  notes           String    @default("")
+  pickupCode      String    @unique
+  scheduledFor    DateTime?
+  timeline        String    @default("[]") // JSON array of { status, at, by }
+  cancelReason    String?
+  createdAt       DateTime  @default(now())
+  acceptedAt      DateTime?
+  readyAt         DateTime?
+  completedAt     DateTime?
+  cancelledAt     DateTime?
+  updatedAt       DateTime  @updatedAt
+
+  student         User      @relation(fields: [studentId], references: [id])
+  outlet          Outlet    @relation(fields: [outletId], references: [id])
+  items           OrderItem[]
+  payment         Payment?
+  notifications   Notification[]
+
+  @@index([studentId, status, createdAt])
+  @@index([outletId, status, createdAt])
+}
+
+// ─── 14. OrderItem ─────────────────────────────────────────────────────────
+model OrderItem {
+  id              String   @id @default(cuid())
+  orderId         String
+  menuItemId      String
+  // Snapshot — survives later menu edits / deletions
+  name            String
+  price           Decimal  
+  quantity        Int
+  imageUrl        String?
+  optionsSnapshot String   @default("[]") // JSON
+  itemTotal       Decimal  
+
+  order           Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItem        MenuItem @relation(fields: [menuItemId], references: [id])
+
+  @@index([orderId])
+}
+
+// ─── 15. Payment ──────────────────────────────────────────────────────────
+model Payment {
+  id                String    @id @default(cuid())
+  orderId           String    @unique
+  gatewayRef        String?   // Razorpay order id / payment id
+  razorpayPaymentId String?
+  razorpayOrderId   String?
+  razorpaySignature String?
+  amount            Decimal   
+  status            String    @default("PENDING") // PENDING | PAID | FAILED | REFUNDED
+  method            String?   // ONLINE | WALLET
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  order             Order     @relation(fields: [orderId], references: [id])
+  refunds           Refund[]
+
+  @@index([status])
+}
+
+// ─── 16. Refund ───────────────────────────────────────────────────────────
+model Refund {
+  id            String    @id @default(cuid())
+  paymentId     String
+  amount        Decimal   
+  reason        String
+  gatewayRef    String?
+  status        String    @default("PENDING") // PENDING | COMPLETED | FAILED
+  triggeredBy   String    // OUTLET_REJECT | OUTLET_CANCEL | SUPER_ADMIN_MANUAL
+  initiatedBy   String?   // userId of the actor
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  payment       Payment   @relation(fields: [paymentId], references: [id])
+
+  @@index([paymentId])
+}
+
+// ─── 17. Notification ──────────────────────────────────────────────────────
+model Notification {
+  id         String    @id @default(cuid())
+  userId     String
+  type       String    // ORDER_ACCEPTED | ORDER_READY | ORDER_COMPLETED | ORDER_REJECTED | ORDER_CANCELLED
+  title      String
+  message    String
+  payload    String    @default("{}") // JSON
+  isRead     Boolean   @default(false)
+  orderId    String?
+  createdAt  DateTime  @default(now())
+
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  order      Order?    @relation(fields: [orderId], references: [id])
+
+  @@index([userId, isRead, createdAt])
+}
+
+// ─── 18. RefreshToken ─────────────────────────────────────────────────────
+model RefreshToken {
+  id          String    @id @default(cuid())
+  userId      String
+  tokenHash   String    @unique
+  expiresAt   DateTime
+  revokedAt   DateTime?
+  replacedBy  String?
+  createdAt   DateTime  @default(now())
+
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+// ─── 19. AuditLog ─────────────────────────────────────────────────────────
+model AuditLog {
+  id          String    @id @default(cuid())
+  actorUserId String?
+  action      String    // e.g. ORDER_STATUS_CHANGED, USER_SUSPENDED
+  targetType  String    // Order | Outlet | User | MenuItem | Payment | Refund
+  targetId    String?
+  before      String    @default("{}") // JSON snapshot pre-change
+  after       String    @default("{}") // JSON snapshot post-change
+  ip          String?
+  userAgent   String?
+  createdAt   DateTime  @default(now())
+
+  actor       User?     @relation(fields: [actorUserId], references: [id])
+
+  @@index([targetType, targetId])
+  @@index([actorUserId])
+  @@index([createdAt])
+}

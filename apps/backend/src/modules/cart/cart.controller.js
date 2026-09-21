@@ -3,7 +3,7 @@ const cartService = require('./cart.service');
 async function getCart(req, res, next) {
   try {
     const studentId = req.user.id;
-    const { outletId } = req.query;
+    const { outletId } = req.params;
     const cart = await cartService.getCart(studentId, outletId);
     res.status(200).json({ success: true, data: cart });
   } catch (error) {

@@ -115,7 +115,6 @@ const StudentLogin = () => {
                   placeholder="Your password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  required
                   className="px-5 py-3.5 border border-input rounded-xl text-base outline-none transition-all text-foreground bg-background/50 backdrop-blur placeholder:text-muted-foreground placeholder:font-normal focus:border-primary focus:ring-4 focus:ring-primary/10"
                 />
                 <div className="flex justify-end mt-1">

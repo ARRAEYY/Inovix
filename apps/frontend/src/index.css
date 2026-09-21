@@ -1,34 +1,50 @@
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
+@import "tailwindcss";
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* Design system — sourced from src/design-system.json
+   UI/UX Pro Max v2.13.0 query: "Food Delivery / On-Demand" palette
+   "Appetizing orange + trust blue" */
+@theme {
+  /* Semantic colors */
+  --color-background: #FFF7ED;
+  --color-foreground: #0F172A;
+  --color-card: #FFFFFF;
+  --color-card-foreground: #0F172A;
+  --color-muted: #FDF4F0;
+  --color-muted-foreground: #475569;
+  --color-border: #FCEAE1;
+  --color-input: #FED7AA;
+  --color-ring: #EA580C;
+
+  --color-primary: #EA580C;
+  --color-primary-hover: #C2410C;
+  --color-primary-light: #FED7AA;
+  --color-primary-foreground: #FFFFFF;
+
+  --color-secondary: #F97316;
+  --color-secondary-foreground: #000000;
+
+  --color-accent: #2563EB;
+  --color-accent-light: #DBEAFE;
+  --color-accent-foreground: #FFFFFF;
+
+  --color-destructive: #DC2626;
+  --color-destructive-foreground: #FFFFFF;
+
+  --color-success: #16A34A;
+  --color-warning: #F59E0B;
+  --color-info: #2563EB;
+
+  /* Font family */
+  --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+}
 
 @layer base {
-  :root {
-    --bg-color: #FFF7ED;
-    --card: #FFFFFF;
-    --muted: #FDF4F0;
-    --text-dark: #0F172A;
-    --text-gray: #475569;
-    --text-light: #94A3B8;
-    --primary: #EA580C;
-    --primary-hover: #C2410C;
-    --primary-light: #FED7AA;
-    --secondary: #F97316;
-    --accent: #2563EB;
-    --accent-light: #DBEAFE;
-    --border-color: #FCEAE1;
-    --input-border: #FED7AA;
-    --destructive: #DC2626;
-    --ring: #EA580C;
-    --success: #16A34A;
-    --warning: #F59E0B;
-    --info: #2563EB;
-  }
-
   body {
-    @apply bg-[#FFF7ED] text-[#0F172A] antialiased;
+    background-color: #FFF7ED;
+    color: #0F172A;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
     font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   }
 }

@@ -3,6 +3,7 @@ const { audit } = require('../../lib/audit');
 const { emitOrderEvent } = require('../../lib/socket');
 const { ORDER_STATUS } = require('../../lib/constants');
 const { processAutoRefundOnTransition } = require('../payments/payments.service');
+const notificationsService = require('../notifications/notifications.service');
 
 async function createOrder(req, res, next) {
   try {
@@ -28,6 +29,10 @@ async function cancelOrder(req, res, next) {
   try {
     const { updated, before } = await ordersService.cancelOrder(req.user.id, req.params.orderId);
 
+    // INO-P0-3: process refund BEFORE responding so the HTTP response reflects
+    // the actual refund outcome. (Refund idempotency is enforced in
+    // processAutoRefundOnTransition — it now checks for an existing Refund
+    // row with the same paymentId + trigger before issuing another.)
     await processAutoRefundOnTransition(req.params.orderId, before.status, ORDER_STATUS.CANCELLED, req.user.id, 'CUSTOMER_CANCEL');
 
     await audit({
@@ -40,9 +45,17 @@ async function cancelOrder(req, res, next) {
       req,
     });
 
+    // INO-P0-2 fix: socket room names must include the `outlet:` prefix —
+    // the socket server joins outlet staff to `outlet:<id>` rooms (see
+    // lib/socket.js). Emitting to bare `<outletId>` reaches no-one.
     emitOrderEvent('order:status:changed', `student:${updated.studentId}`, { order: updated });
-    emitOrderEvent('order:status:changed', updated.outletId, { order: updated });
-    require('../notifications/notifications.service').createForOrder(updated, req.user.id);
+    emitOrderEvent('order:status:changed', `outlet:${updated.outletId}`, { order: updated });
+
+    // INO-P0-11 fix: await notification creation so a failure here surfaces
+    // as a 500 instead of being silently lost. Previously the promise was
+    // floating — the HTTP response could succeed while notification
+    // creation failed silently.
+    await notificationsService.createForOrder(updated, req.user.id);
 
     res.status(200).json({ success: true, data: updated });
   } catch (error) {
@@ -126,21 +139,31 @@ async function updateOrderStatus(req, res, next) {
       req,
     });
 
+    // INO-P0-3: process refund BEFORE responding so the HTTP response reflects
+    // the actual refund outcome.
     if (status === ORDER_STATUS.REJECTED || status === ORDER_STATUS.CANCELLED) {
       await processAutoRefundOnTransition(orderId, before.status, status, req.user.id);
     }
 
-    // Real-time updates to both outlet and student
-    emitOrderEvent('order:status:changed', outletId, { order: updated });
+    // INO-P0-2 fix: socket room names must include the `outlet:` prefix.
+    // Real-time updates to both outlet and student.
+    emitOrderEvent('order:status:changed', `outlet:${outletId}`, { order: updated });
     emitOrderEvent('order:status:changed', `student:${updated.studentId}`, { order: updated });
 
-    // Notification + socket for student
-    if (status === ORDER_STATUS.ACCEPTED || status === ORDER_STATUS.READY ||
-        status === ORDER_STATUS.COMPLETED || status === ORDER_STATUS.REJECTED ||
-        status === ORDER_STATUS.CANCELLED) {
-      // The notification is created by the notifications module; we just emit the socket event.
-      // (notifications.service.createForOrder handles the DB row.)
-      require('../notifications/notifications.service').createForOrder(updated, req.user.id);
+    // INO-P0-10 fix: PREPARING was missing from the notification trigger
+    // list — students never got a "your order is being prepared" push.
+    // notifications.service.createForOrder already has the template; the
+    // controller just wasn't calling it for PREPARING transitions.
+    // INO-P0-11 fix: also await the call so failures surface.
+    if (
+      status === ORDER_STATUS.ACCEPTED ||
+      status === ORDER_STATUS.PREPARING ||
+      status === ORDER_STATUS.READY ||
+      status === ORDER_STATUS.COMPLETED ||
+      status === ORDER_STATUS.REJECTED ||
+      status === ORDER_STATUS.CANCELLED
+    ) {
+      await notificationsService.createForOrder(updated, req.user.id);
     }
 
     res.status(200).json({ success: true, data: updated });

@@ -194,8 +194,34 @@ async function revokeAllForUser(userId) {
 
 async function revokeRefreshToken(presentedToken) {
   if (!presentedToken || !presentedToken.includes('.')) return false;
-  const [idPart] = presentedToken.split('.', 1);
+  const [idPart, rawPart] = presentedToken.split('.', 2);
+  const tokenHash = hashToken(rawPart);
+
   try {
+    // INO-adj-21 fix: verify the presented secret matches the stored hash
+    // before revoking. The previous implementation took the id part only
+    // and unconditionally updated `revokedAt`, so knowing a refresh-token
+    // DB id (e.g. leaked via logs or another vector) was enough to revoke
+    // any user's session — a DoS / session-revocation issue.
+    //
+    // Now we use the same verification primitive as `rotateRefreshToken`:
+    // look up the row, compare the hash constant-time, and only revoke if
+    // it matches. A bad hash returns false (no-op) just like rotation does.
+    const stored = await prisma.refreshToken.findUnique({ where: { id: idPart } });
+    if (!stored) return false;
+
+    const storedHashBuf = Buffer.from(stored.tokenHash, 'hex');
+    const presentedHashBuf = Buffer.from(tokenHash, 'hex');
+    if (
+      storedHashBuf.length !== presentedHashBuf.length ||
+      !crypto.timingSafeEqual(storedHashBuf, presentedHashBuf)
+    ) {
+      return false;
+    }
+
+    // Idempotent: revoking an already-revoked token is a no-op success.
+    if (stored.revokedAt) return true;
+
     await prisma.refreshToken.update({
       where: { id: idPart },
       data: { revokedAt: new Date() },

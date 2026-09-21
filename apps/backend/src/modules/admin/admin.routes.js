@@ -7,6 +7,7 @@ const {
   updateUserStatusSchema,
   updateOutletStatusSchema,
   updateMenuAvailabilitySchema,
+  refundCreateSchema,
 } = require('@nosh/validation');
 const { z } = require('zod');
 
@@ -33,6 +34,15 @@ router.get('/orders', validateQuery(z.object({
   pageSize: z.coerce.number().int().min(1).max(500).optional(),
 })), adminController.getOrders);
 router.get('/orders/:orderId', adminController.getOrder);
+
+// INO-P0-7 / INO-P0-8 / INO-P0-9: manual super-admin refund endpoint.
+// - Issues a fresh SUPER_ADMIN_MANUAL refund for a PAID payment, OR
+// - Retries an existing PENDING refund (recovery for finding #8 — auto-
+//   refund left the system in CANCELLED+PAID+PENDING state).
+// - Rejects if a COMPLETED refund already exists.
+// - The client-supplied `trigger` field in the schema is intentionally
+//   ignored — the service always sets triggeredBy = SUPER_ADMIN_MANUAL.
+router.post('/refunds', validateBody(refundCreateSchema), adminController.issueManualRefund);
 
 router.get('/menu', adminController.getMenu);
 router.get('/menu/:itemId', adminController.getMenuItem);

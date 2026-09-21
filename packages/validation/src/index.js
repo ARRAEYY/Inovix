@@ -52,7 +52,13 @@ const orderStatusEnum = z.enum([
   'PENDING', 'ACCEPTED', 'PREPARING', 'READY', 'COMPLETED', 'REJECTED', 'CANCELLED',
 ]);
 
-const outletStatusEnum = z.enum(['OPEN', 'BUSY', 'CLOSED']);
+// INO-adj-23 fix: the previous enum only accepted OPEN/BUSY/CLOSED, but
+// constants.js defines 5 outlet statuses (OPEN/BUSY/CLOSED/PENDING/
+// SUSPENDED). Super-admins can change an outlet to PENDING or SUSPENDED
+// via the admin UI, but the validation layer rejected those values,
+// producing a confusing frontend/backend contract mismatch
+// (admin clicks SUSPENDED → backend returns 400).
+const outletStatusEnum = z.enum(['OPEN', 'BUSY', 'CLOSED', 'PENDING', 'SUSPENDED']);
 
 const userStatusEnum = z.enum(['ACTIVE', 'SUSPENDED']);
 

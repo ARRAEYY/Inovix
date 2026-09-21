@@ -9,14 +9,33 @@
 
 const cartRepo = require('./cart.repository');
 const menuRepo = require('../menu/menu.repository');
+const { validateAndComputeOptionsDelta } = require('../menu/customization');
+const { OUTLET_STATUS, ERROR_CODES } = require('../../lib/constants');
 const prisma = require('../../lib/prisma');
+
+// INO-P0-15: outlets in any of these statuses cannot accept new cart
+// activity. The previous `getCart` only checked `if (!outlet)` — CLOSED,
+// SUSPENDED, and PENDING outlets still let students build carts, which
+// the order layer later rejected (creating a confusing UX) or — for
+// SUSPENDED/PENDING — silently allowed cart operations on outlets that
+// shouldn't be orderable at all.
+const NON_ORDERABLE_OUTLET_STATUSES = new Set([
+  OUTLET_STATUS.CLOSED,
+  OUTLET_STATUS.SUSPENDED,
+  OUTLET_STATUS.PENDING,
+]);
 
 async function getCart(studentId, outletId) {
   if (!outletId) throw { statusCode: 400, message: 'outletId is required' };
-  // Verify outlet exists + is open
   const outlet = await prisma.outlet.findUnique({ where: { id: outletId } });
   if (!outlet) throw { statusCode: 404, message: 'Outlet not found' };
-
+  if (NON_ORDERABLE_OUTLET_STATUSES.has(outlet.status)) {
+    throw {
+      statusCode: 400,
+      code: ERROR_CODES.OUTLET_CLOSED,
+      message: `Outlet is ${outlet.status} and not accepting orders right now`,
+    };
+  }
   return cartRepo.findOrCreateCart(studentId, outletId);
 }
 
@@ -34,6 +53,15 @@ async function addItem(studentId, outletId, { menuItemId, quantity, selectedOpti
   if (!menuItem.isAvailable) {
     throw { statusCode: 400, message: `${menuItem.name} is currently unavailable` };
   }
+  // INO-P0-14 fix: validate selectedOptions at cart-add time too (not just
+  // at order creation). Without this, a student could add a cart item with
+  // a non-existent optionId or an option from a different menu item, and
+  // the bad data would only fail at checkout. Now we reject early.
+  // The returned priceDelta is discarded here — the cart preview uses the
+  // base menu price (see `computeTotals`); the order-time computation is
+  // the source of truth for the actual charge.
+  validateAndComputeOptionsDelta(menuItem, selectedOptions);
+
   const item = await cartRepo.addItem(cart.id, menuItemId, quantity, selectedOptions);
   // Refresh cart expiry
   await prisma.cart.update({

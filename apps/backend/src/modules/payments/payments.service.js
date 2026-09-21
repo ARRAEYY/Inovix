@@ -74,6 +74,15 @@ async function setOutletRazorpayCredentials(outletId, { keyId, keySecret, webhoo
  * Create a Razorpay Order at the gateway for the given internal Order.
  * The student's frontend uses this gateway order id to invoke the
  * Razorpay checkout flow.
+ *
+ * INO-P0-6 fix: idempotent — if the Payment row already has a
+ * `razorpayOrderId` and is still PENDING, return the existing gateway
+ * order info instead of creating a new one. The previous implementation
+ * unconditionally called `client.orders.create(...)`, so a double-click,
+ * network retry, or duplicate frontend request would mint N gateway orders
+ * for one internal order and overwrite `payment.razorpayOrderId` each time,
+ * making earlier gateway orders impossible to associate with the internal
+ * payment during reconciliation.
  */
 async function createRazorpayOrder(orderId, actorId) {
   const order = await prisma.order.findUnique({
@@ -91,10 +100,27 @@ async function createRazorpayOrder(orderId, actorId) {
     throw { statusCode: 409, message: 'Order is already paid' };
   }
 
+  const amountPaise = Math.round(Number(order.totalAmount) * 100);
+  const keyId = decrypt(order.outlet.razorpayKeyIdEnc);
+
+  // Idempotent: if we already have a gateway order id and the payment is
+  // still PENDING (not yet verified), reuse it. The frontend can re-enter
+  // checkout with the same gateway order id.
+  if (
+    order.payment?.razorpayOrderId &&
+    order.payment?.status === PAYMENT_STATUS.PENDING
+  ) {
+    return {
+      razorpayOrderId: order.payment.razorpayOrderId,
+      amount: amountPaise,
+      currency: 'INR',
+      keyId,
+    };
+  }
+
   const client = await getOutletRazorpayClient(order.outletId);
 
   // Razorpay expects amount in paise (1 INR = 100 paise)
-  const amountPaise = Math.round(Number(order.totalAmount) * 100);
   const gatewayOrder = await client.orders.create({
     amount: amountPaise,
     currency: 'INR',
@@ -128,7 +154,7 @@ async function createRazorpayOrder(orderId, actorId) {
     razorpayOrderId: gatewayOrder.id,
     amount: amountPaise,
     currency: 'INR',
-    keyId: decrypt((await prisma.outlet.findUnique({ where: { id: order.outletId } })).razorpayKeyIdEnc),
+    keyId,
   };
 }
 
@@ -182,8 +208,15 @@ async function verifyRazorpayPayment({ razorpayOrderId, razorpayPaymentId, razor
   }
 
   const outlet = payment.order.outlet;
-  if (!outlet.razorpayKeySecretEnc || !outlet.razorpayWebhookSecretEnc) {
-    throw { statusCode: 400, message: 'Outlet Razorpay credentials not configured' };
+  // INO-P0-4 fix: the checkout signature is HMAC-SHA256 keyed by the outlet's
+  // API *key secret* (razorpayKeySecretEnc). The webhook secret
+  // (razorpayWebhookSecretEnc) is a separate credential used only to verify
+  // the webhook path. The previous check required BOTH, which meant an
+  // outlet with a valid API key/secret but no webhook secret configured
+  // would fail the normal /razorpay/verify checkout path — the student
+  // couldn't complete payment even though the gateway side was fine.
+  if (!outlet.razorpayKeySecretEnc) {
+    throw { statusCode: 400, message: 'Outlet Razorpay API key/secret not configured' };
   }
   const keySecret = decrypt(outlet.razorpayKeySecretEnc);
 
@@ -232,7 +265,10 @@ async function verifyRazorpayPayment({ razorpayOrderId, razorpayPaymentId, razor
   });
 
   const { emitOrderEvent } = require('../../lib/socket');
-  emitOrderEvent('order:new', payment.order.outletId, { order: updated.order });
+  // INO-P0-2 fix: socket room name must include the `outlet:` prefix — the
+  // socket server joins outlet staff to `outlet:<id>` rooms (lib/socket.js).
+  // Emitting to bare `<outletId>` reaches no-one.
+  emitOrderEvent('order:new', `outlet:${payment.order.outletId}`, { order: updated.order });
 
   return updated;
 }
@@ -296,7 +332,8 @@ async function handleRazorpayWebhook(rawBody, signature, webhookSecret) {
 
   const updatedOrder = await prisma.order.findUnique({ where: { id: payment.order.id } });
   const { emitOrderEvent } = require('../../lib/socket');
-  emitOrderEvent('order:new', payment.order.outletId, { order: updatedOrder });
+  // INO-P0-2 fix: socket room name with `outlet:` prefix (see verify path).
+  emitOrderEvent('order:new', `outlet:${payment.order.outletId}`, { order: updatedOrder });
 
   return { verified: true };
 }
@@ -321,6 +358,21 @@ async function processAutoRefundOnTransition(orderId, fromStatus, toStatus, acto
   if (!order || !order.payment) return null;
   if (order.payment.status !== PAYMENT_STATUS.PAID) return null;
 
+  // INO-P0-3 fix: idempotency at the payment layer. Before issuing a new
+  // gateway refund, check whether a Refund row already exists for this
+  // (paymentId, triggeredBy) pair. If it does, return it instead of
+  // calling client.payments.refund again. This makes retry / cron /
+  // double-trigger paths safe — a duplicate webhook delivery or a
+  // controller retry won't double-charge the gateway.
+  //
+  // The cleanest invariant is a DB unique constraint on
+  // (paymentId, triggeredBy) — that requires a migration and is on the
+  // follow-up list. The service-level check here is the P0 minimum.
+  const existing = await prisma.refund.findFirst({
+    where: { paymentId: order.payment.id, triggeredBy: trigger },
+  });
+  if (existing) return existing;
+
   // Issue refund at gateway
   let gatewayRef = null;
   let refundStatus = 'PENDING';
@@ -338,7 +390,7 @@ async function processAutoRefundOnTransition(orderId, fromStatus, toStatus, acto
     refundStatus = gatewayRefund.status || 'PENDING';
   } catch (err) {
     console.error('[payments] auto-refund failed at gateway:', err.message);
-    // Mark refund as PENDING — super admin can retry via dashboard.
+    // Mark refund as PENDING — super admin can retry via /api/v1/admin/refunds.
   }
 
   // Record the Refund row

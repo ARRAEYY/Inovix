@@ -109,7 +109,13 @@ function signUpload(opts = {}) {
   const tags = ['nosh', folder];
   if (opts.outletId) tags.push(`outlet:${opts.outletId}`);
   if (opts.ownerId) tags.push(`owner:${opts.ownerId}`);
-  if (opts.tags) Object.values(opts.tags).forEach(t => tags.push(String(t)));
+  // INO-adj-19 fix: previously `opts.tags` (client-supplied) was appended
+  // to the signed payload, letting any authenticated client inject
+  // arbitrary Cloudinary tags into the media library. Tags are not an
+  // authorization mechanism, but untrusted metadata pollutes the library
+  // and could be used to confuse downstream tooling. Server-only now.
+  // (The `opts.tags` field is still accepted for API compatibility but is
+  // silently ignored.)
 
   const paramsToSign = {
     folder,

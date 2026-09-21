@@ -14,6 +14,7 @@ const crypto = require('crypto');
 const prisma = require('../../lib/prisma');
 const ordersRepo = require('./orders.repository');
 const menuRepo = require('../menu/menu.repository');
+const { validateAndComputeOptionsDelta } = require('../menu/customization');
 const { ORDER_STATUS, ALLOWED_TRANSITIONS, ERROR_CODES } = require('../../lib/constants');
 
 const PLATFORM_FEE = 5;
@@ -64,13 +65,21 @@ async function createOrder(studentId, payload) {
       throw { statusCode: 400, code: ERROR_CODES.ITEM_UNAVAILABLE, message: `Menu item ${menuItem.name} is currently unavailable` };
     }
 
-    const itemTotal = Number(menuItem.price) * itemReq.quantity;
+    // INO-P0-5 fix: validate selectedOptions against the menu item's
+    // customization groups + options (option must belong to a group on
+    // this menu item; group minSelect/maxSelect enforced; duplicates
+    // rejected). Also compute the price delta so the actual charge
+    // reflects customizations. Previously `itemTotal` was
+    // `menuItem.price * quantity` — extra cheese at +₹30 was free.
+    const optionsDelta = validateAndComputeOptionsDelta(menuItem, itemReq.selectedOptions);
+    const unitPrice = Number(menuItem.price) + optionsDelta;
+    const itemTotal = unitPrice * itemReq.quantity;
     subtotal += itemTotal;
 
     processedItems.push({
       menuItemId: menuItem.id,
       name: menuItem.name,
-      price: Number(menuItem.price),
+      price: unitPrice,
       quantity: itemReq.quantity,
       image: menuItem.imageUrl,
       selectedOptions: itemReq.selectedOptions || [],

@@ -36,7 +36,12 @@ function initSocketServer(httpServer) {
     // orders preferred → fallback. College networks that block ws://
     // will silently downgrade to polling.
     transports: ['websocket', 'polling'],
-    allowEIO3: true,
+    // INO-AUDIT3-11: removed allowEIO3: true. Engine.IO v3 is the protocol
+    // used by Socket.IO v2 clients (2018-era). Our frontend uses Socket.IO
+    // v4+ which speaks v4 by default. Leaving v3 enabled was unnecessary
+    // attack surface — the v3 protocol had several CVEs over its lifetime
+    // that v4 doesn't have. If a legacy client ever needs to connect,
+    // re-enable here with a comment explaining why.
   });
 
   // ─── INO-012 fix: harden socket auth ─────────────────────────────────────

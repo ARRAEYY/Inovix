@@ -47,7 +47,7 @@ const CartDrawer = ({ isOpen, onClose, cart, outletName, onUpdateQuantity, onChe
             animate={{ x: 0 }}
             exit={{ x: '100%' }}
             transition={{ type: 'spring', stiffness: 320, damping: 32 }}
-            className="fixed right-0 top-0 bottom-0 w-full max-w-md bg-card z-50 flex flex-col shadow-2xl"
+            className="fixed top-0 right-0 bottom-0 w-full max-w-md bg-card z-50 flex flex-col shadow-2xl"
           >
             {/* Header */}
             <div className="flex items-start justify-between p-5 border-b border-border">

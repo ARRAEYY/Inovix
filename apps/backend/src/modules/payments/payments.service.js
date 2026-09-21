@@ -28,6 +28,7 @@ const prisma = require('../../lib/prisma');
 const { encrypt, decrypt, safeEqual } = require('../../lib/crypto');
 const { PAYMENT_STATUS, REFUND_TRIGGER, REFUND_TRIGGERS, REFUND_STATUS } = require('../../lib/constants');
 const { audit } = require('../../lib/audit');
+const { toPaise, isFullyRefunded } = require('../../lib/money');
 
 // ─── Razorpay client cache (one per outlet, keyed by outletId) ──────────────
 const clientCache = new Map();
@@ -42,6 +43,12 @@ const clientCache = new Map();
 //   sum(COMPLETED refunds) == payment.amount → REFUNDED (full refund)
 //   sum(COMPLETED refunds) <  payment.amount → PAID (partial refund or none)
 //   PENDING refunds are in-flight money, NOT counted toward "fully refunded"
+//
+// INO-AUDIT5-D28 fix: use integer paise (toPaise from lib/money.js) instead
+// of Number() + epsilon. The previous implementation used floating-point
+// arithmetic + a 0.01 epsilon for safety, which defeated the purpose of
+// the centralized money helpers. Now both sides convert to paise (integer)
+// and compare exactly — no epsilon required.
 async function markPaymentRefundedIfFullyRefunded(paymentId) {
   const payment = await prisma.payment.findUnique({
     where: { id: paymentId },
@@ -49,17 +56,11 @@ async function markPaymentRefundedIfFullyRefunded(paymentId) {
   });
   if (!payment) return null;
 
-  const completedRefundSum = payment.refunds
-    .filter(r => r.status === REFUND_STATUS.COMPLETED)
-    .reduce((sum, r) => sum + Number(r.amount), 0);
+  // INO-AUDIT5-D28: use the centralized isFullyRefunded helper from
+  // lib/money.js — integer paise comparison, no floating-point, no epsilon.
+  const fullyRefunded = isFullyRefunded(payment.amount, payment.refunds);
 
-  // Use a small epsilon for floating-point safety (Decimal → Number can
-  // introduce tiny errors). 0.01 paise = 0.0001 rupees, well below any
-  // real refund amount.
-  const paymentAmount = Number(payment.amount);
-  const isFullyRefunded = completedRefundSum >= paymentAmount - 0.01;
-
-  if (isFullyRefunded && payment.status !== PAYMENT_STATUS.REFUNDED) {
+  if (fullyRefunded && payment.status !== PAYMENT_STATUS.REFUNDED) {
     return prisma.payment.update({
       where: { id: paymentId },
       data: { status: PAYMENT_STATUS.REFUNDED },
@@ -69,7 +70,7 @@ async function markPaymentRefundedIfFullyRefunded(paymentId) {
   // (Defensive — shouldn't happen given the new logic, but if an old
   // row was incorrectly marked REFUNDED, this corrects it on the next
   // refund event.)
-  if (!isFullyRefunded && payment.status === PAYMENT_STATUS.REFUNDED) {
+  if (!fullyRefunded && payment.status === PAYMENT_STATUS.REFUNDED) {
     return prisma.payment.update({
       where: { id: paymentId },
       data: { status: PAYMENT_STATUS.PAID },
@@ -723,92 +724,24 @@ async function handleRefundEvent(event, eventType) {
   return { ignored: true };
 }
 
-/**
- * Auto-refund on REJECTED or CANCELLED transitions (pre-READY).
- *
- * Called from orders.controller after a status change to REJECTED or
- * CANCELLED. Computes the refund trigger from the transition and:
- *   - If trigger is null (READY → CANCELLED, no-show): no refund.
- *   - Else: issues a full refund via Razorpay, records a Refund row.
- */
-async function processAutoRefundOnTransition(orderId, fromStatus, toStatus, actorId, triggerOverride = null) {
-  const triggerKey = `${fromStatus}_TO_${toStatus}`;
-  const trigger = triggerOverride || REFUND_TRIGGERS[triggerKey];
-  if (!trigger) return null; // no refund for this transition
-
-  const order = await prisma.order.findUnique({
-    where: { id: orderId },
-    include: { payment: true, outlet: true },
-  });
-  if (!order || !order.payment) return null;
-  if (order.payment.status !== PAYMENT_STATUS.PAID) return null;
-
-  // INO-P0-3 fix: idempotency at the payment layer. Before issuing a new
-  // gateway refund, check whether a Refund row already exists for this
-  // (paymentId, triggeredBy) pair. If it does, return it instead of
-  // calling client.payments.refund again. This makes retry / cron /
-  // double-trigger paths safe — a duplicate webhook delivery or a
-  // controller retry won't double-charge the gateway.
-  //
-  // The cleanest invariant is a DB unique constraint on
-  // (paymentId, triggeredBy) — that requires a migration and is on the
-  // follow-up list. The service-level check here is the P0 minimum.
-  const existing = await prisma.refund.findFirst({
-    where: { paymentId: order.payment.id, triggeredBy: trigger },
-  });
-  if (existing) return existing;
-
-  // Issue refund at gateway
-  let gatewayRef = null;
-  let refundStatus = 'PENDING';
-  try {
-    const client = await getOutletRazorpayClient(order.outletId);
-    const gatewayRefund = await client.payments.refund(order.payment.razorpayPaymentId, {
-      amount: Math.round(Number(order.totalAmount) * 100),
-      notes: {
-        orderId: order.id,
-        trigger,
-        reason: `Auto refund on ${fromStatus} → ${toStatus}`,
-      },
-    });
-    gatewayRef = gatewayRefund.id;
-    refundStatus = gatewayRefund.status || 'PENDING';
-  } catch (err) {
-    console.error('[payments] auto-refund failed at gateway:', err.message);
-    // Mark refund as PENDING — super admin can retry via /api/v1/admin/refunds.
-  }
-
-  // Record the Refund row
-  const refund = await prisma.refund.create({
-    data: {
-      paymentId: order.payment.id,
-      amount: order.totalAmount,
-      reason: `Auto refund: ${fromStatus} → ${toStatus}`,
-      gatewayRef,
-      status: refundStatus,
-      triggeredBy: trigger,
-      initiatedBy: actorId,
-    },
-  });
-
-  // ─── INO-AUDIT4-D2 fix: only mark Payment=REFUNDED if fully refunded ──
-  // The helper checks sum(COMPLETED refunds) against payment.amount.
-  // A partial refund leaves Payment = PAID with the remainder still
-  // refundable.
-  if (refundStatus === 'COMPLETED' || refundStatus === 'processed') {
-    await markPaymentRefundedIfFullyRefunded(order.payment.id);
-  }
-
-  await audit({
-    actorId,
-    action: 'REFUND_ISSUED',
-    targetType: 'Refund',
-    targetId: refund.id,
-    after: { amount: refund.amount, trigger, gatewayRef },
-  });
-
-  return refund;
-}
+// ─── INO-AUDIT5-D27 fix: processAutoRefundOnTransition is DELETED. ──────
+// This function was the OLD refund engine — superseded by the
+// transition.service.js + processRefundAfterCommit path in commit
+// 1447845. It was kept for "backward compat" but nothing in the
+// codebase called it anymore (the controller was refactored). Having
+// two refund engines with different status-casing behavior (this one
+// used `gatewayRefund.status || 'PENDING'` without `.toUpperCase()`,
+// so it could store lowercase 'processed' instead of 'COMPLETED')
+// was exactly the kind of state drift that causes bugs later.
+//
+// The new path is:
+//   1. performTransition() creates the Refund row (status=PENDING) inside
+//      the order-transition transaction.
+//   2. processRefundAfterCommit(refundId, actorId) is the post-commit
+//      gateway call + status update — it normalizes status to uppercase.
+//
+// If you need to retry a PENDING refund, use POST /api/v1/admin/refunds
+// (adminService.issueManualRefund handles the retry path).
 
 /**
  * Post-commit gateway refund processor — architectural refactor.
@@ -898,11 +831,8 @@ module.exports = {
   createRazorpayOrder,
   verifyRazorpayPayment,
   handleRazorpayWebhook,
-  // Kept for backward compat — the new transition.service.js +
-  // processRefundAfterCommit path replaces this for order transitions.
-  // Old callers (if any) still work; new callers should use the
-  // transition service + post-commit processor.
-  processAutoRefundOnTransition,
+  // INO-AUDIT5-D27: processAutoRefundOnTransition is DELETED (was dead
+  // code — superseded by transition.service.js + processRefundAfterCommit).
   processRefundAfterCommit,
   // Exported for reuse by admin.service.js (manual refund paths need the
   // same partial-refund guard — INO-AUDIT4-D2).

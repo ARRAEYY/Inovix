@@ -425,11 +425,98 @@ async function processAutoRefundOnTransition(orderId, fromStatus, toStatus, acto
   return refund;
 }
 
+/**
+ * Post-commit gateway refund processor — architectural refactor.
+ *
+ * `performTransition` in orders/transition.service.js creates a Refund row
+ * with status=PENDING inside the order-transition transaction (the
+ * "outbox pattern" lite). This function is the message processor: it
+ * takes a freshly-created Refund row, calls the Razorpay gateway to
+ * issue the refund, and updates the Refund + Payment rows based on the
+ * gateway response.
+ *
+ * This is BEST-EFFORT: if the gateway call fails (network timeout, 5xx,
+ * etc.), the Refund row stays PENDING. It's visible in the DB and can
+ * be retried via POST /api/v1/admin/refunds (which calls this same
+ * function via adminService.issueManualRefund's retry path).
+ *
+ * The function never throws — it catches gateway errors and leaves the
+ * Refund as PENDING. (Network failures are a recovery problem, not a
+ * request-failure problem — the order transition already committed.)
+ */
+async function processRefundAfterCommit(refundId, actorId) {
+  const refund = await prisma.refund.findUnique({
+    where: { id: refundId },
+    include: {
+      payment: { include: { order: { include: { outlet: true } } } },
+    },
+  });
+  if (!refund) {
+    console.error('[payments] processRefundAfterCommit: refund not found:', refundId);
+    return null;
+  }
+  // Already processed — return as-is. (Idempotent: a retry path may
+  // call this on a Refund that's already COMPLETED.)
+  if (refund.status === REFUND_STATUS.COMPLETED) return refund;
+  if (!refund.payment?.razorpayPaymentId) {
+    console.error('[payments] processRefundAfterCommit: refund has no razorpayPaymentId:', refundId);
+    return refund; // can't process — needs the gateway payment id
+  }
+
+  let gatewayRef = refund.gatewayRef;
+  let newStatus = REFUND_STATUS.PENDING;
+  try {
+    const client = await getOutletRazorpayClient(refund.payment.order.outletId);
+    const gatewayRefund = await client.payments.refund(refund.payment.razorpayPaymentId, {
+      amount: Math.round(Number(refund.amount) * 100),
+      notes: {
+        orderId: refund.payment.order.id,
+        trigger: refund.triggeredBy,
+        reason: refund.reason,
+      },
+    });
+    gatewayRef = gatewayRefund.id;
+    newStatus = (gatewayRefund.status || 'PENDING').toUpperCase();
+  } catch (err) {
+    console.error('[payments] post-commit gateway refund failed:', err.message);
+    // Leave as PENDING — admin can retry via /api/v1/admin/refunds.
+  }
+
+  const updated = await prisma.refund.update({
+    where: { id: refundId },
+    data: { gatewayRef, status: newStatus },
+  });
+
+  // If refund is COMPLETED at gateway, mark Payment as REFUNDED.
+  if (newStatus === REFUND_STATUS.COMPLETED || newStatus === 'PROCESSED') {
+    await prisma.payment.update({
+      where: { id: refund.payment.id },
+      data: { status: PAYMENT_STATUS.REFUNDED },
+    });
+  }
+
+  await audit({
+    actorId,
+    action: 'REFUND_PROCESSED',
+    targetType: 'Refund',
+    targetId: refund.id,
+    after: { amount: refund.amount, status: newStatus, gatewayRef },
+    req: null,
+  });
+
+  return updated;
+}
+
 module.exports = {
   getOutletRazorpayClient,
   setOutletRazorpayCredentials,
   createRazorpayOrder,
   verifyRazorpayPayment,
   handleRazorpayWebhook,
+  // Kept for backward compat — the new transition.service.js +
+  // processRefundAfterCommit path replaces this for order transitions.
+  // Old callers (if any) still work; new callers should use the
+  // transition service + post-commit processor.
   processAutoRefundOnTransition,
+  processRefundAfterCommit,
 };

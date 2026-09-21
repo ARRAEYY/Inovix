@@ -133,8 +133,11 @@ function initSocketServer(httpServer) {
  * — the event is just dropped silently.
  */
 function emitOrderEvent(event, roomId, payload) {
-  if (!io) return;
+  if (!io || !roomId) return;
   io.to(roomId).emit(event, payload);
+  if (typeof roomId === 'string' && !roomId.includes(':')) {
+    io.to(`outlet:${roomId}`).emit(event, payload);
+  }
 }
 
 /**

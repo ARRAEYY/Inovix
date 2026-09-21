@@ -118,7 +118,7 @@ PENDING → ACCEPTED → PREPARING → READY → COMPLETED
    └─► REJECTED (full refund)
 ```
 
-No student-initiated cancellation in V1 (spec §14 decision 6). See `docs/order-state-machine.md` for full refund rules.
+Students may cancel orders exclusively while in `PENDING` state (triggers automatic refund). Once `ACCEPTED`, orders cannot be cancelled by students. See `docs/order-state-machine.md` for full refund rules.
 
 ## Production deployment
 

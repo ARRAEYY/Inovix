@@ -56,22 +56,24 @@ Per spec §8.6 + §14 decision 6:
 | Transition                | Refund amount | Refund trigger           | Notes                          |
 |---------------------------|---------------|---------------------------|--------------------------------|
 | `PENDING → REJECTED`       | Full          | `OUTLET_REJECT`           | Outlet rejects before accepting |
-| `PENDING → CANCELLED`     | Full          | `OUTLET_CANCEL`           | Outlet cancels before accepting |
+| `PENDING → CANCELLED`     | Full          | `CUSTOMER_CANCEL` / `OUTLET_CANCEL` | Student cancels (pre-accept) or outlet cancels |
 | `ACCEPTED → CANCELLED`    | Full          | `OUTLET_CANCEL`           | Outlet cancels during pre-prep |
 | `PREPARING → CANCELLED`   | Full          | `OUTLET_CANCEL`           | Outlet cancels mid-prep |
-| `READY → CANCELLED`       | NONE          | (no trigger; food wasted) | Student no-show; no refund |
+| `READY → CANCELLED`       | NONE          | (no trigger; food wasted) | Student no-show / pickup timeout; no refund |
 | `READY → COMPLETED`       | NONE          | (no trigger)              | Student picked up; no refund |
 
-## 5. No student-initiated cancellation (V1)
+## 5. Student-initiated cancellation rules
 
-Per spec §14 decision 6 (locked 2026-09-15):
+Students are permitted to cancel an order **exclusively while the order is in the `PENDING` state** (before the outlet accepts it):
 
-> "There is no student-initiated cancellation in V1. Once payment is captured, the order is committed. The student must contact the outlet directly (in person / phone) to convince the outlet to cancel from the outlet dashboard."
-
-This means:
-- No `POST /api/v1/orders/:id/cancel` endpoint exists for students.
-- Only outlet staff/admin can reject or cancel via `PATCH /api/v1/outlet/orders/:orderId/status`.
-- Super admin can issue a manual refund via `POST /api/v1/admin/refunds` (creates a `Refund` row with `triggeredBy=SUPER_ADMIN_MANUAL`).
+- **When PENDING:**
+  - Student may cancel via `POST /api/v1/orders/:orderId/cancel`.
+  - Automatically triggers a full refund (`triggeredBy=CUSTOMER_CANCEL`).
+  - Order status transitions to `CANCELLED`, recording `"by": "studentId"` in the timeline.
+- **Once ACCEPTED or subsequent states (`ACCEPTED`, `PREPARING`, `READY`, `COMPLETED`, `REJECTED`):**
+  - Student cancellation is strictly prohibited (`400 INVALID_TRANSITION: Orders can only be cancelled before the outlet accepts them`).
+  - Once accepted, ingredients and food preparation are committed. The student must contact the outlet directly if special handling is required. Outlet staff can cancel from the outlet dashboard.
+- Super admin can issue a manual refund via `POST /api/v1/admin/refunds` (`triggeredBy=SUPER_ADMIN_MANUAL`).
 
 ## 6. Timeline field
 

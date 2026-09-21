@@ -44,7 +44,11 @@
 const prisma = require('./prisma');
 const { audit } = require('./audit');
 const { PAYMENT_STATUS, REFUND_STATUS } = require('./constants');
-const { getOutletRazorpayClient, markPaymentRefundedIfFullyRefunded } = require('../modules/payments/payments.service');
+const {
+  getOutletRazorpayClient,
+  markPaymentRefundedIfFullyRefunded,
+  processRefundAfterCommit,
+} = require('../modules/payments/payments.service');
 const { toPaise } = require('./money');
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
@@ -330,8 +334,100 @@ async function reconcileStalePendingPayments() {
   return { reconciled, stillPending, scanned: stalePayments.length };
 }
 
+// ─── Job 3: Outbox worker — process PENDING refunds that were never sent ──
+//
+// The "outbox pattern" creates a Refund row with status=PENDING inside the
+// order-transition transaction. The controller then calls
+// processRefundAfterCommit() post-commit to send the refund to the gateway.
+// If the server crashes BETWEEN the tx commit and the post-commit call,
+// the Refund row stays PENDING with gatewayRef=NULL — the gateway never
+// received the refund request.
+//
+// This worker automatically processes those orphaned PENDING refunds:
+//   1. Find Refund rows with status=PENDING AND gatewayRef=NULL AND
+//      createdAt < (now - OUTBOX_MIN_AGE_MINS). The grace period gives
+//      the controller's post-commit call time to finish.
+//   2. Call processRefundAfterCommit(refundId, null) on each — this
+//      function is now guarded (if gatewayRef is already set, it returns
+//      without creating a duplicate). So if the controller's call raced
+//      with the worker, only one gateway refund is created.
+//   3. On success, the Refund row gets a gatewayRef + the status from
+//      the gateway response. On failure, it stays PENDING + gatewayRef=NULL
+//      → the next worker tick retries.
+//
+// This is distinct from reconcilePendingRefunds (which POLLS the gateway
+// for the status of refunds that WERE created) — the outbox worker CREATES
+// the refund at the gateway for the first time.
+//
+// Together, the outbox worker + reconciliation worker form a complete
+// financial reliability loop:
+//   1. Transition tx creates Refund (PENDING, gatewayRef=NULL)
+//   2. Controller post-commit calls processRefundAfterCommit →
+//      on success: gatewayRef set, status updated
+//      on failure: stays PENDING, gatewayRef=NULL
+//   3. Outbox worker (this function) picks up orphans (PENDING, gatewayRef=NULL)
+//      and retries the gateway call
+//   4. Reconciliation worker polls the gateway for refunds that have a
+//      gatewayRef but are still PENDING (webhook was missed, or the
+//      gateway hasn't processed yet)
+
+async function processPendingRefundOutbox() {
+  const minAgeMins = parseInt(process.env.OUTBOX_MIN_AGE_MINS || '2', 10);
+  const cutoff = new Date(Date.now() - minAgeMins * 60 * 1000);
+
+  // Find PENDING refunds with gatewayRef=NULL — these are refunds that
+  // were created in the transition tx but never successfully sent to the
+  // gateway. Only process refunds whose payment has a razorpayPaymentId
+  // (we need it to call the gateway).
+  const orphanedRefunds = await prisma.refund.findMany({
+    where: {
+      status: REFUND_STATUS.PENDING,
+      gatewayRef: null,
+      createdAt: { lt: cutoff },
+      payment: { razorpayPaymentId: { not: null } },
+    },
+    select: { id: true, paymentId: true },
+  });
+
+  let processed = 0;
+  let failed = 0;
+
+  for (const { id } of orphanedRefunds) {
+    try {
+      // processRefundAfterCommit is now guarded: if gatewayRef is already
+      // set (e.g. the controller's post-commit call just finished), it
+      // returns without creating a duplicate. This makes it safe to call
+      // from the worker even if the controller is still in-flight.
+      const result = await processRefundAfterCommit(id, null);
+      if (result && result.gatewayRef) {
+        processed++;
+      }
+      // If result.gatewayRef is still null, the gateway call failed.
+      // The refund stays PENDING + gatewayRef=NULL → next tick retries.
+    } catch (err) {
+      // processRefundAfterCommit catches gateway errors internally and
+      // never throws, but defensive: if something unexpected happens,
+      // log + move on.
+      console.error(
+        `[outbox:refund] refund ${id} failed:`,
+        err.message
+      );
+      failed++;
+    }
+  }
+
+  if (processed > 0 || failed > 0) {
+    console.log(
+      `[outbox:refund] processed ${processed} orphaned PENDING refunds, ` +
+      `${failed} failed (scanned ${orphanedRefunds.length})`
+    );
+  }
+  return { processed, failed, scanned: orphanedRefunds.length };
+}
+
 module.exports = {
   reconcilePendingRefunds,
   reconcileStalePendingPayments,
+  processPendingRefundOutbox,
   mapGatewayRefundStatus,
 };

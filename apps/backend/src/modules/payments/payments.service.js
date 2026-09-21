@@ -274,8 +274,20 @@ async function verifyRazorpayPayment({ razorpayOrderId, razorpayPaymentId, razor
 }
 
 /**
- * Razorpay webhook handler — alternative path for payment confirmation.
- * Razorpay calls this on payment.captured events. Idempotent.
+ * Razorpay webhook handler — alternative path for payment confirmation
+ * + refund state reconciliation.
+ *
+ * INO-AUDIT3-9 fix: previously only handled `payment.captured`. Now
+ * handles 4 event types so the DB stays consistent with the gateway:
+ *   - payment.captured    → mark Payment PAID (existing behavior)
+ *   - payment.failed      → mark Payment FAILED (was: ignored, leaving
+ *                            Payment stuck in PENDING forever)
+ *   - refund.processed    → mark Refund COMPLETED + Payment REFUNDED
+ *                           (was: ignored, so async refund completion
+ *                           never propagated to the DB)
+ *   - refund.failed       → mark Refund FAILED (was: ignored)
+ *
+ * All paths are idempotent — re-delivery of the same webhook is safe.
  *
  * Spec §2 principle 4: "No order is created until Razorpay webhook confirms
  * payment. No frontend 'payment success' is trusted." In practice, V1 trusts
@@ -296,12 +308,24 @@ async function handleRazorpayWebhook(rawBody, signature, webhookSecret) {
   }
 
   const event = JSON.parse(rawBody);
-  // V1 only handles payment.captured; other events are logged.
-  if (event.event !== 'payment.captured') {
-    console.log(`[razorpay webhook] ignoring event: ${event.event}`);
-    return { ignored: true };
+  const eventType = event.event;
+
+  // ─── Payment events ──────────────────────────────────────────────────
+  if (eventType === 'payment.captured' || eventType === 'payment.failed') {
+    return handlePaymentEvent(event, eventType);
   }
 
+  // ─── Refund events ───────────────────────────────────────────────────
+  if (eventType === 'refund.processed' || eventType === 'refund.failed') {
+    return handleRefundEvent(event, eventType);
+  }
+
+  // Unknown event — log + ack so Razorpay stops retrying.
+  console.log(`[razorpay webhook] ignoring event: ${eventType}`);
+  return { ignored: true, event: eventType };
+}
+
+async function handlePaymentEvent(event, eventType) {
   const paymentEntity = event.payload?.payment?.entity;
   if (!paymentEntity) return { ignored: true };
 
@@ -314,28 +338,129 @@ async function handleRazorpayWebhook(rawBody, signature, webhookSecret) {
   });
   if (!payment) return { ignored: true };
 
-  // Idempotent: if already PAID, just ack
-  if (payment.status === PAYMENT_STATUS.PAID) return { alreadyPaid: true };
+  if (eventType === 'payment.captured') {
+    // Idempotent: if already PAID, just ack
+    if (payment.status === PAYMENT_STATUS.PAID) return { alreadyPaid: true };
 
-  const claimed = await prisma.payment.updateMany({
-    where: { id: payment.id, status: PAYMENT_STATUS.PENDING },
-    data: {
-      status: PAYMENT_STATUS.PAID,
-      razorpayPaymentId,
-    },
-  });
+    const claimed = await prisma.payment.updateMany({
+      where: { id: payment.id, status: PAYMENT_STATUS.PENDING },
+      data: {
+        status: PAYMENT_STATUS.PAID,
+        razorpayPaymentId,
+      },
+    });
 
-  if (claimed.count !== 1) {
-    const current = await prisma.payment.findUnique({ where: { id: payment.id } });
-    return current?.status === PAYMENT_STATUS.PAID ? { alreadyPaid: true } : { ignored: true };
+    if (claimed.count !== 1) {
+      const current = await prisma.payment.findUnique({ where: { id: payment.id } });
+      return current?.status === PAYMENT_STATUS.PAID ? { alreadyPaid: true } : { ignored: true };
+    }
+
+    const updatedOrder = await prisma.order.findUnique({ where: { id: payment.order.id } });
+    const { emitOrderEvent } = require('../../lib/socket');
+    // INO-P0-2 fix: socket room name with `outlet:` prefix (see verify path).
+    emitOrderEvent('order:new', `outlet:${payment.order.outletId}`, { order: updatedOrder });
+
+    return { verified: true };
   }
 
-  const updatedOrder = await prisma.order.findUnique({ where: { id: payment.order.id } });
-  const { emitOrderEvent } = require('../../lib/socket');
-  // INO-P0-2 fix: socket room name with `outlet:` prefix (see verify path).
-  emitOrderEvent('order:new', `outlet:${payment.order.outletId}`, { order: updatedOrder });
+  if (eventType === 'payment.failed') {
+    // INO-AUDIT3-9 fix: previously this event was ignored, leaving Payment
+    // stuck in PENDING forever even though Razorpay knew the payment failed.
+    // Now we mark it FAILED so the student sees the failure + can retry.
+    // Idempotent: if already FAILED, ack.
+    if (payment.status === PAYMENT_STATUS.FAILED) return { alreadyFailed: true };
+    // Don't downgrade from PAID/REFUNDED — those states represent money
+    // that already moved; a late payment.failed event is suspicious
+    // (likely a Razorpay retry of an already-resolved payment).
+    if (payment.status !== PAYMENT_STATUS.PENDING) return { ignored: true };
 
-  return { verified: true };
+    const claimed = await prisma.payment.updateMany({
+      where: { id: payment.id, status: PAYMENT_STATUS.PENDING },
+      data: { status: PAYMENT_STATUS.FAILED, razorpayPaymentId },
+    });
+    if (claimed.count !== 1) return { ignored: true };
+
+    await audit({
+      actorId: null,
+      action: 'PAYMENT_FAILED',
+      targetType: 'Payment',
+      targetId: payment.id,
+      after: { status: PAYMENT_STATUS.FAILED, razorpayPaymentId },
+      req: null,
+    });
+    return { failed: true };
+  }
+
+  return { ignored: true };
+}
+
+async function handleRefundEvent(event, eventType) {
+  // Refund webhook payload structure:
+  //   event.payload.refund.entity = { id, payment_id, status, ... }
+  const refundEntity = event.payload?.refund?.entity;
+  if (!refundEntity) return { ignored: true };
+
+  const gatewayRefundId = refundEntity.id;
+  const razorpayPaymentId = refundEntity.payment_id;
+
+  // Look up our Refund row by gatewayRef (set when we initiated the refund).
+  // If we can't find it, this is a refund initiated outside our system
+  // (e.g. directly in the Razorpay dashboard) — log + ack.
+  const refund = await prisma.refund.findFirst({
+    where: { gatewayRef: gatewayRefundId },
+    include: { payment: true },
+  });
+  if (!refund) {
+    console.log(`[razorpay webhook] refund ${gatewayRefundId} not found in DB — external refund?`);
+    return { ignored: true };
+  }
+
+  if (eventType === 'refund.processed') {
+    // Idempotent: if already COMPLETED, ack.
+    if (refund.status === REFUND_STATUS.COMPLETED) return { alreadyCompleted: true };
+
+    const updated = await prisma.refund.update({
+      where: { id: refund.id },
+      data: { status: REFUND_STATUS.COMPLETED },
+    });
+    // Mark the Payment as REFUNDED too (only if it was PAID).
+    if (refund.payment.status === PAYMENT_STATUS.PAID) {
+      await prisma.payment.update({
+        where: { id: refund.payment.id },
+        data: { status: PAYMENT_STATUS.REFUNDED },
+      });
+    }
+    await audit({
+      actorId: null,
+      action: 'REFUND_COMPLETED',
+      targetType: 'Refund',
+      targetId: refund.id,
+      after: { status: REFUND_STATUS.COMPLETED, gatewayRef: gatewayRefundId },
+      req: null,
+    });
+    return { refundCompleted: true, refundId: updated.id };
+  }
+
+  if (eventType === 'refund.failed') {
+    // Idempotent: if already FAILED, ack.
+    if (refund.status === REFUND_STATUS.FAILED) return { alreadyFailed: true };
+
+    const updated = await prisma.refund.update({
+      where: { id: refund.id },
+      data: { status: REFUND_STATUS.FAILED },
+    });
+    await audit({
+      actorId: null,
+      action: 'REFUND_FAILED',
+      targetType: 'Refund',
+      targetId: refund.id,
+      after: { status: REFUND_STATUS.FAILED, gatewayRef: gatewayRefundId },
+      req: null,
+    });
+    return { refundFailed: true, refundId: updated.id };
+  }
+
+  return { ignored: true };
 }
 
 /**

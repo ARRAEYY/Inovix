@@ -7,7 +7,7 @@
 const prisma = require('../../lib/prisma');
 const menuRepo = require('../menu/menu.repository');
 const ordersRepo = require('../orders/orders.repository');
-const { getOutletRazorpayClient } = require('../payments/payments.service');
+const { getOutletRazorpayClient, markPaymentRefundedIfFullyRefunded } = require('../payments/payments.service');
 const { audit } = require('../../lib/audit');
 const {
   ROLES,
@@ -326,10 +326,8 @@ async function issueManualRefund(orderId, { amount, reason }, actorId) {
     });
 
     if (refundStatus === REFUND_STATUS.COMPLETED || refundStatus === 'PROCESSED') {
-      await prisma.payment.update({
-        where: { id: order.payment.id },
-        data: { status: PAYMENT_STATUS.REFUNDED },
-      });
+      // INO-AUDIT4-D2 fix: only mark Payment=REFUNDED if fully refunded.
+      await markPaymentRefundedIfFullyRefunded(order.payment.id);
     }
 
     await audit({
@@ -376,10 +374,8 @@ async function issueManualRefund(orderId, { amount, reason }, actorId) {
   });
 
   if (refundStatus === REFUND_STATUS.COMPLETED || refundStatus === 'PROCESSED') {
-    await prisma.payment.update({
-      where: { id: order.payment.id },
-      data: { status: PAYMENT_STATUS.REFUNDED },
-    });
+    // INO-AUDIT4-D2 fix: only mark Payment=REFUNDED if fully refunded.
+    await markPaymentRefundedIfFullyRefunded(order.payment.id);
   }
 
   await audit({

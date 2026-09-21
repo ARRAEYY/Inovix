@@ -60,8 +60,16 @@ async function createOrder(studentId, payload) {
   // Validate outlet
   const outlet = await prisma.outlet.findUnique({ where: { id: outletId } });
   if (!outlet) throw { statusCode: 404, message: 'Outlet not found' };
-  if (outlet.status === 'CLOSED' || outlet.status === 'SUSPENDED') {
-    throw { statusCode: 400, code: ERROR_CODES.OUTLET_CLOSED, message: 'Outlet is not accepting orders right now' };
+  // INO-AUDIT4-D4 fix: reject PENDING outlets too. The previous check
+  // only rejected CLOSED + SUSPENDED, leaving PENDING outlets orderable
+  // via direct API call (bypassing the catalog/cart layer which rejects
+  // PENDING). Use the same canonical orderable set as cart.service.js.
+  if (outlet.status !== 'OPEN' && outlet.status !== 'BUSY') {
+    throw {
+      statusCode: 400,
+      code: ERROR_CODES.OUTLET_CLOSED,
+      message: `Outlet is ${outlet.status} and not accepting orders right now`,
+    };
   }
 
   let subtotalPaise = 0;

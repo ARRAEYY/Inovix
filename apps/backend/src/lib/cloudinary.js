@@ -43,9 +43,14 @@ if (isConfigured()) {
  * @param {object} opts
  * @param {string} opts.folder   - "menu-items" | "outlet-logos" | "students"
  * @param {string} [opts.publicId] - Optional explicit public_id (without folder).
- *                                   If omitted, Cloudinary auto-generates one.
+ *                                   IGNORED for the `students` folder when
+ *                                   `opts.ownerId` is set — see INO-006 below.
  * @param {object} [opts.tags]   - Extra tags (key→value) to attach as string tags
- * @param {string} [opts.outletId] - Outlet scoping tag (recommended)
+ * @param {string} [opts.outletId] - Outlet scoping tag
+ * @param {string} [opts.ownerId]   - For the `students` folder, the authenticated
+ *                                   user id. The signed public_id becomes
+ *                                   `students/<ownerId>/<random>` so the client
+ *                                   can't choose the object name.
  * @returns {{ uploadUrl, publicId, apiKey, timestamp, signature, cloudName, params }}
  */
 function signUpload(opts = {}) {
@@ -59,20 +64,51 @@ function signUpload(opts = {}) {
 
   const folder = opts.folder || 'misc';
   const timestamp = Math.floor(Date.now() / 1000);
-  // public_id is folder + optional name (no extension — Cloudinary infers from MIME)
-  const publicId = opts.publicId
-    ? `${folder}/${opts.publicId}`
-    : `${folder}/${timestamp}-${Math.random().toString(36).slice(2, 10)}`;
+
+  // ─── INO-006 fix: server-controlled namespace for student uploads ──────
+  // The `students` folder accepts user-uploaded profile pictures. The previous
+  // implementation let the client choose the public_id (e.g. `students/any-name`),
+  // which means one student could request a public_id that collides with
+  // or impersonates another student's profile picture path. `overwrite=false`
+  // reduced the impact, but the namespace must be server-controlled.
+  //
+  // When `opts.ownerId` is supplied for the students folder, the public_id is
+  // forced to `students/<ownerId>/<timestamp>-<random>` and the client's
+  // `opts.publicId` is ignored. We also tag the asset with `owner:<id>` so
+  // the media library can filter by owner.
+  let publicId;
+  if (folder === 'students' && opts.ownerId) {
+    publicId = `${folder}/${opts.ownerId}/${timestamp}-${Math.random().toString(36).slice(2, 10)}`;
+  } else if (folder === 'students') {
+    // No ownerId supplied — refuse to sign rather than fall back to a
+    // client-controlled id.
+    throw {
+      statusCode: 400,
+      code: 'INVALID_UPLOAD_REQUEST',
+      message: 'students folder requires an ownerId (authenticated user id)',
+    };
+  } else if (opts.publicId) {
+    publicId = `${folder}/${opts.publicId}`;
+  } else {
+    publicId = `${folder}/${timestamp}-${Math.random().toString(36).slice(2, 10)}`;
+  }
 
   // Params to sign. Cloudinary signs over the alphabetical-sorted, k=v-joined string.
-  // We enforce:
-  //   - folder (so the asset lands in the right bucket)
-  //   - public_id (so the frontend can't impersonate another asset)
-  //   - overwrite=false (no replacing existing assets)
-  //   - unique_filename=true (defensive)
-  //   - tags (so we can filter in the media library)
+  //
+  // ─── INO-005 fix: enforce resource_type + allowed_formats in the signature ──
+  // The previous implementation only signed `folder`, `public_id`, `overwrite`,
+  // `unique_filename`, `tags`, `timestamp`. The doc comment claimed MIME + size
+  // were enforced, but they weren't. The upload URL was `/auto/upload`, which
+  // lets the client upload ANY resource type (image, video, raw file) — a
+  // student authorized for `students/` could upload non-image payloads.
+  //
+  // Fix: lock the signature to `resource_type=image` + an allow-list of
+  // image formats. Any upload that doesn't match these will be rejected by
+  // Cloudinary because the signature won't validate. The upload URL is also
+  // switched from `/auto/upload` to `/image/upload`.
   const tags = ['nosh', folder];
   if (opts.outletId) tags.push(`outlet:${opts.outletId}`);
+  if (opts.ownerId) tags.push(`owner:${opts.ownerId}`);
   if (opts.tags) Object.values(opts.tags).forEach(t => tags.push(String(t)));
 
   const paramsToSign = {
@@ -80,6 +116,8 @@ function signUpload(opts = {}) {
     public_id: publicId,
     overwrite: 'false',
     unique_filename: 'true',
+    resource_type: 'image',
+    allowed_formats: 'jpg,jpeg,png,webp,gif',
     tags: tags.join(','),
     timestamp,
   };
@@ -88,7 +126,8 @@ function signUpload(opts = {}) {
   const signature = cloudinary.utils.api_sign_request(paramsToSign, process.env.CLOUDINARY_API_SECRET);
 
   return {
-    uploadUrl: `https://api.cloudinary.com/v1_1/${process.env.CLOUDINARY_CLOUD_NAME}/auto/upload`,
+    // Use the image-specific upload endpoint, not the generic /auto/upload.
+    uploadUrl: `https://api.cloudinary.com/v1_1/${process.env.CLOUDINARY_CLOUD_NAME}/image/upload`,
     publicId,
     apiKey: process.env.CLOUDINARY_API_KEY,
     cloudName: process.env.CLOUDINARY_CLOUD_NAME,

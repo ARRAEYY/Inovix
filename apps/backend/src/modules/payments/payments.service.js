@@ -150,6 +150,37 @@ async function verifyRazorpayPayment({ razorpayOrderId, razorpayPaymentId, razor
   });
   if (!payment) throw { statusCode: 404, message: 'Payment not found for this gateway order' };
 
+  // ─── INO-002 fix: authorization ──────────────────────────────────────────
+  // createRazorpayOrder() explicitly verifies `order.studentId === actorId`
+  // before minting the gateway order. The verify path was missing the same
+  // check, so a different authenticated student could call /verify with
+  // another student's razorpayOrderId. The Razorpay signature still
+  // prevents arbitrary payments, but we must enforce resource ownership
+  // at the API layer too.
+  if (payment.order.studentId !== actorId) {
+    throw { statusCode: 403, message: 'Not your payment' };
+  }
+
+  // ─── INO-003 fix: idempotency + explicit state transition ────────────────
+  // The webhook path returns `{ alreadyPaid: true }` when the Payment is
+  // already PAID; the verify path was unconditionally calling
+  // prisma.payment.update(... status: PAID), which:
+  //   1. Re-emits the `order:new` socket event (duplicate notification)
+  //   2. Overwrites razorpaySignature/razorpayPaymentId on a REFUNDED
+  //      payment, leaving inconsistent state.
+  // Fix: allow PENDING → PAID only; idempotently return on already-PAID;
+  // reject any other transition (REFUNDED, FAILED).
+  if (payment.status === PAYMENT_STATUS.PAID) {
+    return { ...payment, idempotent: true };
+  }
+  if (payment.status !== PAYMENT_STATUS.PENDING) {
+    throw {
+      statusCode: 409,
+      code: 'INVALID_PAYMENT_STATE',
+      message: `Payment is in state ${payment.status}; cannot mark as PAID`,
+    };
+  }
+
   const outlet = payment.order.outlet;
   if (!outlet.razorpayKeySecretEnc || !outlet.razorpayWebhookSecretEnc) {
     throw { statusCode: 400, message: 'Outlet Razorpay credentials not configured' };
@@ -172,7 +203,7 @@ async function verifyRazorpayPayment({ razorpayOrderId, razorpayPaymentId, razor
     throw { statusCode: 400, code: 'PAYMENT_FAILED', message: 'Invalid payment signature' };
   }
 
-  // Mark payment as PAID
+  // Mark payment as PAID (guarded by the state check above)
   const updated = await prisma.payment.update({
     where: { id: payment.id },
     data: {

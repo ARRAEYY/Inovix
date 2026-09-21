@@ -133,7 +133,7 @@ Students may cancel orders exclusively while in `PENDING` state (triggers automa
    { keyId, keySecret, webhookSecret }
    ```
 7. Configure Razorpay webhook URL in Razorpay dashboard → `https://api.yourcollege.edu.in/api/v1/payments/razorpay/webhook`
-8. Set up cron jobs: audit log purge (90d), refresh token purge (30d), READY→COMPLETED timeout (30m per spec)
+8. Set up cron jobs: audit log purge (90d), refresh token purge (30d), pickup timeout (auto-CANCELLED after `pickupTimeoutMins` — no refund, no-show)
 
 See `docs/security.md` for the full production checklist.
 
@@ -155,7 +155,7 @@ See `docs/security.md` for the full production checklist.
 - ✅ Audit log (every state-changing operation)
 - ✅ Socket.IO server with room-based emits + long-polling fallback
 - ✅ Cloudinary signed-upload endpoint (`POST /api/v1/uploads/sign`)
-- ✅ Cron jobs: audit purge (90d), refresh purge (30d), pickup timeout (auto-COMPLETED after `pickupTimeoutMins`)
+- ✅ Cron jobs: audit purge (90d), refresh purge (30d), pickup timeout (auto-CANCELLED after `pickupTimeoutMins` — no refund, no-show per spec §8.6)
 - ✅ Tests: 18 unit + admin E2E
 
 ### Frontend status

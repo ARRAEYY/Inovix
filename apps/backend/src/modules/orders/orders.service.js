@@ -15,6 +15,7 @@ const prisma = require('../../lib/prisma');
 const ordersRepo = require('./orders.repository');
 const menuRepo = require('../menu/menu.repository');
 const { validateAndComputeOptionsDelta, normalizeSelectedOptions } = require('../menu/customization');
+const { toPaise, fromPaise } = require('../../lib/money'); // INO-AUDIT4-D14: centralized
 const { ORDER_STATUS, ALLOWED_TRANSITIONS, ERROR_CODES } = require('../../lib/constants');
 
 // INO-AUDIT3-4 fix: use integer paise internally for money arithmetic.
@@ -22,20 +23,6 @@ const { ORDER_STATUS, ALLOWED_TRANSITIONS, ERROR_CODES } = require('../../lib/co
 const PLATFORM_FEE_RUPEES = 5;
 const PLATFORM_FEE_PAISE = PLATFORM_FEE_RUPEES * 100;
 const ORDER_STATUS_PREFIX = 'NOSH-';
-
-// Convert a Prisma Decimal value to integer paise (multiply by 100, round).
-// Math.round handles the JS floating-point representation quirk where
-// 99.50 * 100 might give 9950.0000001.
-function toPaise(decimal) {
-  return Math.round(Number(decimal) * 100);
-}
-
-// Convert integer paise back to a string with 2 decimal places for DB
-// storage. String output avoids any further floating-point representation
-// issues — Prisma accepts strings for Decimal fields.
-function fromPaise(paise) {
-  return (paise / 100).toFixed(2);
-}
 
 function generateOrderNumber() {
   // Spec format: NOSH-NNNN. Sequential would require a counter table; we use
@@ -100,10 +87,17 @@ async function createOrder(studentId, payload) {
     // INO-AUDIT3-6 fix: normalize the selectedOptions (sort by groupId +
     // optionId, dedupe) so the same logical set produces the same stored
     // string regardless of input order.
+    //
+    // INO-AUDIT4-D15 fix: use normalizedOptions for BOTH validation AND
+    // storage — previously validation used itemReq.selectedOptions (raw)
+    // while storage used normalizedOptions. That meant the snapshot was
+    // canonical while validation could see different (malformed) data.
+    // Now the canonical sequence is: normalize → validate normalized →
+    // price normalized → store normalized.
     const normalizedOptions = normalizeSelectedOptions(itemReq.selectedOptions);
     // INO-AUDIT3-4 fix: returns paise (integer), not rupees. All arithmetic
     // below is integer-exact — no floating-point error accumulation.
-    const optionsDeltaPaise = validateAndComputeOptionsDelta(menuItem, itemReq.selectedOptions);
+    const optionsDeltaPaise = validateAndComputeOptionsDelta(menuItem, normalizedOptions);
     const unitPricePaise = toPaise(menuItem.price) + optionsDeltaPaise;
     const itemTotalPaise = unitPricePaise * itemReq.quantity; // int * int = exact
     subtotalPaise += itemTotalPaise;

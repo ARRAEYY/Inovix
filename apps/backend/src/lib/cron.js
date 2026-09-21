@@ -17,8 +17,9 @@
  *   - AUDIT_LOG_RETENTION_DAYS (default 90)
  *   - PICKUP_TIMEOUT_MINS (default 30) — used to compute the no-show window
  *
- * The jobs write AuditLog rows for state changes (READY→COMPLETED) but
- * never throw — a failure in one job must not crash the scheduler.
+ * The jobs write AuditLog rows for state changes (READY→CANCELLED on pickup
+ * timeout). The jobs themselves never throw — a failure in one job must
+ * not crash the scheduler.
  */
 
 const cron = require('node-cron');
@@ -122,6 +123,16 @@ async function processPickupTimeouts() {
   // that survive the DB filter (since different outlets can have different
   // timeouts, we can't push the full predicate to the DB without a JOIN
   // with per-row time math, which is awkward in Prisma).
+  //
+  // INO-AUDIT4-D8 fix: previously this job did `prisma.order.updateMany`
+  // directly + manually created the notification + audit row afterward.
+  // That bypassed performTransition() — the single transactional owner of
+  // order status changes — so the cron transition wasn't atomic with the
+  // audit + notification. If the process died between the updateMany and
+  // the notification.create, the order was CANCELLED but the notification
+  // was missing. Now we call performTransition() (which owns the atomic
+  // order+audit+notification+refund-intent tx), then emit socket events
+  // post-commit (consistent with the API controller path).
   const now = new Date();
 
   // Aggregate the minimum per-outlet pickupTimeoutMins across all outlets.
@@ -149,52 +160,56 @@ async function processPickupTimeouts() {
     const cutoff = new Date(order.readyAt.getTime() + timeoutMins * 60 * 1000);
     if (now < cutoff) continue; // still within this outlet's pickup window
 
-    const timeline = JSON.parse(order.timeline || '[]');
-    timeline.push({ status: ORDER_STATUS.CANCELLED, at: now.toISOString(), by: 'cron:pickup-timeout' });
-
-    const updated = await prisma.order.updateMany({
-      where: { id: order.id, status: ORDER_STATUS.READY },
-      data: {
-        status: ORDER_STATUS.CANCELLED,
-        cancelledAt: now,
-        cancelReason: 'Pickup window expired',
-        timeline: JSON.stringify(timeline),
-      },
-    });
-    if (updated.count !== 1) continue;
-
-    // Create a notification for the student (order auto-cancelled)
-    await prisma.notification.create({
-      data: {
-        userId: order.studentId,
-        type: 'ORDER_CANCELLED',
-        title: 'Order cancelled',
-        message: `Order ${order.orderNumber} was cancelled after the pickup window elapsed (${timeoutMins} min).`,
-        payload: JSON.stringify({ orderId: order.id, reason: 'pickup_timeout', timeoutMins }),
-        orderId: order.id,
-      },
-    }).catch(() => null); // notification must not block the cron
-
-    await audit({
-      actorId: null,
-      action: 'ORDER_PICKUP_TIMEOUT',
-      targetType: 'Order',
-      targetId: order.id,
-      before: { status: ORDER_STATUS.READY, readyAt: order.readyAt },
-      after: { status: ORDER_STATUS.CANCELLED, timeoutMins },
-    });
-
-    completed++;
-    // Emit a socket event so any open outlet dashboard / student tracking page refreshes
     try {
-      const { emitOrderEvent } = require('./socket');
-      emitOrderEvent('order:status:changed', `outlet:${order.outletId}`, {
-        order: { id: order.id, status: ORDER_STATUS.CANCELLED, reason: 'pickup_timeout' },
+      // Use the same transition service as the API path — atomic
+      // order + audit + notification + (no refund for READY→CANCELLED
+      // no-show per REFUND_TRIGGERS.READY_TO_CANCELLED = null).
+      const { performTransition } = require('../modules/orders/transition.service');
+      const result = await performTransition({
+        orderId: order.id,
+        expectedFromStatus: ORDER_STATUS.READY,
+        toStatus: ORDER_STATUS.CANCELLED,
+        actorId: null, // cron — no human actor
+        reason: `Pickup window expired (${timeoutMins} min)`,
+        // No triggerOverride — REFUND_TRIGGERS.READY_TO_CANCELLED is null,
+        // so no refund is created. (Per spec §8.6 no-show = no refund.)
       });
-      emitOrderEvent('order:status:changed', `student:${order.studentId}`, {
-        order: { id: order.id, status: ORDER_STATUS.CANCELLED, reason: 'pickup_timeout' },
+
+      // Additional cron-specific audit row (separate from the
+      // ORDER_STATUS_CHANGED row that performTransition wrote).
+      await audit({
+        actorId: null,
+        action: 'ORDER_PICKUP_TIMEOUT',
+        targetType: 'Order',
+        targetId: order.id,
+        before: { status: ORDER_STATUS.READY, readyAt: order.readyAt },
+        after: { status: ORDER_STATUS.CANCELLED, timeoutMins },
       });
-    } catch { /* socket not initialized */ }
+
+      completed++;
+      // Emit a socket event so any open outlet dashboard / student tracking
+      // page refreshes. (performTransition creates the notification row in
+      // the tx; we emit the socket event here so connected clients see it.)
+      try {
+        const { emitOrderEvent, emitNotificationEvent } = require('./socket');
+        emitOrderEvent('order:status:changed', `outlet:${order.outletId}`, {
+          order: { id: order.id, status: ORDER_STATUS.CANCELLED, reason: 'pickup_timeout' },
+        });
+        emitOrderEvent('order:status:changed', `student:${order.studentId}`, {
+          order: { id: order.id, status: ORDER_STATUS.CANCELLED, reason: 'pickup_timeout' },
+        });
+        if (result.notification) {
+          emitNotificationEvent(order.studentId, result.notification);
+        }
+      } catch { /* socket not initialized */ }
+    } catch (err) {
+      // If performTransition threw (e.g. 409 because the order was
+      // manually transitioned concurrently), skip silently — the order
+      // is no longer READY so the timeout doesn't apply.
+      if (err?.statusCode !== 409) {
+        console.error(`[cron:pickup-timeout] order ${order.id} transition failed:`, err.message);
+      }
+    }
   }
 
   if (completed > 0) {

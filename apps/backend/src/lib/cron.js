@@ -27,10 +27,15 @@ const prisma = require('./prisma');
 const { audit } = require('./audit');
 const { ORDER_STATUS } = require('./constants');
 const { runWithAdvisoryLock } = require('./distributedLock');
+const { reconcilePendingRefunds, reconcileStalePendingPayments } = require('./reconciliation');
 
 const REFRESH_TOKEN_PURGE_AGE_DAYS = 30;
 const PICKUP_TIMEOUT_CHECK_INTERVAL = '*/5 * * * *'; // every 5 minutes
 const DAILY_AT_3AM = '0 3 * * *';
+// INO-AUDIT5: reconciliation worker interval (default 10 min).
+// Polls Razorpay for PENDING refund + stale PENDING payment status.
+const RECONCILIATION_INTERVAL_MINS = parseInt(process.env.RECONCILIATION_INTERVAL_MINS || '10', 10);
+const RECONCILIATION_CRON = `*/${RECONCILIATION_INTERVAL_MINS} * * * *`;
 
 let scheduled = [];
 
@@ -246,6 +251,10 @@ function initCron() {
     cron.schedule(DAILY_AT_3AM, () => runCronJob('refresh-purge', purgeExpiredRefreshTokens), { name: 'refresh-purge' }),
     cron.schedule(DAILY_AT_3AM, () => runCronJob('cart-purge', purgeExpiredCarts), { name: 'cart-purge' }),
     cron.schedule(PICKUP_TIMEOUT_CHECK_INTERVAL, () => runCronJob('pickup-timeout', processPickupTimeouts), { name: 'pickup-timeout' }),
+    // INO-AUDIT5: reconciliation worker — polls Razorpay for PENDING refund
+    // + stale PENDING payment status (missed webhooks). Default every 10 min.
+    cron.schedule(RECONCILIATION_CRON, () => runCronJob('reconcile-refunds', reconcilePendingRefunds), { name: 'reconcile-refunds' }),
+    cron.schedule(RECONCILIATION_CRON, () => runCronJob('reconcile-payments', reconcileStalePendingPayments), { name: 'reconcile-payments' }),
   ];
 
   console.log(`[cron] scheduled: ${scheduled.map(s => s.name || '?').join(', ')}`);
@@ -253,6 +262,8 @@ function initCron() {
   console.log(`[cron] refresh purge: daily at 03:00 (delete tokens older than 30d)`);
   console.log(`[cron] cart purge: daily at 03:00 (delete carts past expiresAt)`);
   console.log(`[cron] pickup timeout: every 5 min (default window: ${process.env.PICKUP_TIMEOUT_MINS || 30} min)`);
+  console.log(`[cron] reconcile refunds: every ${RECONCILIATION_INTERVAL_MINS} min (min age: ${process.env.RECONCILIATION_MIN_AGE_MINS || 5} min)`);
+  console.log(`[cron] reconcile payments: every ${RECONCILIATION_INTERVAL_MINS} min (stale after: ${process.env.PAYMENT_RECONCILIATION_MIN_AGE_MINS || 30} min)`);
   console.log(`[cron] advisory-lock: ${require('./distributedLock').isPostgres() ? 'postgres pg_try_advisory_xact_lock' : 'disabled (sqlite dev)'}`);
 }
 
@@ -270,5 +281,8 @@ module.exports = {
   purgeExpiredRefreshTokens,
   purgeExpiredCarts,
   processPickupTimeouts,
+  // INO-AUDIT5: reconciliation worker (re-exported for testing)
+  reconcilePendingRefunds,
+  reconcileStalePendingPayments,
   isCronEnabled,
 };

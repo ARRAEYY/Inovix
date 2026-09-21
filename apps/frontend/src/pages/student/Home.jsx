@@ -1,9 +1,12 @@
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { motion } from 'framer-motion';
+import { Search, Sparkles, Clock, MapPin, Star } from 'lucide-react';
 import Header from '../../components/layout/Header';
 import OutletCard from '../../components/food/OutletCard';
 import { useAuth } from '../../hooks/useAuth';
 import { catalogService } from '../../services/catalog/catalogService';
+import { CardSkeleton } from '../../components/ui/Skeleton';
 
 const FILTERS = ['All', 'Open now'];
 
@@ -39,22 +42,36 @@ const Home = () => {
     <div className="min-h-screen bg-background">
       <Header />
 
-      <main className="max-w-7xl mx-auto px-6 py-8">
-        <div className="mb-8">
-          <p className="text-sm text-muted-foreground mb-1">Welcome back, {user?.name || 'Student'}</p>
-          <h1 className="text-3xl font-bold text-foreground tracking-tight">Explore Outlets</h1>
-          <p className="text-base text-muted-foreground mt-1">Order from your favorite campus outlets</p>
-        </div>
+      <main className="max-w-7xl mx-auto px-6 py-10">
+        {/* Hero header */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, ease: 'easeOut' }}
+          className="mb-10"
+        >
+          <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
+            <Sparkles className="w-4 h-4 text-primary" />
+            <span>Welcome back, {user?.name || 'Student'}</span>
+          </div>
+          <h1 className="text-4xl md:text-5xl font-extrabold text-foreground tracking-tight">
+            Explore <span className="text-primary">Outlets</span>
+          </h1>
+          <p className="text-base text-muted-foreground mt-2">Order from your favorite campus outlets</p>
+        </motion.div>
 
-        <div className="flex flex-col sm:flex-row gap-3 mb-8">
-          <div className="relative flex-1">
-            <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="11" cy="11" r="8"></circle>
-              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-            </svg>
+        {/* Search + filters */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.1, ease: 'easeOut' }}
+          className="flex flex-col sm:flex-row gap-3 mb-10"
+        >
+          <div className="relative flex-1 group">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground group-focus-within:text-primary transition-colors" size={18} />
             <input
               type="text"
-              className="w-full pl-10 pr-4 py-3 bg-card border border-input rounded-xl text-sm text-foreground placeholder:text-muted-foreground outline-none focus:ring-2 focus:ring-ring focus:border-ring transition-shadow"
+              className="w-full pl-12 pr-4 py-3.5 bg-card border border-input rounded-2xl text-sm text-foreground placeholder:text-muted-foreground outline-none focus:ring-4 focus:ring-primary/10 focus:border-primary transition-all"
               placeholder="Search outlets, cuisines..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -65,27 +82,60 @@ const Home = () => {
             {FILTERS.map((filter) => (
               <button
                 key={filter}
-                className={`px-4 py-3 rounded-xl text-sm font-medium transition-colors ${activeFilter === filter ? 'bg-primary text-primary-foreground' : 'bg-card border border-border text-foreground hover:bg-muted'}`}
+                className={`px-5 py-3.5 rounded-2xl text-sm font-medium transition-all ${
+                  activeFilter === filter
+                    ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/25'
+                    : 'bg-card border border-border text-foreground hover:bg-muted hover:border-primary/30'
+                }`}
                 onClick={() => setActiveFilter(filter)}
               >
                 {filter}
               </button>
             ))}
           </div>
-        </div>
+        </motion.div>
 
+        {/* Grid */}
         {isLoading ? (
-          <div className="text-center py-16 text-muted-foreground">Loading outlets…</div>
-        ) : filteredOutlets.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            {[0, 1, 2, 3, 4, 5].map((i) => <CardSkeleton key={i} />)}
+          </div>
+        ) : filteredOutlets.length > 0 ? (
+          <motion.div
+            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6"
+            initial="hidden"
+            animate="show"
+            variants={{
+              hidden: { opacity: 0 },
+              show: {
+                opacity: 1,
+                transition: { staggerChildren: 0.08 },
+              },
+            }}
+          >
             {filteredOutlets.map((outlet) => (
-              <OutletCard key={outlet.id} outlet={outlet} />
+              <motion.div
+                key={outlet.id}
+                variants={{
+                  hidden: { opacity: 0, y: 30 },
+                  show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: 'easeOut' } },
+                }}
+              >
+                <OutletCard outlet={outlet} />
+              </motion.div>
             ))}
-          </div>
+          </motion.div>
         ) : (
-          <div className="text-center py-16 text-muted-foreground">
-            <p>No outlets found matching your criteria.</p>
-          </div>
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="text-center py-24"
+          >
+            <div className="inline-flex w-16 h-16 rounded-full bg-muted items-center justify-center mb-4">
+              <Search className="text-muted-foreground" size={24} />
+            </div>
+            <p className="text-muted-foreground">No outlets found matching your criteria.</p>
+          </motion.div>
         )}
       </main>
     </div>

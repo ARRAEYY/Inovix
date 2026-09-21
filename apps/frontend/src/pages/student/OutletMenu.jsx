@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { motion } from 'framer-motion';
+import { ArrowLeft, Star, Clock, Search, Sparkles } from 'lucide-react';
+import { toast } from 'sonner';
 import Header from '../../components/layout/Header';
 import FoodCard from '../../components/food/FoodCard';
 import CartDrawer from '../../components/food/CartDrawer';
@@ -66,11 +69,13 @@ const OutletMenu = () => {
       cartService.clearCart().catch(() => {});
       qc.invalidateQueries({ queryKey: ['orders', 'student', 'list'] });
       setIsCartOpen(false);
+      toast.success(`Order placed! Pickup code: ${order.pickupCode}`, {
+        description: `Order #${order.orderNumber} · ₹${Number(order.totalAmount)}`,
+      });
       navigate('/student/orders');
-      alert(`Order placed! Order number: ${order.orderNumber}. Pickup code: ${order.pickupCode}`);
     },
     onError: (err) => {
-      alert(err?.response?.data?.message || 'Order failed');
+      toast.error(err?.response?.data?.message || 'Order failed');
     },
   });
 
@@ -158,40 +163,63 @@ const OutletMenu = () => {
       />
 
       {/* Outlet banner */}
-      <div className="bg-card border-b border-border">
-        <div className="max-w-7xl mx-auto px-6 py-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="bg-card border-b border-border overflow-hidden relative">
+        <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-accent/5" />
+        <div className="relative max-w-7xl mx-auto px-6 py-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <button
-              className="mb-3 p-2 rounded-lg bg-muted text-foreground hover:bg-border transition-colors"
+            <motion.button
+              initial={{ opacity: 0, x: -10 }}
+              animate={{ opacity: 1, x: 0 }}
+              className="mb-4 p-2.5 rounded-xl bg-muted text-foreground hover:bg-border transition-colors inline-flex"
               onClick={() => navigate('/student')}
               aria-label="Back to outlets"
             >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="19" y1="12" x2="5" y2="12"></line>
-                <polyline points="12 19 5 12 12 5"></polyline>
-              </svg>
-            </button>
-            <h1 className="text-3xl font-bold text-foreground tracking-tight">{outlet?.name || 'Loading…'}</h1>
-            <p className="text-sm text-muted-foreground mt-1">{outlet?.description || ''}</p>
+              <ArrowLeft className="w-5 h-5" />
+            </motion.button>
+            <motion.h1
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="text-4xl font-extrabold text-foreground tracking-tight"
+            >
+              {outlet?.name || 'Loading…'}
+            </motion.h1>
+            <motion.p
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.1 }}
+              className="text-sm text-muted-foreground mt-1 max-w-2xl"
+            >
+              {outlet?.description || ''}
+            </motion.p>
             {outlet && (
-              <div className="flex items-center gap-3 mt-3 text-sm">
-                <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${outlet.status === 'OPEN' ? 'bg-success/10 text-success' : 'bg-muted text-muted-foreground'}`}>
-                  <span className={`w-1.5 h-1.5 rounded-full ${outlet.status === 'OPEN' ? 'bg-success' : 'bg-muted-foreground'}`}></span>
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.2 }}
+                className="flex items-center gap-3 mt-3 text-sm"
+              >
+                <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium ${
+                  outlet.status === 'OPEN' ? 'bg-success/10 text-success' : 'bg-muted text-muted-foreground'
+                }`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${outlet.status === 'OPEN' ? 'bg-success animate-pulse' : 'bg-muted-foreground'}`} />
                   {outlet.status}
                 </span>
-                <span className="text-muted-foreground">★ {outlet.rating}</span>
-                <span className="text-muted-foreground">⏱ {outlet.estimatedTime}</span>
-              </div>
+                <span className="inline-flex items-center gap-1 text-muted-foreground">
+                  <Star className="w-3.5 h-3.5 fill-warning text-warning" />
+                  <span className="font-medium text-foreground">{outlet.rating}</span>
+                </span>
+                <span className="inline-flex items-center gap-1 text-muted-foreground">
+                  <Clock className="w-3.5 h-3.5" />
+                  {outlet.estimatedTime}
+                </span>
+              </motion.div>
             )}
           </div>
           <div className="relative w-full md:w-80">
-            <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="11" cy="11" r="8"></circle>
-              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-            </svg>
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" size={18} />
             <input
               type="text"
-              className="w-full pl-10 pr-4 py-2.5 bg-background border border-input rounded-xl text-sm text-foreground placeholder:text-muted-foreground outline-none focus:ring-2 focus:ring-ring focus:border-ring"
+              className="w-full pl-11 pr-4 py-3 bg-background border border-input rounded-xl text-sm text-foreground placeholder:text-muted-foreground outline-none focus:ring-4 focus:ring-primary/10 focus:border-primary transition-all"
               placeholder="Search this menu..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -200,16 +228,19 @@ const OutletMenu = () => {
         </div>
       </div>
 
-      {/* Layout: sticky sidebar + main content */}
+      {/* Layout: sticky sidebar + main */}
       <div className="max-w-7xl mx-auto px-6 py-8 flex gap-6">
-        {/* Sidebar */}
         <aside className="hidden lg:block w-48 shrink-0">
           <div className="sticky top-24">
             <ul className="space-y-1">
               {categories.map((section) => (
                 <li key={section.name}>
                   <button
-                    className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeCategory === section.name ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}
+                    className={`w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                      activeCategory === section.name
+                        ? 'bg-primary text-primary-foreground shadow-md shadow-primary/25'
+                        : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                    }`}
                     onClick={() => scrollToCategory(section.name)}
                   >
                     {section.name}
@@ -220,18 +251,42 @@ const OutletMenu = () => {
           </div>
         </aside>
 
-        {/* Main */}
         <main className="flex-1 min-w-0">
           {menuLoading ? (
-            <div className="text-center py-16 text-muted-foreground">Loading menu…</div>
+            <div className="space-y-8">
+              {[0, 1].map((i) => (
+                <div key={i}>
+                  <div className="h-7 w-32 bg-muted animate-pulse rounded mb-4" />
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {[0, 1, 2, 3].map((j) => (
+                      <div key={j} className="bg-card border border-border rounded-2xl p-4 flex gap-3">
+                        <div className="w-24 h-24 bg-muted rounded-lg animate-pulse" />
+                        <div className="flex-1 space-y-2">
+                          <div className="h-4 w-32 bg-muted animate-pulse rounded" />
+                          <div className="h-3 w-full bg-muted animate-pulse rounded" />
+                          <div className="h-3 w-2/3 bg-muted animate-pulse rounded" />
+                          <div className="h-8 w-20 bg-muted animate-pulse rounded-lg mt-2" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
           ) : filteredCategories.length > 0 ? (
             <div className="space-y-10">
-              {filteredCategories.map((section) => (
-                <div
+              {filteredCategories.map((section, secIdx) => (
+                <motion.div
                   key={section.name}
                   ref={(el) => { sectionRefs.current[section.name] = el; }}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.4, delay: secIdx * 0.05 }}
                 >
-                  <h2 className="text-xl font-bold text-foreground tracking-tight mb-4">{section.name}</h2>
+                  <h2 className="text-xl font-bold text-foreground tracking-tight mb-4 flex items-center gap-2">
+                    {section.name}
+                    <span className="text-xs font-normal text-muted-foreground">({section.items.length})</span>
+                  </h2>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {section.items.map((item) => (
                       <FoodCard
@@ -252,13 +307,20 @@ const OutletMenu = () => {
                       />
                     ))}
                   </div>
-                </div>
+                </motion.div>
               ))}
             </div>
           ) : (
-            <div className="text-center py-16 text-muted-foreground">
-              <p>No items found matching "{searchQuery}"</p>
-            </div>
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="text-center py-24"
+            >
+              <div className="inline-flex w-16 h-16 rounded-full bg-muted items-center justify-center mb-4">
+                <Search className="text-muted-foreground" size={24} />
+              </div>
+              <p className="text-muted-foreground">No items found matching "{searchQuery}"</p>
+            </motion.div>
           )}
         </main>
       </div>

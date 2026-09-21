@@ -44,10 +44,14 @@ function hashToken(token) {
   return crypto.createHash('sha256').update(token).digest('hex');
 }
 
-async function issueRefreshToken(user, { req } = {}) {
+async function issueRefreshToken(user, { req, tx } = {}) {
+  // `tx` is optional — when supplied, the new RefreshToken row is created
+  // inside the caller's transaction. Without `tx` we use the global prisma
+  // client (the original behavior, used by auth.controller.js for login).
+  const db = tx || prisma;
   const raw = crypto.randomBytes(48).toString('base64url');
   const expiresAt = new Date(Date.now() + REFRESH_EXPIRES_IN_DAYS * 24 * 60 * 60 * 1000);
-  const record = await prisma.refreshToken.create({
+  const record = await db.refreshToken.create({
     data: {
       userId: user.id,
       tokenHash: hashToken(raw),
@@ -67,11 +71,20 @@ async function rotateRefreshToken(presentedToken, { req } = {}) {
   const stored = await prisma.refreshToken.findUnique({ where: { id: idPart } });
   if (!stored) return null;
 
-  // Hash must match before anything else — prevents info leak via timing
-  // and ensures we only touch rows whose presented secret matches the DB.
-  if (stored.tokenHash !== tokenHash) return null;
+  // ─── INO-001 #4: constant-time hash comparison (defense in depth) ───────
+  // The hash is SHA-256 of a 48-byte random, so timing leakage cannot
+  // recover the underlying raw token, but for a security-sensitive
+  // primitive we use crypto.timingSafeEqual anyway.
+  const storedHashBuf = Buffer.from(stored.tokenHash, 'hex');
+  const presentedHashBuf = Buffer.from(tokenHash, 'hex');
+  if (
+    storedHashBuf.length !== presentedHashBuf.length ||
+    !crypto.timingSafeEqual(storedHashBuf, presentedHashBuf)
+  ) {
+    return null;
+  }
 
-  // Expired? — read-only check, no race impact.
+  // Expired? — idempotent revoke + reject.
   if (stored.expiresAt.getTime() < Date.now()) {
     await prisma.refreshToken.update({
       where: { id: stored.id },
@@ -80,52 +93,96 @@ async function rotateRefreshToken(presentedToken, { req } = {}) {
     return null;
   }
 
-  // ─── INO-001 fix: atomic claim ─────────────────────────────────────────
-  // The previous implementation read `stored.revokedAt` / `stored.replacedBy`
-  // in a separate step from the UPDATE that marked the token as revoked.
-  // Two concurrent rotate requests for the same refresh token could both
-  // observe `revokedAt IS NULL` and both issue replacement tokens —
-  // defeating the "each refresh token can be used exactly once" property.
+  // ─── INO-001 v2: transactional rotation ─────────────────────────────────
+  // The v1 fix used a conditional `updateMany` to atomically claim the old
+  // token, but performed the claim, the new-token creation, and the
+  // `replacedBy`-update as *separate* writes. A crash between the claim
+  // and the `replacedBy`-update would leave the old token revoked with no
+  // replacement — the user is locked out and has to re-auth.
   //
-  // Fix: claim the row atomically with `updateMany` filtered on
-  // `revokedAt IS NULL AND replacedBy IS NULL`. Only the request whose
-  // `count === 1` proceeds. The losing request falls into the theft-
-  // detection branch and revokes every refresh token for the user.
-  const claimed = await prisma.refreshToken.updateMany({
-    where: { id: stored.id, revokedAt: null, replacedBy: null },
-    data: { revokedAt: new Date() },
-  });
+  // Fix: wrap the claim + new-token issue + `replacedBy`-update in a single
+  // `prisma.$transaction`. A crash before COMMIT rolls back the claim too,
+  // so the user can retry with the same refresh token.
+  //
+  // Conflict handling: if the atomic claim inside the tx fails, we abort
+  // and re-read the row OUTSIDE the tx to decide what to do:
+  //   - If `replacedBy` is now set  → token was rotated by a concurrent
+  //     request. Treat as replay/theft: revoke ALL active tokens for the
+  //     user. (This is the spec's "reuse of a rotated token = theft" rule.
+  //     A legitimate multi-tab refresh CAN trigger this — see the race
+  //     test for the tradeoff. A token-family design would distinguish
+  //     these cases; out of scope for V1.)
+  //   - If only `revokedAt` is set (logout-revoked or expired) → silently
+  //     reject WITHOUT nuking the user's other sessions. Previously ANY
+  //     already-revoked token triggered the global sweep, which was too
+  //     aggressive for the common logout-replay case.
+  try {
+    return await prisma.$transaction(async (tx) => {
+      // Atomic claim inside the tx.
+      const claimed = await tx.refreshToken.updateMany({
+        where: { id: stored.id, revokedAt: null, replacedBy: null },
+        data: { revokedAt: new Date() },
+      });
 
-  if (claimed.count !== 1) {
-    // Token was already claimed by a concurrent request — treat as theft.
-    // Revoke EVERYTHING for this user — they may be under attack.
-    await prisma.refreshToken.updateMany({
-      where: { userId: stored.userId, revokedAt: null },
-      data: { revokedAt: new Date() },
+      if (claimed.count !== 1) {
+        // Lost the race — abort the tx so the claim rolls back. We re-read
+        // the row outside the tx to decide whether this is theft or just
+        // a stale (logout-revoked) token.
+        const err = new Error('CLAIM_LOST');
+        err.code = 'CLAIM_LOST';
+        throw err;
+      }
+
+      // Re-verify the user is still ACTIVE inside the tx. If they've been
+      // suspended mid-flight, abort — the claim rolls back so the token
+      // stays usable if the user is later reactivated.
+      const user = await tx.user.findUnique({ where: { id: stored.userId } });
+      if (!user || user.status !== 'ACTIVE') {
+        const err = new Error('USER_INACTIVE');
+        err.code = 'USER_INACTIVE';
+        throw err;
+      }
+
+      // Issue the replacement INSIDE the tx so a crash rolls it back too.
+      const newRefresh = await issueRefreshToken(user, { req, tx });
+      const [newId] = newRefresh.split('.', 1);
+
+      // Set replacedBy on the old row.
+      await tx.refreshToken.update({
+        where: { id: stored.id },
+        data: { replacedBy: newId },
+      });
+
+      return {
+        user,
+        accessToken: signAccessToken(user),
+        refreshToken: newRefresh,
+      };
     });
-    return null;
+  } catch (err) {
+    if (err.code === 'USER_INACTIVE') return null;
+
+    if (err.code === 'CLAIM_LOST') {
+      // Re-read the row to figure out WHY we lost the claim.
+      const post = await prisma.refreshToken.findUnique({ where: { id: stored.id } });
+      if (!post) return null;
+
+      if (post.replacedBy) {
+        // Token was rotated by a concurrent request → replay/theft.
+        // Revoke ALL active tokens for this user.
+        await prisma.refreshToken.updateMany({
+          where: { userId: post.userId, revokedAt: null },
+          data: { revokedAt: new Date() },
+        });
+      }
+      // else: only `revokedAt` was set (logout/expiry) — silently reject
+      // without nuking the user's other sessions.
+      return null;
+    }
+
+    // Unexpected error — rethrow.
+    throw err;
   }
-
-  // From here we own the row. Look up the user; if suspended, fail silently
-  // (token is already revoked, so we're not leaving a live credential).
-  const user = await prisma.user.findUnique({ where: { id: stored.userId } });
-  if (!user || user.status !== 'ACTIVE') return null;
-
-  // Issue new pair
-  const newRefresh = await issueRefreshToken(user, { req });
-
-  // Fill in `replacedBy` on the row we already claimed.
-  const [newId] = newRefresh.split('.', 1);
-  await prisma.refreshToken.update({
-    where: { id: stored.id },
-    data: { replacedBy: newId },
-  });
-
-  return {
-    user,
-    accessToken: signAccessToken(user),
-    refreshToken: newRefresh,
-  };
 }
 
 async function revokeAllForUser(userId) {

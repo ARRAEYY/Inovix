@@ -1,0 +1,33 @@
+{
+  "name": "nosh",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Campus-only prepaid food ordering platform — monorepo",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:backend": "npm run dev --workspace=backend",
+    "dev:frontend": "npm run dev --workspace=frontend",
+    "dev": "concurrently -n backend,frontend -c blue,green \"npm:dev:backend\" \"npm:dev:frontend\"",
+    "build": "npm run build --workspace=frontend",
+    "test": "npm run test --workspace=backend",
+    "db:migrate": "prisma migrate dev --schema=apps/backend/prisma/schema.prisma",
+    "db:reset": "prisma migrate reset --schema=apps/backend/prisma/schema.prisma --force --skip-seed",
+    "db:seed": "cross-env-shell DATABASE_URL=\"file:./dev.db\" node apps/backend/prisma/seed.js",
+    "db:studio": "prisma studio --schema=apps/backend/prisma/schema.prisma",
+    "db:generate": "prisma generate --schema=apps/backend/prisma/schema.prisma"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0",
+    "cross-env-shell": "^7.0.3",
+    "prisma": "^5.22.0"
+  },
+  "engines": {
+    "node": ">=18.18.0"
+  },
+  "dependencies": {
+    "node-cron": "^4.6.0"
+  }
+}

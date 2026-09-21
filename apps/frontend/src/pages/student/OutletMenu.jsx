@@ -18,26 +18,22 @@ const OutletMenu = () => {
   const [activeCategory, setActiveCategory] = useState(null);
   const sectionRefs = useRef({});
 
-  // Fetch outlet details
   const { data: outlet } = useQuery({
     queryKey: ['outlets', 'detail', outletId],
     queryFn: () => catalogService.getOutlet(outletId),
   });
 
-  // Fetch menu items
   const { data: menuItems = [], isLoading: menuLoading } = useQuery({
     queryKey: ['outlets', 'menu', outletId],
     queryFn: () => catalogService.getOutletMenu(outletId),
   });
 
-  // Fetch current cart (so the drawer can show server-side cart state)
   const { data: cart, refetch: refetchCart } = useQuery({
     queryKey: ['cart', 'outlet', outletId],
     queryFn: () => cartService.getOrCreateForOutlet(outletId),
     enabled: !!outletId,
   });
 
-  // Add to cart mutation
   const addItemMut = useMutation({
     mutationFn: ({ menuItemId, quantity }) =>
       cartService.addItem(outletId, { menuItemId, quantity }),
@@ -67,12 +63,10 @@ const OutletMenu = () => {
       return ordersService.createOrder({ outletId, items, paymentMethod: 'ONLINE' });
     },
     onSuccess: (order) => {
-      // Clear the cart + navigate to orders page
       cartService.clearCart().catch(() => {});
       qc.invalidateQueries({ queryKey: ['orders', 'student', 'list'] });
       setIsCartOpen(false);
       navigate('/student/orders');
-      // In V1 we don't have a real Razorpay key, so we just show the order
       alert(`Order placed! Order number: ${order.orderNumber}. Pickup code: ${order.pickupCode}`);
     },
     onError: (err) => {
@@ -80,7 +74,6 @@ const OutletMenu = () => {
     },
   });
 
-  // Group menu items by category
   const categories = React.useMemo(() => {
     const grouped = {};
     for (const item of menuItems) {
@@ -91,14 +84,12 @@ const OutletMenu = () => {
     return Object.values(grouped);
   }, [menuItems]);
 
-  // Set default active category once menu loads
   useEffect(() => {
     if (categories.length > 0 && !activeCategory) {
       setActiveCategory(categories[0].name);
     }
   }, [categories, activeCategory]);
 
-  // Scroll spy
   useEffect(() => {
     const handleScroll = () => {
       const scrollPosition = window.scrollY + 200;
@@ -130,7 +121,6 @@ const OutletMenu = () => {
     }
   };
 
-  // Build a map of menuItemId -> cartItem for the FoodCard's quantity display
   const cartByMenuItemId = React.useMemo(() => {
     const map = {};
     for (const ci of cart?.items ?? []) {
@@ -142,7 +132,6 @@ const OutletMenu = () => {
   const handleUpdateQuantity = (menuItemId, newQty) => {
     const existing = cartByMenuItemId[menuItemId];
     if (!existing) {
-      // Add new
       addItemMut.mutate({ menuItemId, quantity: newQty });
     } else {
       updateQtyMut.mutate({ cartItemId: existing.id, quantity: newQty });
@@ -151,7 +140,6 @@ const OutletMenu = () => {
 
   const cartItemsCount = (cart?.items ?? []).reduce((sum, i) => sum + i.quantity, 0);
 
-  // Filter by search query
   const filteredCategories = searchQuery.trim()
     ? categories.map((section) => ({
         ...section,
@@ -163,86 +151,88 @@ const OutletMenu = () => {
     : categories;
 
   return (
-    <div className="page-wrapper bg-white">
+    <div className="min-h-screen bg-background">
       <Header
         cartCount={cartItemsCount}
         onCartClick={() => setIsCartOpen(true)}
       />
 
-      {/* Outlet Banner */}
-      <div className="outlet-banner">
-        <div className="banner-content">
-          <div className="banner-left">
-            <button className="icon-btn back-btn" onClick={() => navigate('/student')} style={{ border: 'none', background: 'var(--muted)', marginBottom: '1rem' }}>
+      {/* Outlet banner */}
+      <div className="bg-card border-b border-border">
+        <div className="max-w-7xl mx-auto px-6 py-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <button
+              className="mb-3 p-2 rounded-lg bg-muted text-foreground hover:bg-border transition-colors"
+              onClick={() => navigate('/student')}
+              aria-label="Back to outlets"
+            >
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <line x1="19" y1="12" x2="5" y2="12"></line>
                 <polyline points="12 19 5 12 12 5"></polyline>
               </svg>
             </button>
-            <div className="banner-details">
-              <h1 className="banner-title">{outlet?.name || 'Loading…'}</h1>
-              <p className="banner-desc">{outlet?.description || ''}</p>
-              <div className="banner-meta">
-                {outlet && (
-                  <>
-                    <span className={`status-badge ${outlet.status === 'OPEN' ? 'active' : 'inactive'}`}>
-                      <span className="status-dot"></span>{outlet.status}
-                    </span>
-                    <span className="meta-info">★ {outlet.rating}</span>
-                    <span className="meta-info">⏱ {outlet.estimatedTime}</span>
-                  </>
-                )}
+            <h1 className="text-3xl font-bold text-foreground tracking-tight">{outlet?.name || 'Loading…'}</h1>
+            <p className="text-sm text-muted-foreground mt-1">{outlet?.description || ''}</p>
+            {outlet && (
+              <div className="flex items-center gap-3 mt-3 text-sm">
+                <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${outlet.status === 'OPEN' ? 'bg-success/10 text-success' : 'bg-muted text-muted-foreground'}`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${outlet.status === 'OPEN' ? 'bg-success' : 'bg-muted-foreground'}`}></span>
+                  {outlet.status}
+                </span>
+                <span className="text-muted-foreground">★ {outlet.rating}</span>
+                <span className="text-muted-foreground">⏱ {outlet.estimatedTime}</span>
               </div>
-            </div>
+            )}
           </div>
-          <div className="banner-right">
-            <div className="menu-search-wrapper">
-              <svg className="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="11" cy="11" r="8"></circle>
-                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-              </svg>
-              <input
-                type="text"
-                className="search-input"
-                placeholder="Search this menu..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
-            </div>
+          <div className="relative w-full md:w-80">
+            <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <input
+              type="text"
+              className="w-full pl-10 pr-4 py-2.5 bg-background border border-input rounded-xl text-sm text-foreground placeholder:text-muted-foreground outline-none focus:ring-2 focus:ring-ring focus:border-ring"
+              placeholder="Search this menu..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
           </div>
         </div>
       </div>
 
-      {/* Main Menu Layout */}
-      <div className="menu-layout-container">
-        <aside className="category-sidebar">
-          <ul className="category-list">
-            {categories.map((section) => (
-              <li key={section.name}>
-                <button
-                  className={`category-nav-btn ${activeCategory === section.name ? 'active' : ''}`}
-                  onClick={() => scrollToCategory(section.name)}
-                >
-                  <span className="category-name">{section.name}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
+      {/* Layout: sticky sidebar + main content */}
+      <div className="max-w-7xl mx-auto px-6 py-8 flex gap-6">
+        {/* Sidebar */}
+        <aside className="hidden lg:block w-48 shrink-0">
+          <div className="sticky top-24">
+            <ul className="space-y-1">
+              {categories.map((section) => (
+                <li key={section.name}>
+                  <button
+                    className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeCategory === section.name ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}
+                    onClick={() => scrollToCategory(section.name)}
+                  >
+                    {section.name}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
         </aside>
 
-        <main className="menu-content">
-          <div className="menu-sections">
-            {menuLoading ? (
-              <div style={{ textAlign: 'center', padding: '4rem 0', color: 'var(--text-light)' }}>Loading menu…</div>
-            ) : filteredCategories.length > 0 ? (
-              filteredCategories.map((section) => (
+        {/* Main */}
+        <main className="flex-1 min-w-0">
+          {menuLoading ? (
+            <div className="text-center py-16 text-muted-foreground">Loading menu…</div>
+          ) : filteredCategories.length > 0 ? (
+            <div className="space-y-10">
+              {filteredCategories.map((section) => (
                 <div
                   key={section.name}
-                  className="menu-section"
                   ref={(el) => { sectionRefs.current[section.name] = el; }}
                 >
-                  <h2 className="section-title">{section.name}</h2>
-                  <div className="food-grid">
+                  <h2 className="text-xl font-bold text-foreground tracking-tight mb-4">{section.name}</h2>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {section.items.map((item) => (
                       <FoodCard
                         key={item.id}
@@ -263,13 +253,13 @@ const OutletMenu = () => {
                     ))}
                   </div>
                 </div>
-              ))
-            ) : (
-              <div className="empty-search">
-                <p>No items found matching "{searchQuery}"</p>
-              </div>
-            )}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-16 text-muted-foreground">
+              <p>No items found matching "{searchQuery}"</p>
+            </div>
+          )}
         </main>
       </div>
 

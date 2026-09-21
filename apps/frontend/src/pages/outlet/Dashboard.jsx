@@ -8,17 +8,16 @@ import { useAuth } from '../../hooks/useAuth';
 
 const STATUS_TABS = ['PENDING', 'ACCEPTED', 'PREPARING', 'READY', 'COMPLETED', 'REJECTED', 'CANCELLED'];
 
-const STATUS_COLOR = {
-  PENDING: 'pending',
-  ACCEPTED: 'accepted',
-  PREPARING: 'preparing',
-  READY: 'ready',
-  COMPLETED: 'completed',
-  REJECTED: 'rejected',
-  CANCELLED: 'cancelled',
+const STATUS_CLASSES = {
+  PENDING: 'bg-warning/10 text-warning',
+  ACCEPTED: 'bg-accent-light text-accent',
+  PREPARING: 'bg-accent-light text-accent',
+  READY: 'bg-success/10 text-success',
+  COMPLETED: 'bg-muted text-muted-foreground',
+  REJECTED: 'bg-destructive/10 text-destructive',
+  CANCELLED: 'bg-destructive/10 text-destructive',
 };
 
-// What action buttons to show per current status (spec §8.6 transitions)
 const TRANSITIONS = {
   PENDING: ['ACCEPTED', 'REJECTED'],
   ACCEPTED: ['PREPARING', 'CANCELLED'],
@@ -29,28 +28,34 @@ const TRANSITIONS = {
   CANCELLED: [],
 };
 
+const ACTION_LABELS = {
+  ACCEPTED: 'Accept',
+  REJECTED: 'Reject',
+  PREPARING: 'Start preparing',
+  READY: 'Mark ready',
+  COMPLETED: 'Complete',
+  CANCELLED: 'Cancel',
+};
+
 const Dashboard = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [activeTab, setActiveTab] = useState('PENDING');
-  const [actionReason, setActionReason] = useState({}); // orderId -> reason text
+  const [actionReason, setActionReason] = useState({});
 
-  // Fetch the outlet's orders
   const { data: orders = [], isLoading } = useQuery({
     queryKey: ['orders', 'outlet', 'list', { status: activeTab }],
-    queryFn: () => ordersService.listOutletOrders({ status: activeTab === 'ALL' ? undefined : activeTab, pageSize: 100 }),
-    refetchInterval: 30_000, // 30s polling fallback if socket.io fails
+    queryFn: () => ordersService.listOutletOrders({ status: activeTab, pageSize: 100 }),
+    refetchInterval: 30_000,
   });
 
-  // Get my outlet info (for the header)
   const { data: outlets } = useQuery({
     queryKey: ['outlets', 'list'],
     queryFn: catalogService.getOutlets,
   });
   const myOutlet = outlets?.find((o) => o.id === user?.outletId);
 
-  // Status transition mutation
   const transitionMut = useMutation({
     mutationFn: ({ orderId, status, reason }) =>
       ordersService.updateOutletOrderStatus(orderId, status, reason),
@@ -69,138 +74,147 @@ const Dashboard = () => {
     transitionMut.mutate({ orderId, status: newStatus, reason });
   };
 
+  // KPI counters
+  const allStatusCounts = STATUS_TABS.reduce((acc, s) => {
+    acc[s] = 0;
+    return acc;
+  }, {});
+
   return (
-    <div className="page-wrapper">
+    <div className="min-h-screen bg-background">
       <Header />
-      <main className="explore-container" style={{ maxWidth: '1400px' }}>
-        <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+      <main className="max-w-7xl mx-auto px-6 py-8">
+        <div className="flex items-start justify-between mb-8">
           <div>
-            <p className="welcome-greeting">Welcome back, {user?.name || 'Outlet'}</p>
-            <h1 className="page-title">{myOutlet?.name || 'Outlet Dashboard'}</h1>
-            <p className="page-subtitle">
+            <p className="text-sm text-muted-foreground mb-1">Welcome back, {user?.name || 'Outlet'}</p>
+            <h1 className="text-3xl font-bold text-foreground tracking-tight">{myOutlet?.name || 'Outlet Dashboard'}</h1>
+            <p className="text-base text-muted-foreground mt-1">
               {myOutlet?.status ? `Status: ${myOutlet.status}` : 'Loading outlet…'}
             </p>
           </div>
-          <button className="pill" onClick={() => { logout(); navigate('/'); }} style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}>
+          <button
+            className="px-4 py-2 border border-border bg-card text-foreground text-sm font-semibold rounded-lg hover:bg-muted transition-colors"
+            onClick={() => { logout(); navigate('/'); }}
+          >
             Logout
           </button>
         </div>
 
         {/* KPI row */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
-          {['PENDING', 'ACCEPTED', 'PREPARING', 'READY'].map((s) => (
-            <div key={s} className="outlet-card" style={{ padding: '1.25rem' }}>
-              <p style={{ fontSize: '0.85rem', color: 'var(--text-light)', marginBottom: '0.25rem' }}>{s}</p>
-              <p style={{ fontSize: '2rem', fontWeight: 700, color: 'var(--text-dark)' }}>
-                {orders.filter((o) => o.status === s).length}
-              </p>
-            </div>
-          ))}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+          {['PENDING', 'ACCEPTED', 'PREPARING', 'READY'].map((s) => {
+            const count = orders.filter((o) => o.status === s).length;
+            return (
+              <div key={s} className="bg-card border border-border rounded-xl p-5">
+                <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">{s}</p>
+                <p className="text-2xl font-bold text-foreground">{count}</p>
+              </div>
+            );
+          })}
         </div>
 
         {/* Status tabs */}
-        <div className="filter-pills" style={{ marginBottom: '1.5rem', flexWrap: 'wrap' }}>
+        <div className="flex flex-wrap gap-2 mb-6">
           {STATUS_TABS.map((tab) => (
             <button
               key={tab}
-              className={`pill ${activeTab === tab ? 'active' : ''}`}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${activeTab === tab ? 'bg-primary text-primary-foreground' : 'bg-card border border-border text-foreground hover:bg-muted'}`}
               onClick={() => setActiveTab(tab)}
-              style={{ padding: '0.4rem 0.9rem', fontSize: '0.8rem' }}
             >
               {tab}
             </button>
           ))}
         </div>
 
-        {/* Orders list */}
         {isLoading ? (
-          <div style={{ textAlign: 'center', padding: '3rem 0', color: 'var(--text-light)' }}>Loading orders…</div>
+          <div className="text-center py-16 text-muted-foreground">Loading orders…</div>
         ) : orders.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '3rem 0', color: 'var(--text-light)' }}>
+          <div className="text-center py-16 text-muted-foreground">
             <p>No orders in this status.</p>
           </div>
         ) : (
-          <div className="orders-list">
+          <div className="space-y-4">
             {orders.map((order) => {
-              const outletSnapshot = (() => { try { return JSON.parse(order.outletSnapshot || '{}'); } catch { return {}; } })();
               const timeline = (() => { try { return JSON.parse(order.timeline || '[]'); } catch { return []; } })();
-              const lastEvent = timeline[timeline.length - 1];
               const allowedNext = TRANSITIONS[order.status] || [];
 
               return (
-                <div key={order.id} className={`order-card ${STATUS_COLOR[order.status] || ''}`}>
-                  <div className="order-header">
+                <div key={order.id} className="bg-card border border-border rounded-xl overflow-hidden">
+                  <div className="p-5 flex items-start justify-between gap-4 border-b border-border">
                     <div>
-                      <h3 className="order-outlet">#{order.orderNumber}</h3>
-                      <p className="order-date">
+                      <h3 className="font-semibold text-foreground">#{order.orderNumber}</h3>
+                      <p className="text-xs text-muted-foreground mt-1">
                         {new Date(order.createdAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
                       </p>
-                      <p className="order-number">Pickup code: <strong>{order.pickupCode}</strong></p>
-                      {order.notes && <p style={{ marginTop: '0.25rem', color: 'var(--text-gray)', fontSize: '0.85rem' }}>Note: {order.notes}</p>}
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Pickup code: <span className="font-mono font-semibold text-foreground">{order.pickupCode}</span>
+                      </p>
+                      {order.notes && (
+                        <p className="text-xs text-muted-foreground mt-2 italic">Note: {order.notes}</p>
+                      )}
                     </div>
-                    <div className={`order-status ${STATUS_COLOR[order.status] || ''}`}>
+                    <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-medium ${STATUS_CLASSES[order.status]}`}>
                       {order.status}
-                    </div>
+                    </span>
                   </div>
 
-                  <div className="order-items-container">
+                  <div className="px-5 py-3 space-y-1">
                     {(order.items || []).map((item, idx) => (
-                      <div key={idx} className="order-item" style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <div key={idx} className="flex items-center justify-between text-sm py-1">
                         <div>
-                          <span className="item-quantity">{item.quantity} ×</span>
-                          <span className="item-name" style={{ marginLeft: '0.5rem' }}>{item.name}</span>
+                          <span className="text-muted-foreground">{item.quantity} ×</span>
+                          <span className="text-foreground ml-2">{item.name}</span>
                         </div>
-                        <span className="item-price">₹{Number(item.itemTotal)}</span>
+                        <span className="text-foreground">₹{Number(item.itemTotal)}</span>
                       </div>
                     ))}
-                    <div className="order-total" style={{ marginTop: '0.5rem', paddingTop: '0.5rem', borderTop: '1px dashed var(--border-color)' }}>
-                      <span className="total-label">Total</span>
-                      <span className="total-amount">₹{Number(order.totalAmount)}</span>
+                    <div className="flex items-center justify-between pt-2 mt-2 border-t border-dashed border-border">
+                      <span className="text-xs text-muted-foreground">Total</span>
+                      <span className="font-bold text-foreground">₹{Number(order.totalAmount)}</span>
                     </div>
                   </div>
 
                   {(allowedNext.includes('REJECTED') || allowedNext.includes('CANCELLED')) && (
-                    <div style={{ marginTop: '0.75rem' }}>
+                    <div className="px-5 pb-3">
                       <input
                         type="text"
                         placeholder="Reason (optional)"
                         value={actionReason[order.id] || ''}
                         onChange={(e) => setActionReason((p) => ({ ...p, [order.id]: e.target.value }))}
-                        style={{ width: '100%', padding: '0.5rem 0.75rem', border: '1px solid var(--input-border)', borderRadius: 'var(--radius-sm)', fontSize: '0.85rem' }}
+                        className="w-full px-3 py-2 text-sm border border-input rounded-lg bg-background text-foreground placeholder:text-muted-foreground outline-none focus:ring-2 focus:ring-ring focus:border-ring"
                       />
                     </div>
                   )}
 
-                  {/* Action buttons */}
                   {allowedNext.length > 0 && (
-                    <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem', flexWrap: 'wrap' }}>
-                      {allowedNext.map((nextStatus) => (
-                        <button
-                          key={nextStatus}
-                          className={nextStatus === 'REJECTED' || nextStatus === 'CANCELLED' ? 'checkout-btn schedule-btn' : 'checkout-btn order-now-btn'}
-                          onClick={() => handleTransition(order.id, nextStatus)}
-                          disabled={transitionMut.isPending}
-                          style={{ flex: '1 1 auto', minWidth: '120px' }}
-                        >
-                          {nextStatus === 'ACCEPTED' && 'Accept'}
-                          {nextStatus === 'REJECTED' && 'Reject'}
-                          {nextStatus === 'PREPARING' && 'Start preparing'}
-                          {nextStatus === 'READY' && 'Mark ready'}
-                          {nextStatus === 'COMPLETED' && 'Complete'}
-                          {nextStatus === 'CANCELLED' && 'Cancel'}
-                        </button>
-                      ))}
+                    <div className="px-5 pb-5 flex gap-2 flex-wrap">
+                      {allowedNext.map((nextStatus) => {
+                        const isReject = nextStatus === 'REJECTED' || nextStatus === 'CANCELLED';
+                        return (
+                          <button
+                            key={nextStatus}
+                            className={`flex-1 min-w-[120px] py-2.5 rounded-lg text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${isReject ? 'border border-border bg-card text-destructive hover:bg-destructive/5' : 'bg-primary text-primary-foreground hover:bg-primary-hover'}`}
+                            onClick={() => handleTransition(order.id, nextStatus)}
+                            disabled={transitionMut.isPending}
+                          >
+                            {ACTION_LABELS[nextStatus]}
+                          </button>
+                        );
+                      })}
                     </div>
                   )}
 
-                  {/* Timeline */}
                   {timeline.length > 0 && (
-                    <details style={{ marginTop: '0.75rem', fontSize: '0.75rem', color: 'var(--text-gray)' }}>
-                      <summary style={{ cursor: 'pointer' }}>Timeline ({timeline.length} events)</summary>
-                      <ol style={{ marginTop: '0.5rem', paddingLeft: '1.25rem' }}>
+                    <details className="px-5 pb-5 text-xs text-muted-foreground">
+                      <summary className="cursor-pointer hover:text-foreground transition-colors">
+                        Timeline ({timeline.length} events)
+                      </summary>
+                      <ol className="mt-2 pl-5 list-decimal space-y-0.5">
                         {timeline.map((ev, idx) => (
                           <li key={idx}>
-                            <strong>{ev.status}</strong> — {new Date(ev.at).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' })}
+                            <span className="font-semibold text-foreground">{ev.status}</span>
+                            {' — '}
+                            {new Date(ev.at).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' })}
                             {ev.by ? ` (by ${ev.by})` : ''}
                           </li>
                         ))}

@@ -5,48 +5,65 @@ import Header from '../../components/layout/Header';
 import { adminService } from '../../services/admin/adminService';
 import { useAuth } from '../../hooks/useAuth';
 
+const TABS = ['overview', 'users', 'outlets', 'orders', 'audit'];
+
+const KpiCard = ({ title, stats }) => (
+  <div className="bg-card border border-border rounded-xl p-5">
+    <h3 className="text-xs text-muted-foreground uppercase tracking-wider mb-3">{title}</h3>
+    <div className="space-y-1.5">
+      {stats.map(([label, value]) => (
+        <div key={label} className="flex items-center justify-between">
+          <span className="text-sm text-muted-foreground">{label}</span>
+          <span className="text-base font-semibold text-foreground">{value}</span>
+        </div>
+      ))}
+    </div>
+  </div>
+);
+
+const Th = ({ children }) => (
+  <th className="px-4 py-3 text-left text-xs uppercase tracking-wider text-muted-foreground">{children}</th>
+);
+const Td = ({ children }) => (
+  <td className="px-4 py-3 text-sm text-foreground">{children}</td>
+);
+
 const Dashboard = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const [tab, setTab] = useState('overview'); // overview | users | outlets | orders | audit
+  const [tab, setTab] = useState('overview');
 
-  // Overview
   const { data: overview } = useQuery({
     queryKey: ['admin', 'overview'],
     queryFn: adminService.getOverview,
     refetchInterval: 60_000,
   });
 
-  // Users
   const { data: usersData } = useQuery({
     queryKey: ['admin', 'users'],
     queryFn: () => adminService.listUsers({ pageSize: 50 }),
     enabled: tab === 'users',
   });
 
-  // Outlets
   const { data: outletsData } = useQuery({
     queryKey: ['admin', 'outlets'],
     queryFn: adminService.listOutlets,
     enabled: tab === 'outlets' || tab === 'overview',
   });
 
-  // Orders
   const { data: ordersData } = useQuery({
     queryKey: ['admin', 'orders'],
     queryFn: () => adminService.listOrders({ pageSize: 100 }),
     enabled: tab === 'orders',
   });
 
-  // Audit log
   const { data: auditData } = useQuery({
     queryKey: ['admin', 'audit'],
     queryFn: () => adminService.listAudit({ pageSize: 50 }),
     enabled: tab === 'audit',
   });
 
-  // Mutations
   const userStatusMut = useMutation({
     mutationFn: ({ userId, status }) => adminService.updateUserStatus(userId, status),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin', 'users'] }),
@@ -57,31 +74,31 @@ const Dashboard = () => {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin', 'outlets'] }),
   });
 
-  const TABS = ['overview', 'users', 'outlets', 'orders', 'audit'];
-
   return (
-    <div className="page-wrapper">
+    <div className="min-h-screen bg-background">
       <Header />
-      <main className="explore-container" style={{ maxWidth: '1400px' }}>
-        <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+      <main className="max-w-7xl mx-auto px-6 py-8">
+        <div className="flex items-start justify-between mb-8">
           <div>
-            <p className="welcome-greeting">Welcome back, {user?.name || 'Admin'}</p>
-            <h1 className="page-title">Platform Admin</h1>
-            <p className="page-subtitle">Manage users, outlets, orders, and audit logs</p>
+            <p className="text-sm text-muted-foreground mb-1">Welcome back, {user?.name || 'Admin'}</p>
+            <h1 className="text-3xl font-bold text-foreground tracking-tight">Platform Admin</h1>
+            <p className="text-base text-muted-foreground mt-1">Manage users, outlets, orders, and audit logs</p>
           </div>
-          <button className="pill" onClick={() => { logout(); navigate('/'); }} style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}>
+          <button
+            className="px-4 py-2 border border-border bg-card text-foreground text-sm font-semibold rounded-lg hover:bg-muted transition-colors"
+            onClick={() => { logout(); navigate('/'); }}
+          >
             Logout
           </button>
         </div>
 
         {/* Tabs */}
-        <div className="filter-pills" style={{ marginBottom: '1.5rem', flexWrap: 'wrap' }}>
+        <div className="flex flex-wrap gap-2 mb-6">
           {TABS.map((t) => (
             <button
               key={t}
-              className={`pill ${tab === t ? 'active' : ''}`}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors capitalize ${tab === t ? 'bg-primary text-primary-foreground' : 'bg-card border border-border text-foreground hover:bg-muted'}`}
               onClick={() => setTab(t)}
-              style={{ padding: '0.4rem 0.9rem', fontSize: '0.8rem', textTransform: 'capitalize' }}
             >
               {t}
             </button>
@@ -90,7 +107,7 @@ const Dashboard = () => {
 
         {tab === 'overview' && overview && (
           <>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem' }}>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
               <KpiCard title="Users" stats={[
                 ['Students', overview.users.students],
                 ['Outlet Admins', overview.users.outletAdmins],
@@ -123,28 +140,28 @@ const Dashboard = () => {
               ]} />
             </div>
 
-            <div style={{ marginTop: '2rem' }}>
-              <h2 className="section-title">Outlets</h2>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1rem', marginTop: '1rem' }}>
+            <div>
+              <h2 className="text-lg font-bold text-foreground tracking-tight mb-4">Outlets</h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {(outletsData ?? []).map((o) => (
-                  <div key={o.id} className="outlet-card" style={{ padding: '1rem' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <div key={o.id} className="bg-card border border-border rounded-xl p-5">
+                    <div className="flex items-start justify-between mb-2">
                       <div>
-                        <h3 style={{ fontSize: '1rem', fontWeight: 600 }}>{o.name}</h3>
-                        <p style={{ fontSize: '0.75rem', color: 'var(--text-light)' }}>{o.slug}</p>
+                        <h3 className="font-semibold text-foreground">{o.name}</h3>
+                        <p className="text-xs text-muted-foreground">{o.slug}</p>
                       </div>
-                      <span className={`status-badge ${o.status === 'OPEN' ? 'active' : 'inactive'}`}>
-                        <span className="status-dot"></span>{o.status}
+                      <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ${o.status === 'OPEN' ? 'bg-success/10 text-success' : 'bg-muted text-muted-foreground'}`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${o.status === 'OPEN' ? 'bg-success' : 'bg-muted-foreground'}`}></span>
+                        {o.status}
                       </span>
                     </div>
-                    <div style={{ display: 'flex', gap: '4px', marginTop: '0.75rem', flexWrap: 'wrap' }}>
+                    <div className="flex gap-1.5 flex-wrap mt-3">
                       {['OPEN', 'BUSY', 'CLOSED', 'SUSPENDED'].map((s) => (
                         <button
                           key={s}
-                          className="pill"
+                          className="px-2 py-0.5 text-[0.65rem] bg-muted text-foreground rounded hover:bg-border transition-colors disabled:opacity-50"
                           onClick={() => outletStatusMut.mutate({ outletId: o.id, status: s })}
                           disabled={outletStatusMut.isPending}
-                          style={{ padding: '2px 8px', fontSize: '0.65rem' }}
                         >
                           {s}
                         </button>
@@ -158,41 +175,40 @@ const Dashboard = () => {
         )}
 
         {tab === 'users' && usersData && (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', background: 'var(--card)' }}>
+          <div className="bg-card border border-border rounded-xl overflow-x-auto">
+            <table className="w-full">
               <thead>
-                <tr style={{ textAlign: 'left', borderBottom: '2px solid var(--border-color)' }}>
+                <tr className="border-b-2 border-border">
                   <Th>Name</Th><Th>Email</Th><Th>Role</Th><Th>Status</Th><Th>Outlet</Th><Th>Actions</Th>
                 </tr>
               </thead>
               <tbody>
                 {usersData.items.map((u) => (
-                  <tr key={u.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                  <tr key={u.id} className="border-b border-border last:border-b-0">
                     <Td>{u.name}</Td>
                     <Td>{u.email}</Td>
-                    <Td><span className="pill" style={{ padding: '2px 8px', fontSize: '0.7rem' }}>{u.role}</span></Td>
+                    <Td><span className="px-2 py-0.5 text-xs bg-muted text-foreground rounded-md">{u.role}</span></Td>
                     <Td>
-                      <span className={`status-badge ${u.status === 'ACTIVE' ? 'active' : 'inactive'}`}>
-                        <span className="status-dot"></span>{u.status}
+                      <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ${u.status === 'ACTIVE' ? 'bg-success/10 text-success' : 'bg-destructive/10 text-destructive'}`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${u.status === 'ACTIVE' ? 'bg-success' : 'bg-destructive'}`}></span>
+                        {u.status}
                       </span>
                     </Td>
                     <Td>{u.outletStaff?.outletId || '—'}</Td>
                     <Td>
                       {u.status === 'ACTIVE' ? (
                         <button
-                          className="pill"
+                          className="px-2 py-0.5 text-xs text-destructive border border-border rounded hover:bg-destructive/5 transition-colors disabled:opacity-50"
                           onClick={() => userStatusMut.mutate({ userId: u.id, status: 'SUSPENDED' })}
                           disabled={userStatusMut.isPending || u.id === user.id}
-                          style={{ padding: '2px 8px', fontSize: '0.7rem', color: 'var(--destructive)' }}
                         >
                           {u.id === user.id ? 'self' : 'Suspend'}
                         </button>
                       ) : (
                         <button
-                          className="pill"
+                          className="px-2 py-0.5 text-xs text-success border border-border rounded hover:bg-success/5 transition-colors disabled:opacity-50"
                           onClick={() => userStatusMut.mutate({ userId: u.id, status: 'ACTIVE' })}
                           disabled={userStatusMut.isPending}
-                          style={{ padding: '2px 8px', fontSize: '0.7rem', color: 'var(--success)' }}
                         >
                           Activate
                         </button>
@@ -206,25 +222,25 @@ const Dashboard = () => {
         )}
 
         {tab === 'outlets' && outletsData && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem' }}>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {outletsData.map((o) => (
-              <div key={o.id} className="outlet-card" style={{ padding: '1rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <h3 style={{ fontWeight: 600 }}>{o.name}</h3>
-                  <span className={`status-badge ${o.status === 'OPEN' ? 'active' : 'inactive'}`}>
-                    <span className="status-dot"></span>{o.status}
+              <div key={o.id} className="bg-card border border-border rounded-xl p-5">
+                <div className="flex items-start justify-between">
+                  <h3 className="font-semibold text-foreground">{o.name}</h3>
+                  <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ${o.status === 'OPEN' ? 'bg-success/10 text-success' : 'bg-muted text-muted-foreground'}`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${o.status === 'OPEN' ? 'bg-success' : 'bg-muted-foreground'}`}></span>
+                    {o.status}
                   </span>
                 </div>
-                <p style={{ fontSize: '0.75rem', color: 'var(--text-gray)', marginTop: '0.25rem' }}>{o.description}</p>
-                <p style={{ fontSize: '0.75rem', color: 'var(--text-light)', marginTop: '0.25rem' }}>★ {o.rating} · {o.estimatedTime}</p>
-                <div style={{ display: 'flex', gap: '4px', marginTop: '0.75rem', flexWrap: 'wrap' }}>
+                <p className="text-xs text-muted-foreground mt-2">{o.description}</p>
+                <p className="text-xs text-muted-foreground mt-1">★ {o.rating} · {o.estimatedTime}</p>
+                <div className="flex gap-1.5 flex-wrap mt-3">
                   {['OPEN', 'BUSY', 'CLOSED', 'SUSPENDED'].map((s) => (
                     <button
                       key={s}
-                      className="pill"
+                      className="px-2 py-0.5 text-[0.65rem] bg-muted text-foreground rounded hover:bg-border transition-colors disabled:opacity-50"
                       onClick={() => outletStatusMut.mutate({ outletId: o.id, status: s })}
                       disabled={outletStatusMut.isPending}
-                      style={{ padding: '2px 8px', fontSize: '0.65rem' }}
                     >
                       {s}
                     </button>
@@ -236,19 +252,19 @@ const Dashboard = () => {
         )}
 
         {tab === 'orders' && ordersData && (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', background: 'var(--card)' }}>
+          <div className="bg-card border border-border rounded-xl overflow-x-auto">
+            <table className="w-full">
               <thead>
-                <tr style={{ textAlign: 'left', borderBottom: '2px solid var(--border-color)' }}>
+                <tr className="border-b-2 border-border">
                   <Th>Order #</Th><Th>Outlet</Th><Th>Status</Th><Th>Total</Th><Th>Placed</Th>
                 </tr>
               </thead>
               <tbody>
                 {ordersData.items.map((o) => (
-                  <tr key={o.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                    <Td><strong>{o.orderNumber}</strong></Td>
+                  <tr key={o.id} className="border-b border-border last:border-b-0">
+                    <Td><span className="font-semibold">{o.orderNumber}</span></Td>
                     <Td>{o.outlet?.name || o.outletId}</Td>
-                    <Td><span className="pill" style={{ padding: '2px 8px', fontSize: '0.7rem' }}>{o.status}</span></Td>
+                    <Td><span className="px-2 py-0.5 text-xs bg-muted text-foreground rounded-md">{o.status}</span></Td>
                     <Td>₹{Number(o.totalAmount)}</Td>
                     <Td>{new Date(o.createdAt).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' })}</Td>
                   </tr>
@@ -259,21 +275,21 @@ const Dashboard = () => {
         )}
 
         {tab === 'audit' && auditData && (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', background: 'var(--card)' }}>
+          <div className="bg-card border border-border rounded-xl overflow-x-auto">
+            <table className="w-full">
               <thead>
-                <tr style={{ textAlign: 'left', borderBottom: '2px solid var(--border-color)' }}>
+                <tr className="border-b-2 border-border">
                   <Th>Time</Th><Th>Actor</Th><Th>Action</Th><Th>Target</Th><Th>Target ID</Th>
                 </tr>
               </thead>
               <tbody>
                 {auditData.items.map((a) => (
-                  <tr key={a.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                  <tr key={a.id} className="border-b border-border last:border-b-0">
                     <Td>{new Date(a.createdAt).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' })}</Td>
                     <Td>{a.actor?.email || a.actorUserId || 'system'}</Td>
-                    <Td><code style={{ fontSize: '0.75rem' }}>{a.action}</code></Td>
+                    <Td><code className="text-xs bg-muted px-1.5 py-0.5 rounded">{a.action}</code></Td>
                     <Td>{a.targetType}</Td>
-                    <Td style={{ fontSize: '0.7rem', color: 'var(--text-light)' }}>{a.targetId || '—'}</Td>
+                    <Td><span className="text-xs text-muted-foreground">{a.targetId || '—'}</span></Td>
                   </tr>
                 ))}
               </tbody>
@@ -284,24 +300,5 @@ const Dashboard = () => {
     </div>
   );
 };
-
-const KpiCard = ({ title, stats }) => (
-  <div className="outlet-card" style={{ padding: '1.25rem' }}>
-    <h3 style={{ fontSize: '0.85rem', color: 'var(--text-light)', marginBottom: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{title}</h3>
-    {stats.map(([label, value]) => (
-      <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '0.25rem 0' }}>
-        <span style={{ fontSize: '0.85rem', color: 'var(--text-gray)' }}>{label}</span>
-        <span style={{ fontSize: '1.1rem', fontWeight: 600 }}>{value}</span>
-      </div>
-    ))}
-  </div>
-);
-
-const Th = ({ children }) => (
-  <th style={{ padding: '0.75rem 1rem', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-light)' }}>{children}</th>
-);
-const Td = ({ children, ...rest }) => (
-  <td style={{ padding: '0.75rem 1rem', fontSize: '0.85rem', color: 'var(--text-dark)' }} {...rest}>{children}</td>
-);
 
 export default Dashboard;

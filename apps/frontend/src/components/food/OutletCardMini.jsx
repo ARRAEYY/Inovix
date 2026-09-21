@@ -1,18 +1,13 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 
-/**
- * OutletCard compact variant — for the outlet dashboard's "your outlet" preview.
- * Accepts a minimal shape: { name, status, slug }.
- */
 const OutletCardMini = ({ outlet }) => {
-  const navigate = useNavigate();
   return (
-    <div className="outlet-card" style={{ padding: '1rem' }}>
-      <div className="outlet-header">
-        <h3 className="outlet-name">{outlet.name}</h3>
-        <div className={`status-badge ${outlet.status === 'OPEN' ? 'active' : 'inactive'}`}>
-          <span className="status-dot"></span>
+    <div className="bg-card border border-border rounded-xl p-4">
+      <div className="flex items-center justify-between">
+        <h3 className="font-semibold text-foreground tracking-tight">{outlet.name}</h3>
+        <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ${outlet.status === 'OPEN' ? 'bg-success/10 text-success' : 'bg-muted text-muted-foreground'}`}>
+          <span className={`w-1.5 h-1.5 rounded-full ${outlet.status === 'OPEN' ? 'bg-success' : 'bg-muted-foreground'}`}></span>
           {outlet.status}
         </div>
       </div>

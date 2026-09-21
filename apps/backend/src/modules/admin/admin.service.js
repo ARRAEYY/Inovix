@@ -1,124 +1,179 @@
-const mockUsers = require('../../data/mockUsers');
-const { outlets } = require('../../data/mockData');
-const { ROLES, OUTLET_STATUS, USER_STATUS } = require('../../lib/constants');
+/**
+ * Super-admin service — platform-wide overview, user mgmt, outlet mgmt.
+ *
+ * All endpoints require SUPER_ADMIN role (enforced in routes).
+ */
+
+const prisma = require('../../lib/prisma');
 const menuRepo = require('../menu/menu.repository');
 const ordersRepo = require('../orders/orders.repository');
+const { ROLES, OUTLET_STATUS, USER_STATUS } = require('../../lib/constants');
 
-const getOverview = async () => {
-  const allMenu = await menuRepo.findAll();
-  const allOrders = await ordersRepo.findAll ? await ordersRepo.findAll() : []; // I will add findAll to ordersRepo
+async function getOverview() {
+  const [users, outlets, menu, orders] = await Promise.all([
+    prisma.user.findMany(),
+    prisma.outlet.findMany(),
+    menuRepo.findAll(),
+    prisma.order.findMany(),
+  ]);
 
   return {
     users: {
-      students: mockUsers.filter(u => u.role === ROLES.STUDENT).length,
-      outletAdmins: mockUsers.filter(u => u.role === ROLES.OUTLET_ADMIN).length,
-      outletStaff: mockUsers.filter(u => u.role === ROLES.OUTLET_STAFF).length,
-      superAdmins: mockUsers.filter(u => u.role === ROLES.SUPER_ADMIN).length,
-      total: mockUsers.length
+      students: users.filter((u) => u.role === ROLES.STUDENT).length,
+      outletAdmins: users.filter((u) => u.role === ROLES.OUTLET_ADMIN).length,
+      outletStaff: users.filter((u) => u.role === ROLES.OUTLET_STAFF).length,
+      superAdmins: users.filter((u) => u.role === ROLES.SUPER_ADMIN).length,
+      total: users.length,
     },
     outlets: {
       total: outlets.length,
-      open: outlets.filter(o => o.status === 'OPEN').length,
-      busy: outlets.filter(o => o.status === 'BUSY').length,
-      closed: outlets.filter(o => o.status === 'CLOSED').length
+      open: outlets.filter((o) => o.status === 'OPEN').length,
+      busy: outlets.filter((o) => o.status === 'BUSY').length,
+      closed: outlets.filter((o) => o.status === 'CLOSED').length,
+      pending: outlets.filter((o) => o.status === 'PENDING').length,
+      suspended: outlets.filter((o) => o.status === 'SUSPENDED').length,
     },
     menu: {
-      total: allMenu.length,
-      available: allMenu.filter(m => m.isAvailable).length,
-      unavailable: allMenu.filter(m => !m.isAvailable).length
+      total: menu.length,
+      available: menu.filter((m) => m.isAvailable).length,
+      unavailable: menu.filter((m) => !m.isAvailable).length,
     },
     orders: {
-      total: allOrders.length,
-      placed: allOrders.filter(o => o.status === 'PLACED').length,
-      preparing: allOrders.filter(o => o.status === 'PREPARING').length,
-      ready: allOrders.filter(o => o.status === 'READY').length,
-      completed: allOrders.filter(o => o.status === 'COMPLETED').length,
-      cancelled: allOrders.filter(o => o.status === 'CANCELLED').length
-    }
+      total: orders.length,
+      pending: orders.filter((o) => o.status === 'PENDING').length,
+      accepted: orders.filter((o) => o.status === 'ACCEPTED').length,
+      preparing: orders.filter((o) => o.status === 'PREPARING').length,
+      ready: orders.filter((o) => o.status === 'READY').length,
+      completed: orders.filter((o) => o.status === 'COMPLETED').length,
+      rejected: orders.filter((o) => o.status === 'REJECTED').length,
+      cancelled: orders.filter((o) => o.status === 'CANCELLED').length,
+    },
   };
-};
+}
 
-const getUsers = async () => {
-  return mockUsers.map(({ passwordHash, ...user }) => user);
-};
+async function getUsers({ page = 1, pageSize = 50 } = {}) {
+  const [items, total] = await Promise.all([
+    prisma.user.findMany({
+      orderBy: { createdAt: 'desc' },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+      include: { outletStaff: true, studentProfile: true },
+    }),
+    prisma.user.count(),
+  ]);
+  // Strip passwordHash
+  return {
+    items: items.map(({ passwordHash, ...u }) => u),
+    total,
+    page,
+    pageSize,
+  };
+}
 
-const getUser = async (userId) => {
-  const user = mockUsers.find(u => u.id === userId);
-  if (!user) throw { status: 404, message: 'User not found' };
-  const { passwordHash, ...safeUser } = user;
-  return safeUser;
-};
+async function getUser(userId) {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    include: { outletStaff: { include: { outlet: true } }, studentProfile: true },
+  });
+  if (!user) throw { statusCode: 404, message: 'User not found' };
+  const { passwordHash, ...safe } = user;
+  return safe;
+}
 
-const updateUserStatus = async (userId, status, reqUserId) => {
+async function updateUserStatus(userId, status, reqUserId) {
   if (userId === reqUserId) {
-    throw { status: 400, message: 'Super Admins cannot suspend themselves' };
+    throw { statusCode: 400, message: 'Super Admins cannot suspend themselves' };
   }
-  
   if (![USER_STATUS.ACTIVE, USER_STATUS.SUSPENDED].includes(status)) {
-    throw { status: 400, message: 'Invalid status' };
+    throw { statusCode: 400, message: 'Invalid status' };
   }
 
-  const user = mockUsers.find(u => u.id === userId);
-  if (!user) throw { status: 404, message: 'User not found' };
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) throw { statusCode: 404, message: 'User not found' };
 
-  user.status = status;
-  const { passwordHash, ...safeUser } = user;
-  return safeUser;
-};
+  const before = { status: user.status };
+  const updated = await prisma.user.update({
+    where: { id: userId },
+    data: { status },
+  });
 
-const getOutlets = async () => {
-  return outlets;
-};
+  // On suspend: revoke all refresh tokens
+  if (status === USER_STATUS.SUSPENDED) {
+    const { revokeAllForUser } = require('../../lib/tokens');
+    await revokeAllForUser(userId);
+  }
 
-const getOutlet = async (outletId) => {
-  const outlet = outlets.find(o => o.id === outletId);
-  if (!outlet) throw { status: 404, message: 'Outlet not found' };
+  const { passwordHash, ...safe } = updated;
+  return { user: safe, before };
+}
+
+async function getOutlets() {
+  return prisma.outlet.findMany({ include: { staff: true } });
+}
+
+async function getOutlet(outletId) {
+  const outlet = await prisma.outlet.findUnique({ where: { id: outletId } });
+  if (!outlet) throw { statusCode: 404, message: 'Outlet not found' };
   return outlet;
-};
+}
 
-const updateOutletStatus = async (outletId, status) => {
+async function updateOutletStatus(outletId, status) {
   if (!Object.values(OUTLET_STATUS).includes(status)) {
-    throw { status: 400, message: `Invalid status. Must be one of: ${Object.values(OUTLET_STATUS).join(', ')}` };
+    throw { statusCode: 400, message: `Invalid status. Must be one of: ${Object.values(OUTLET_STATUS).join(', ')}` };
   }
+  const outlet = await prisma.outlet.findUnique({ where: { id: outletId } });
+  if (!outlet) throw { statusCode: 404, message: 'Outlet not found' };
 
-  const outlet = outlets.find(o => o.id === outletId);
-  if (!outlet) throw { status: 404, message: 'Outlet not found' };
+  const before = { status: outlet.status };
+  const updated = await prisma.outlet.update({
+    where: { id: outletId },
+    data: { status },
+  });
+  return { outlet: updated, before };
+}
 
-  outlet.status = status;
-  return outlet;
-};
+async function getOrders({ page = 1, pageSize = 100 } = {}) {
+  const [items, total] = await Promise.all([
+    prisma.order.findMany({
+      orderBy: { createdAt: 'desc' },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+      include: { items: true, payment: true, student: { select: { id: true, email: true, name: true } }, outlet: true },
+    }),
+    prisma.order.count(),
+  ]);
+  return { items, total, page, pageSize };
+}
 
-const getOrders = async () => {
-  return await ordersRepo.findAll();
-};
-
-const getOrder = async (orderId) => {
-  const order = await ordersRepo.findById(orderId);
-  if (!order) throw { status: 404, message: 'Order not found' };
+async function getOrder(orderId) {
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    include: { items: true, payment: { include: { refunds: true } }, student: true, outlet: true },
+  });
+  if (!order) throw { statusCode: 404, message: 'Order not found' };
   return order;
-};
+}
 
-const getMenu = async () => {
-  return await menuRepo.findAll();
-};
+async function getMenu() {
+  return menuRepo.findAll();
+}
 
-const getMenuItem = async (itemId) => {
+async function getMenuItem(itemId) {
   const item = await menuRepo.findById(itemId);
-  if (!item) throw { status: 404, message: 'Menu item not found' };
+  if (!item) throw { statusCode: 404, message: 'Menu item not found' };
   return item;
-};
+}
 
-const updateMenuItemStatus = async (itemId, isAvailable) => {
+async function updateMenuItemStatus(itemId, isAvailable) {
   if (typeof isAvailable !== 'boolean') {
-    throw { status: 400, message: 'isAvailable must be a boolean' };
+    throw { statusCode: 400, message: 'isAvailable must be a boolean' };
   }
-
   const item = await menuRepo.findById(itemId);
-  if (!item) throw { status: 404, message: 'Menu item not found' };
-
-  // Only update isAvailable
-  return await menuRepo.update(itemId, { isAvailable });
-};
+  if (!item) throw { statusCode: 404, message: 'Menu item not found' };
+  const before = { isAvailable: item.isAvailable };
+  const updated = await menuRepo.update(itemId, { isAvailable });
+  return { item: updated, before };
+}
 
 module.exports = {
   getOverview,
@@ -132,5 +187,5 @@ module.exports = {
   getOrder,
   getMenu,
   getMenuItem,
-  updateMenuItemStatus
+  updateMenuItemStatus,
 };

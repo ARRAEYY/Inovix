@@ -1,19 +1,30 @@
 {
   "name": "backend",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Nosh backend — Node.js + Express + Prisma + Socket.IO",
+  "main": "src/server.js",
+  "type": "commonjs",
   "scripts": {
     "dev": "node --watch src/server.js",
-    "test": "JWT_SECRET=test node --test tests/**/*.test.js"
+    "start": "node src/server.js",
+    "test": "JWT_SECRET=test JWT_ACCESS_EXPIRES_IN=1h node --test tests/**/*.test.js",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:reset": "prisma migrate reset --force --skip-seed",
+    "prisma:studio": "prisma studio",
+    "seed": "node prisma/seed.js"
   },
-  "keywords": [],
-  "author": "",
+  "prisma": {
+    "schema": "prisma/schema.prisma",
+    "seed": "node prisma/seed.js"
+  },
+  "keywords": ["express", "prisma", "node", "campus-food"],
   "license": "ISC",
-  "type": "commonjs",
   "dependencies": {
+    "@nosh/validation": "*",
     "@prisma/client": "^5.22.0",
     "bcrypt": "^6.0.0",
+    "cloudinary": "^2.5.1",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
@@ -21,7 +32,8 @@
     "google-auth-library": "^10.9.1",
     "helmet": "^8.3.0",
     "jsonwebtoken": "^9.0.3",
-    "prisma": "^5.22.0",
+    "razorpay": "^2.9.4",
+    "socket.io": "^4.8.1",
     "zod": "^4.6.5"
   }
 }

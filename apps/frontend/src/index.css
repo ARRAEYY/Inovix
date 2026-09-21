@@ -32,3 +32,63 @@
     font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   }
 }
+
+@layer utilities {
+  /* Hide scrollbar for the category sidebar */
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  /* Shimmer effect for skeletons */
+  .shimmer {
+    background: linear-gradient(110deg, #FDF4F0 8%, #FFFFFF 18%, #FDF4F0 33%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s linear infinite;
+  }
+  @keyframes shimmer {
+    to { background-position-x: -200%; }
+  }
+
+  /* Smooth grid line under headings */
+  .grid-divider {
+    background-image: linear-gradient(to right, transparent, #FCEAE1 20%, #FCEAE1 80%, transparent);
+    height: 1px;
+  }
+}
+
+/* Custom scrollbar — looks better than the default */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: #FDF4F0;
+}
+::-webkit-scrollbar-thumb {
+  background: #FED7AA;
+  border-radius: 5px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #EA580C;
+}
+
+/* Smooth scroll for the entire app */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Reduce motion preference */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

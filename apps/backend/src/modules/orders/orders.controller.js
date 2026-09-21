@@ -1,44 +1,68 @@
-const ordersService = require('./orders.service.js');
+const ordersService = require('./orders.service');
+const { audit } = require('../../lib/audit');
+const { emitOrderEvent } = require('../../lib/socket');
+const { ORDER_STATUS } = require('../../lib/constants');
 
-const createOrder = async (req, res, next) => {
+async function createOrder(req, res, next) {
   try {
-    const userId = req.user.id;
-    const order = await ordersService.createOrder(userId, req.body);
+    const studentId = req.user.id;
+    const order = await ordersService.createOrder(studentId, req.body);
+
+    await audit({
+      actorId: studentId,
+      action: 'ORDER_CREATED',
+      targetType: 'Order',
+      targetId: order.id,
+      after: { id: order.id, orderNumber: order.orderNumber, totalAmount: order.totalAmount },
+      req,
+    });
+
+    // Notify the outlet in real-time
+    emitOrderEvent('order:new', order.outletId, { order });
+
     res.status(201).json({ success: true, data: order });
   } catch (error) {
     next(error);
   }
-};
+}
 
 async function getUserOrders(req, res, next) {
   try {
-    const userId = req.user.id;
-    const orders = await ordersService.getUserOrders(userId);
+    const studentId = req.user.id;
+    const { page, pageSize, status } = req.query;
+    const orders = await ordersService.getUserOrders(studentId, {
+      page: page ? Number(page) : 1,
+      pageSize: pageSize ? Number(pageSize) : 20,
+      status,
+    });
     res.status(200).json({ success: true, data: orders });
   } catch (error) {
     next(error);
   }
-};
+}
 
-const getOrderById = async (req, res, next) => {
+async function getOrderById(req, res, next) {
   try {
-    const userId = req.user.id;
+    const studentId = req.user.id;
     const { orderId } = req.params;
-    const order = await ordersService.getOrderById(userId, orderId);
+    const order = await ordersService.getOrderById(studentId, orderId);
     res.status(200).json({ success: true, data: order });
   } catch (error) {
     next(error);
   }
-};
+}
 
 async function getOutletOrders(req, res, next) {
   try {
     const outletId = req.user.outletId;
-    if (!outletId) {
-      throw { status: 403, message: 'User is not assigned to an outlet' };
-    }
+    if (!outletId) throw { statusCode: 403, message: 'User is not assigned to an outlet' };
 
-    const orders = await ordersService.getOutletOrders(outletId);
+    const { page, pageSize, status } = req.query;
+    const orders = await ordersService.getOutletOrders(outletId, {
+      page: page ? Number(page) : 1,
+      pageSize: pageSize ? Number(pageSize) : 50,
+      status,
+    });
     res.status(200).json({ success: true, data: orders });
   } catch (error) {
     next(error);
@@ -48,10 +72,7 @@ async function getOutletOrders(req, res, next) {
 async function getOutletOrder(req, res, next) {
   try {
     const outletId = req.user.outletId;
-    if (!outletId) {
-      throw { status: 403, message: 'User is not assigned to an outlet' };
-    }
-
+    if (!outletId) throw { statusCode: 403, message: 'User is not assigned to an outlet' };
     const { orderId } = req.params;
     const order = await ordersService.getOutletOrder(outletId, orderId);
     res.status(200).json({ success: true, data: order });
@@ -63,19 +84,39 @@ async function getOutletOrder(req, res, next) {
 async function updateOrderStatus(req, res, next) {
   try {
     const outletId = req.user.outletId;
-    if (!outletId) {
-      throw { status: 403, message: 'User is not assigned to an outlet' };
-    }
+    if (!outletId) throw { statusCode: 403, message: 'User is not assigned to an outlet' };
 
     const { orderId } = req.params;
-    const { status } = req.body;
+    const { status, reason } = req.body;
 
-    if (!status) {
-      throw { status: 400, message: 'status is required' };
+    const { updated, before } = await ordersService.updateOrderStatus(
+      outletId, orderId, status, req.user.id, reason
+    );
+
+    await audit({
+      actorId: req.user.id,
+      action: 'ORDER_STATUS_CHANGED',
+      targetType: 'Order',
+      targetId: orderId,
+      before,
+      after: { status: updated.status },
+      req,
+    });
+
+    // Real-time updates to both outlet and student
+    emitOrderEvent('order:status:changed', outletId, { order: updated });
+    emitOrderEvent('order:status:changed', `student:${updated.studentId}`, { order: updated });
+
+    // Notification + socket for student
+    if (status === ORDER_STATUS.ACCEPTED || status === ORDER_STATUS.READY ||
+        status === ORDER_STATUS.COMPLETED || status === ORDER_STATUS.REJECTED ||
+        status === ORDER_STATUS.CANCELLED) {
+      // The notification is created by the notifications module; we just emit the socket event.
+      // (notifications.service.createForOrder handles the DB row.)
+      require('../notifications/notifications.service').createForOrder(updated, req.user.id);
     }
 
-    const order = await ordersService.updateOrderStatus(outletId, orderId, status);
-    res.status(200).json({ success: true, data: order });
+    res.status(200).json({ success: true, data: updated });
   } catch (error) {
     next(error);
   }
@@ -87,5 +128,5 @@ module.exports = {
   getOrderById,
   getOutletOrders,
   getOutletOrder,
-  updateOrderStatus
+  updateOrderStatus,
 };

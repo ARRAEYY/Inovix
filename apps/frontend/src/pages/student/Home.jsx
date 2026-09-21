@@ -1,40 +1,12 @@
 import React, { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { motion } from 'framer-motion';
+import { Search, Sparkles, Clock, MapPin, Star } from 'lucide-react';
 import Header from '../../components/layout/Header';
 import OutletCard from '../../components/food/OutletCard';
 import { useAuth } from '../../hooks/useAuth';
-
-const MOCK_OUTLETS = [
-  {
-    id: 1,
-    name: 'The Courtyard Café',
-    description: 'Sandwiches, grain bowls and single-origin coffee, a minute from the lecture halls.',
-    image: '/images/cafe.jpg',
-    active: true,
-    rating: '4.8',
-    time: '10-15',
-    location: 'Academic Block'
-  },
-  {
-    id: 2,
-    name: 'Campus Thali Co.',
-    description: 'Home-style thalis cooked in small batches through the day.',
-    image: '/images/thali.jpg',
-    active: true,
-    rating: '4.7',
-    time: '15-20',
-    location: 'Dining Hall'
-  },
-  {
-    id: 3,
-    name: 'Dosa District',
-    description: 'Crisp dosas, idli plates and filter coffee served till late.',
-    image: '/images/dosa.jpg',
-    active: true,
-    rating: '4.9',
-    time: '12-18',
-    location: 'Hostel Square'
-  }
-];
+import { catalogService } from '../../services/catalog/catalogService';
+import { CardSkeleton } from '../../components/ui/Skeleton';
 
 const FILTERS = ['All', 'Open now'];
 
@@ -43,66 +15,127 @@ const Home = () => {
   const [activeFilter, setActiveFilter] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
 
-  const filteredOutlets = MOCK_OUTLETS.filter(outlet => {
-    const matchesSearch = 
-      outlet.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-      outlet.description.toLowerCase().includes(searchQuery.toLowerCase());
-    
-    const matchesFilter = activeFilter === 'All' ? true : outlet.active;
+  const { data: outlets, isLoading } = useQuery({
+    queryKey: ['outlets', 'list'],
+    queryFn: catalogService.getOutlets,
+  });
 
-    return matchesSearch && matchesFilter;
+  const { data: searchResults } = useQuery({
+    queryKey: ['search', searchQuery],
+    queryFn: () => catalogService.search(searchQuery),
+    enabled: searchQuery.trim().length > 1,
+    staleTime: 30_000,
+  });
+
+  const sourceOutlets = searchQuery.trim().length > 1
+    ? (searchResults?.outlets ?? [])
+    : (outlets ?? []);
+
+  const filteredOutlets = sourceOutlets.filter((outlet) => {
+    const matchesFilter = activeFilter === 'All'
+      ? true
+      : (outlet.status === 'OPEN' || outlet.status === 'BUSY');
+    return matchesFilter;
   });
 
   return (
-    <div className="page-wrapper">
+    <div className="min-h-screen bg-background">
       <Header />
-      
-      <main className="explore-container">
-        <div className="page-header">
-          <p className="welcome-greeting">Welcome back, {user?.name || 'Student'}</p>
-          <h1 className="page-title">Explore Outlets</h1>
-          <p className="page-subtitle">Order from your favorite campus outlets</p>
-        </div>
 
-        <div className="controls-row">
-          <div className="search-container">
-            <svg className="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="11" cy="11" r="8"></circle>
-              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-            </svg>
-            <input 
-              type="text" 
-              className="search-input" 
+      <main className="max-w-7xl mx-auto px-6 py-10">
+        {/* Hero header */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, ease: 'easeOut' }}
+          className="mb-10"
+        >
+          <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
+            <Sparkles className="w-4 h-4 text-primary" />
+            <span>Welcome back, {user?.name || 'Student'}</span>
+          </div>
+          <h1 className="text-4xl md:text-5xl font-extrabold text-foreground tracking-tight">
+            Explore <span className="text-primary">Outlets</span>
+          </h1>
+          <p className="text-base text-muted-foreground mt-2">Order from your favorite campus outlets</p>
+        </motion.div>
+
+        {/* Search + filters */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.1, ease: 'easeOut' }}
+          className="flex flex-col sm:flex-row gap-3 mb-10"
+        >
+          <div className="relative flex-1 group">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground group-focus-within:text-primary transition-colors" size={18} />
+            <input
+              type="text"
+              className="w-full pl-12 pr-4 py-3.5 bg-card border border-input rounded-2xl text-sm text-foreground placeholder:text-muted-foreground outline-none focus:ring-4 focus:ring-primary/10 focus:border-primary transition-all"
               placeholder="Search outlets, cuisines..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
-            <div className="shortcut-hint">/</div>
           </div>
 
-          <div className="filter-pills">
-            {FILTERS.map(filter => (
-              <button 
-                key={filter} 
-                className={`pill ${activeFilter === filter ? 'active' : ''}`}
+          <div className="flex gap-2">
+            {FILTERS.map((filter) => (
+              <button
+                key={filter}
+                className={`px-5 py-3.5 rounded-2xl text-sm font-medium transition-all ${
+                  activeFilter === filter
+                    ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/25'
+                    : 'bg-card border border-border text-foreground hover:bg-muted hover:border-primary/30'
+                }`}
                 onClick={() => setActiveFilter(filter)}
               >
                 {filter}
               </button>
             ))}
           </div>
-        </div>
+        </motion.div>
 
-        {filteredOutlets.length > 0 ? (
-          <div className="outlets-grid">
-            {filteredOutlets.map(outlet => (
-              <OutletCard key={outlet.id} outlet={outlet} />
+        {/* Grid */}
+        {isLoading ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            {[0, 1, 2, 3, 4, 5].map((i) => <CardSkeleton key={i} />)}
+          </div>
+        ) : filteredOutlets.length > 0 ? (
+          <motion.div
+            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6"
+            initial="hidden"
+            animate="show"
+            variants={{
+              hidden: { opacity: 0 },
+              show: {
+                opacity: 1,
+                transition: { staggerChildren: 0.08 },
+              },
+            }}
+          >
+            {filteredOutlets.map((outlet) => (
+              <motion.div
+                key={outlet.id}
+                variants={{
+                  hidden: { opacity: 0, y: 30 },
+                  show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: 'easeOut' } },
+                }}
+              >
+                <OutletCard outlet={outlet} />
+              </motion.div>
             ))}
-          </div>
+          </motion.div>
         ) : (
-          <div style={{ textAlign: 'center', padding: '4rem 0', color: 'var(--text-light)' }}>
-            <p>No outlets found matching your criteria.</p>
-          </div>
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="text-center py-24"
+          >
+            <div className="inline-flex w-16 h-16 rounded-full bg-muted items-center justify-center mb-4">
+              <Search className="text-muted-foreground" size={24} />
+            </div>
+            <p className="text-muted-foreground">No outlets found matching your criteria.</p>
+          </motion.div>
         )}
       </main>
     </div>

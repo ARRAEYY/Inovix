@@ -1,0 +1,72 @@
+{
+  "name": "Nosh Campus Food — Design System",
+  "version": "1.0.0",
+  "source": "UI/UX Pro Max v2.13.0 — queried 2026-09-21",
+  "style": {
+    "id": "minimalism-and-swiss-style",
+    "category": "Minimalism & Swiss Style",
+    "keywords": ["clean", "simple", "spacious", "functional", "white space", "high contrast", "geometric", "sans-serif", "grid-based", "essential"],
+    "best_for": ["Enterprise apps", "dashboards", "documentation sites", "SaaS platforms", "professional tools"],
+    "css_keywords": ["display: grid", "gap: 2rem", "font-family: sans-serif", "color: #000 or #FFF", "max-width: 1200px", "clean borders", "no box-shadow unless necessary"],
+    "checklist": [
+      "Grid-based layout 12-16 columns",
+      "Typography hierarchy clear",
+      "No unnecessary decorations",
+      "Text contrast measured against the chosen project target",
+      "Mobile responsive grid"
+    ]
+  },
+  "palette": {
+    "source_product_type": "Food Delivery / On-Demand",
+    "notes": "Appetizing orange + trust blue",
+    "colors": {
+      "primary": "#EA580C",
+      "on_primary": "#000000",
+      "secondary": "#F97316",
+      "on_secondary": "#000000",
+      "accent": "#2563EB",
+      "on_accent": "#FFFFFF",
+      "background": "#FFF7ED",
+      "foreground": "#0F172A",
+      "card": "#FFFFFF",
+      "card_foreground": "#0F172A",
+      "muted": "#FDF4F0",
+      "muted_foreground": "#475569",
+      "border": "#FCEAE1",
+      "destructive": "#DC2626",
+      "on_destructive": "#FFFFFF",
+      "ring": "#EA580C"
+    }
+  },
+  "typography": {
+    "pairing_name": "Friendly SaaS",
+    "category": "Sans + Sans",
+    "heading_font": "Plus Jakarta Sans",
+    "body_font": "Plus Jakarta Sans",
+    "mood": ["friendly", "modern", "saas", "clean", "approachable", "professional"],
+    "google_fonts_url": "https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap",
+    "css_import": "@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');",
+    "notes": "Single versatile font. Modern alternative to Inter."
+  },
+  "stack": {
+    "name": "react",
+    "version": "19.2.x",
+    "guidelines": [
+      "Keep components small and focused — one concern per component",
+      "Use testing-library accessible queries (getByRole, getByLabelText) over getByTestId",
+      "Small focused components: <UserAvatar /><UserName /> instead of <UserCard /> with 500 lines"
+    ]
+  },
+  "ux_priority_order": [
+    { "priority": 1, "category": "Accessibility", "must": ["Contrast 4.5:1", "Alt text", "Keyboard nav", "Aria-labels"] },
+    { "priority": 2, "category": "Touch & Interaction", "must": ["Min size 44x44px", "8px+ spacing", "Loading feedback"] },
+    { "priority": 3, "category": "Performance", "must": ["WebP/AVIF", "Lazy loading", "Reserve space (CLS<0.1)"] },
+    { "priority": 4, "category": "Style Selection", "must": ["Match product type", "Consistency", "SVG icons (no emoji)"] },
+    { "priority": 5, "category": "Layout & Responsive", "must": ["Mobile-first breakpoints", "Viewport meta", "No horizontal scroll"] },
+    { "priority": 6, "category": "Typography & Color", "must": ["Base 16px", "Line-height 1.5", "Semantic color tokens"] },
+    { "priority": 7, "category": "Animation", "must": ["Context-aware timing", "Motion conveys meaning", "Spatial continuity"] },
+    { "priority": 8, "category": "Forms & Feedback", "must": ["Visible labels", "Error near field", "Helper text"] },
+    { "priority": 9, "category": "Navigation Patterns", "must": ["Predictable back", "Bottom nav <=5", "Deep linking"] },
+    { "priority": 10, "category": "Charts & Data", "must": ["Legends", "Tooltips", "Accessible colors"] }
+  ]
+}

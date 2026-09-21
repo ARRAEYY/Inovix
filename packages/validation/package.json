@@ -1,0 +1,15 @@
+{
+  "name": "@nosh/validation",
+  "version": "1.0.0",
+  "description": "Shared Zod validation schemas for the Nosh campus food platform",
+  "main": "src/index.js",
+  "types": "src/index.d.ts",
+  "scripts": {
+    "test": "node --test"
+  },
+  "keywords": ["validation", "zod", "schemas"],
+  "license": "ISC",
+  "dependencies": {
+    "zod": "^4.6.5"
+  }
+}

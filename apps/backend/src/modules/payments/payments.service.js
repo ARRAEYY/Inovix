@@ -26,11 +26,57 @@ const Razorpay = require('razorpay');
 const crypto = require('crypto');
 const prisma = require('../../lib/prisma');
 const { encrypt, decrypt, safeEqual } = require('../../lib/crypto');
-const { PAYMENT_STATUS, REFUND_TRIGGER, REFUND_TRIGGERS } = require('../../lib/constants');
+const { PAYMENT_STATUS, REFUND_TRIGGER, REFUND_TRIGGERS, REFUND_STATUS } = require('../../lib/constants');
 const { audit } = require('../../lib/audit');
 
 // ─── Razorpay client cache (one per outlet, keyed by outletId) ──────────────
 const clientCache = new Map();
+
+// ─── INO-AUDIT4-D2 helper: only mark Payment=REFUNDED if fully refunded ────
+// The previous implementation unconditionally set Payment.status = REFUNDED
+// whenever a single Refund row reached COMPLETED. That's wrong for partial
+// refunds: a ₹1000 payment with a ₹300 COMPLETED refund should stay PAID
+// (with ₹700 still refundable), not flip to REFUNDED.
+//
+// Correct invariant:
+//   sum(COMPLETED refunds) == payment.amount → REFUNDED (full refund)
+//   sum(COMPLETED refunds) <  payment.amount → PAID (partial refund or none)
+//   PENDING refunds are in-flight money, NOT counted toward "fully refunded"
+async function markPaymentRefundedIfFullyRefunded(paymentId) {
+  const payment = await prisma.payment.findUnique({
+    where: { id: paymentId },
+    include: { refunds: true },
+  });
+  if (!payment) return null;
+
+  const completedRefundSum = payment.refunds
+    .filter(r => r.status === REFUND_STATUS.COMPLETED)
+    .reduce((sum, r) => sum + Number(r.amount), 0);
+
+  // Use a small epsilon for floating-point safety (Decimal → Number can
+  // introduce tiny errors). 0.01 paise = 0.0001 rupees, well below any
+  // real refund amount.
+  const paymentAmount = Number(payment.amount);
+  const isFullyRefunded = completedRefundSum >= paymentAmount - 0.01;
+
+  if (isFullyRefunded && payment.status !== PAYMENT_STATUS.REFUNDED) {
+    return prisma.payment.update({
+      where: { id: paymentId },
+      data: { status: PAYMENT_STATUS.REFUNDED },
+    });
+  }
+  // If NOT fully refunded, ensure Payment is NOT marked REFUNDED.
+  // (Defensive — shouldn't happen given the new logic, but if an old
+  // row was incorrectly marked REFUNDED, this corrects it on the next
+  // refund event.)
+  if (!isFullyRefunded && payment.status === PAYMENT_STATUS.REFUNDED) {
+    return prisma.payment.update({
+      where: { id: paymentId },
+      data: { status: PAYMENT_STATUS.PAID },
+    });
+  }
+  return payment;
+}
 
 async function getOutletRazorpayClient(outletId) {
   if (clientCache.has(outletId)) return clientCache.get(outletId);
@@ -236,6 +282,40 @@ async function verifyRazorpayPayment({ razorpayOrderId, razorpayPaymentId, razor
     throw { statusCode: 400, code: 'PAYMENT_FAILED', message: 'Invalid payment signature' };
   }
 
+  // ─── INO-AUDIT4-D5 fix: revalidate payment amount against the gateway ──
+  // The signature proves the payment_id is associated with the order_id,
+  // but the AMOUNT isn't part of the signature. Fetch the payment from
+  // Razorpay to verify the captured amount matches what we expect
+  // (Payment.amount × 100 paise). Defense-in-depth — Razorpay enforces
+  // the amount at checkout time, but a backend bug or tampering attempt
+  // could otherwise let a mismatched payment slip through.
+  try {
+    const gatewayPayment = await client.payments.fetch(razorpayPaymentId);
+    const expectedAmountPaise = Math.round(Number(payment.amount) * 100);
+    if (gatewayPayment.amount !== expectedAmountPaise) {
+      await audit({
+        actorId,
+        action: 'RAZORPAY_AMOUNT_MISMATCH',
+        targetType: 'Payment',
+        targetId: payment.id,
+        after: { expectedPaise: expectedAmountPaise, gatewayPaise: gatewayPayment.amount },
+        req: null,
+      });
+      throw {
+        statusCode: 400,
+        code: 'PAYMENT_AMOUNT_MISMATCH',
+        message: `Gateway payment amount ${gatewayPayment.amount}p does not match expected ${expectedAmountPaise}p`,
+      };
+    }
+  } catch (err) {
+    if (err.statusCode && err.code) throw err; // re-throw our structured errors
+    // If the fetch itself fails (network / 5xx), log but DON'T block —
+    // the signature already proved authenticity; the amount-fetch is
+    // defense-in-depth. The webhook path will reconcile on the next
+    // payment.captured event.
+    console.error('[payments] gateway amount fetch failed:', err.message);
+  }
+
   const claimed = await prisma.payment.updateMany({
     where: { id: payment.id, status: PAYMENT_STATUS.PENDING },
     data: {
@@ -396,12 +476,13 @@ async function handlePaymentEvent(event, eventType) {
 
 async function handleRefundEvent(event, eventType) {
   // Refund webhook payload structure:
-  //   event.payload.refund.entity = { id, payment_id, status, ... }
+  //   event.payload.refund.entity = { id, payment_id, amount, status, ... }
   const refundEntity = event.payload?.refund?.entity;
   if (!refundEntity) return { ignored: true };
 
   const gatewayRefundId = refundEntity.id;
-  const razorpayPaymentId = refundEntity.payment_id;
+  const refundEntityPaymentId = refundEntity.payment_id;
+  const refundEntityAmountPaise = refundEntity.amount; // Razorpay uses paise
 
   // Look up our Refund row by gatewayRef (set when we initiated the refund).
   // If we can't find it, this is a refund initiated outside our system
@@ -415,21 +496,82 @@ async function handleRefundEvent(event, eventType) {
     return { ignored: true };
   }
 
+  // ─── INO-AUDIT4-D7 fix: validate the webhook payload against our DB state ──
+  // Defense-in-depth around financial reconciliation. The signature proves
+  // the payload is authentic from Razorpay, but we additionally verify:
+  //   1. refund.payment.razorpayPaymentId == refundEntity.payment_id
+  //      (the gateway is refunding the same payment we think it is)
+  //   2. Number(refund.amount) * 100 ≈ refundEntity.amount
+  //      (the gateway is refunding the same amount we recorded — in paise)
+  // A mismatch here would indicate a serious state inconsistency (or a
+  // Razorpay bug). Log + reject; don't update the Refund row.
+  if (refund.payment.razorpayPaymentId !== refundEntityPaymentId) {
+    console.error(
+      `[razorpay webhook] refund ${refund.id}: payment_id mismatch — ` +
+      `DB=${refund.payment.razorpayPaymentId} gateway=${refundEntityPaymentId}`
+    );
+    await audit({
+      actorId: null,
+      action: 'REFUND_WEBHOOK_PAYMENT_ID_MISMATCH',
+      targetType: 'Refund',
+      targetId: refund.id,
+      after: { dbPaymentId: refund.payment.razorpayPaymentId, gatewayPaymentId: refundEntityPaymentId },
+      req: null,
+    });
+    return { ignored: true, reason: 'payment_id_mismatch' };
+  }
+  const expectedAmountPaise = Math.round(Number(refund.amount) * 100);
+  if (refundEntityAmountPaise !== undefined && refundEntityAmountPaise !== null
+      && Math.abs(refundEntityAmountPaise - expectedAmountPaise) > 1) {
+    // Allow 1 paise tolerance for rounding differences. Anything beyond
+    // that is a real mismatch.
+    console.error(
+      `[razorpay webhook] refund ${refund.id}: amount mismatch — ` +
+      `DB=${expectedAmountPaise}p gateway=${refundEntityAmountPaise}p`
+    );
+    await audit({
+      actorId: null,
+      action: 'REFUND_WEBHOOK_AMOUNT_MISMATCH',
+      targetType: 'Refund',
+      targetId: refund.id,
+      after: { dbAmountPaise: expectedAmountPaise, gatewayAmountPaise: refundEntityAmountPaise },
+      req: null,
+    });
+    return { ignored: true, reason: 'amount_mismatch' };
+  }
+
   if (eventType === 'refund.processed') {
-    // Idempotent: if already COMPLETED, ack.
+    // ─── INO-AUDIT4-D6 fix: refund state machine ────────────────────────
+    // Only PENDING → COMPLETED is valid. Terminal states (COMPLETED, FAILED)
+    // reject the contradictory event — a late/duplicate/reordered
+    // refund.processed for an already-terminal Refund is suspicious and
+    // should NOT silently flip the state. Log + ack instead.
     if (refund.status === REFUND_STATUS.COMPLETED) return { alreadyCompleted: true };
+    if (refund.status === REFUND_STATUS.FAILED) {
+      console.error(
+        `[razorpay webhook] refund ${refund.id}: refund.processed received for FAILED refund — ignoring (terminal state)`
+      );
+      await audit({
+        actorId: null,
+        action: 'REFUND_WEBHOOK_TERMINAL_VIOLATION',
+        targetType: 'Refund',
+        targetId: refund.id,
+        after: { from: refund.status, attemptedTo: REFUND_STATUS.COMPLETED },
+        req: null,
+      });
+      return { ignored: true, reason: 'terminal_state_violation' };
+    }
 
     const updated = await prisma.refund.update({
       where: { id: refund.id },
       data: { status: REFUND_STATUS.COMPLETED },
     });
-    // Mark the Payment as REFUNDED too (only if it was PAID).
-    if (refund.payment.status === PAYMENT_STATUS.PAID) {
-      await prisma.payment.update({
-        where: { id: refund.payment.id },
-        data: { status: PAYMENT_STATUS.REFUNDED },
-      });
-    }
+    // ─── INO-AUDIT4-D2 fix: only mark Payment = REFUNDED if fully refunded ──
+    // A partial refund (₹300 of ₹1000) leaves the Payment as PAID with
+    // ₹700 still refundable. The helper checks sum(COMPLETED refunds)
+    // against payment.amount.
+    await markPaymentRefundedIfFullyRefunded(refund.payment.id);
+
     await audit({
       actorId: null,
       action: 'REFUND_COMPLETED',
@@ -442,8 +584,25 @@ async function handleRefundEvent(event, eventType) {
   }
 
   if (eventType === 'refund.failed') {
-    // Idempotent: if already FAILED, ack.
+    // ─── INO-AUDIT4-D6 fix: refund state machine ────────────────────────
+    // Only PENDING → FAILED is valid. COMPLETED is terminal — a late
+    // refund.failed for an already-COMPLETED refund is suspicious
+    // (the gateway already told us it succeeded).
     if (refund.status === REFUND_STATUS.FAILED) return { alreadyFailed: true };
+    if (refund.status === REFUND_STATUS.COMPLETED) {
+      console.error(
+        `[razorpay webhook] refund ${refund.id}: refund.failed received for COMPLETED refund — ignoring (terminal state)`
+      );
+      await audit({
+        actorId: null,
+        action: 'REFUND_WEBHOOK_TERMINAL_VIOLATION',
+        targetType: 'Refund',
+        targetId: refund.id,
+        after: { from: refund.status, attemptedTo: REFUND_STATUS.FAILED },
+        req: null,
+      });
+      return { ignored: true, reason: 'terminal_state_violation' };
+    }
 
     const updated = await prisma.refund.update({
       where: { id: refund.id },
@@ -531,12 +690,12 @@ async function processAutoRefundOnTransition(orderId, fromStatus, toStatus, acto
     },
   });
 
-  // If refund is COMPLETED at gateway, mark Payment as REFUNDED
+  // ─── INO-AUDIT4-D2 fix: only mark Payment=REFUNDED if fully refunded ──
+  // The helper checks sum(COMPLETED refunds) against payment.amount.
+  // A partial refund leaves Payment = PAID with the remainder still
+  // refundable.
   if (refundStatus === 'COMPLETED' || refundStatus === 'processed') {
-    await prisma.payment.update({
-      where: { id: order.payment.id },
-      data: { status: PAYMENT_STATUS.REFUNDED },
-    });
+    await markPaymentRefundedIfFullyRefunded(order.payment.id);
   }
 
   await audit({
@@ -612,12 +771,12 @@ async function processRefundAfterCommit(refundId, actorId) {
     data: { gatewayRef, status: newStatus },
   });
 
-  // If refund is COMPLETED at gateway, mark Payment as REFUNDED.
+  // ─── INO-AUDIT4-D2 fix: only mark Payment=REFUNDED if fully refunded ──
+  // The helper checks sum(COMPLETED refunds) against payment.amount.
+  // A partial refund leaves Payment = PAID with the remainder still
+  // refundable.
   if (newStatus === REFUND_STATUS.COMPLETED || newStatus === 'PROCESSED') {
-    await prisma.payment.update({
-      where: { id: refund.payment.id },
-      data: { status: PAYMENT_STATUS.REFUNDED },
-    });
+    await markPaymentRefundedIfFullyRefunded(refund.payment.id);
   }
 
   await audit({
@@ -644,4 +803,7 @@ module.exports = {
   // transition service + post-commit processor.
   processAutoRefundOnTransition,
   processRefundAfterCommit,
+  // Exported for reuse by admin.service.js (manual refund paths need the
+  // same partial-refund guard — INO-AUDIT4-D2).
+  markPaymentRefundedIfFullyRefunded,
 };

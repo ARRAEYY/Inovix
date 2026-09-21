@@ -184,7 +184,15 @@ const menuItemCreateSchema = z.object({
   category: z.string().trim().min(1, { message: 'Category is required' }).max(60),
   image: z.string().url().optional().or(z.literal('').transform(() => undefined)),
   isAvailable: z.boolean().optional(),
-  discount: z.union([z.string(), z.number()]).optional(),
+  // INO-AUDIT8-#7: discount was an unrestricted string/number. Now it's
+  // a bounded numeric field (0 to MAX_MONEY_RUPEES) so it can safely
+  // participate in price calculations without ambiguity.
+  discount: z.union([z.number(), z.string()])
+    .transform((v) => (typeof v === 'string' ? Number(v) : v))
+    .refine((n) => Number.isFinite(n) && n >= 0 && n <= MAX_MONEY_RUPEES, {
+      message: `Discount must be a finite number >= 0 and at most ₹${MAX_MONEY_RUPEES}`,
+    })
+    .optional(),
   popular: z.boolean().optional(),
   vegetarian: z.boolean().optional(),
   preparationTime: nonNegativeIntField.optional(),
@@ -209,9 +217,17 @@ const updateOutletStatusSchema = z.object({
 
 // ─── 7. Cart (M2) ────────────────────────────────────────────────────────────
 
+// INO-AUDIT8-#5: bound cart quantity to 1-50. Prevents absurd quantities
+// like 999999999 that could create huge order totals + massive Razorpay
+// amounts + resource abuse.
+const boundedQuantityField = positiveIntField.refine(
+  (n) => n <= 50,
+  { message: 'Quantity must be at most 50' }
+);
+
 const cartItemAddSchema = z.object({
   menuItemId: z.string().min(1),
-  quantity: positiveIntField,
+  quantity: boundedQuantityField,
   selectedOptions: z.array(z.object({
     groupId: z.string(),
     optionId: z.string(),
@@ -219,7 +235,7 @@ const cartItemAddSchema = z.object({
 }).strict();
 
 const cartItemUpdateSchema = z.object({
-  quantity: positiveIntField,
+  quantity: boundedQuantityField,
 }).strict();
 
 // ─── 8. Payments (M2 — Razorpay) ────────────────────────────────────────────

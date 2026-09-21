@@ -55,10 +55,35 @@ async function findOrCreateCart(studentId, outletId) {
     data: { expiresAt: new Date() },
   });
 
-  return prisma.cart.create({
-    data: { studentId, outletId, expiresAt },
-    include: CART_INCLUDE,
-  });
+  // INO-AUDIT8-#8: handle P2002 (unique-constraint race). Two concurrent
+  // requests can both pass the findUnique (cart not found) above and both
+  // try to create. The @@unique([studentId, outletId]) constraint means
+  // one succeeds and the other gets P2002. Catch it + re-fetch.
+  try {
+    return await prisma.cart.create({
+      data: { studentId, outletId, expiresAt },
+      include: CART_INCLUDE,
+    });
+  } catch (err) {
+    // Prisma P2002 = unique constraint violation
+    if (err.code === 'P2002') {
+      // Another request created the cart between our findUnique and create.
+      // Re-fetch the now-existing cart.
+      cart = await prisma.cart.findUnique({
+        where: { studentId_outletId: { studentId, outletId } },
+        include: CART_INCLUDE,
+      });
+      if (cart) {
+        // Refresh expiry on the re-fetched cart
+        return prisma.cart.update({
+          where: { id: cart.id },
+          data: { expiresAt },
+          include: CART_INCLUDE,
+        });
+      }
+    }
+    throw err; // re-throw unexpected errors
+  }
 }
 
 async function findByStudent(studentId) {

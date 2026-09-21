@@ -27,7 +27,7 @@ const prisma = require('./prisma');
 const { audit } = require('./audit');
 const { ORDER_STATUS } = require('./constants');
 const { runWithAdvisoryLock } = require('./distributedLock');
-const { reconcilePendingRefunds, reconcileStalePendingPayments, processPendingRefundOutbox } = require('./reconciliation');
+const { reconcilePendingRefunds, reconcileStalePendingPayments, processPendingRefundOutbox, cleanupStaleSentinels } = require('./reconciliation');
 
 const REFRESH_TOKEN_PURGE_AGE_DAYS = 30;
 const PICKUP_TIMEOUT_CHECK_INTERVAL = '*/5 * * * *'; // every 5 minutes
@@ -265,6 +265,9 @@ function initCron() {
     // reconciliation (default every 2 min) because it processes new
     // orphans, not stale ones.
     cron.schedule(OUTBOX_CRON, () => runCronJob('refund-outbox', processPendingRefundOutbox), { name: 'refund-outbox' }),
+    // INO-AUDIT8-#3: stale sentinel cleanup — resets stuck "in-progress-*"
+    // sentinels (order creation + refund processing) so they can be retried.
+    cron.schedule(RECONCILIATION_CRON, () => runCronJob('sentinel-cleanup', cleanupStaleSentinels), { name: 'sentinel-cleanup' }),
   ];
 
   console.log(`[cron] scheduled: ${scheduled.map(s => s.name || '?').join(', ')}`);
@@ -273,6 +276,7 @@ function initCron() {
   console.log(`[cron] cart purge: daily at 03:00 (delete carts past expiresAt)`);
   console.log(`[cron] pickup timeout: every 5 min (default window: ${process.env.PICKUP_TIMEOUT_MINS || 30} min)`);
   console.log(`[cron] refund outbox: every ${OUTBOX_INTERVAL_MINS} min (min age: ${process.env.OUTBOX_MIN_AGE_MINS || 2} min)`);
+  console.log(`[cron] sentinel cleanup: every ${RECONCILIATION_INTERVAL_MINS} min (stale after: ${process.env.SENTINEL_STALE_MINS || 5} min)`);
   console.log(`[cron] reconcile refunds: every ${RECONCILIATION_INTERVAL_MINS} min (min age: ${process.env.RECONCILIATION_MIN_AGE_MINS || 5} min)`);
   console.log(`[cron] reconcile payments: every ${RECONCILIATION_INTERVAL_MINS} min (stale after: ${process.env.PAYMENT_RECONCILIATION_MIN_AGE_MINS || 30} min)`);
   console.log(`[cron] advisory-lock: ${require('./distributedLock').isPostgres() ? 'postgres pg_try_advisory_xact_lock' : 'disabled (sqlite dev)'}`);

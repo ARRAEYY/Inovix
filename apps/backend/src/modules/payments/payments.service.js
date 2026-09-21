@@ -205,9 +205,13 @@ async function createRazorpayOrder(orderId, actorId) {
   }
 
   // We've claimed the row — now call the gateway.
-  const client = await getOutletRazorpayClient(order.outletId);
-
+  // INO-AUDIT8-#2 fix: client acquisition is INSIDE the try block so
+  // that a getOutletRazorpayClient() failure also resets the sentinel.
+  // The previous implementation had it outside — if the client-acquisition
+  // threw, the function exited and the sentinel stayed forever.
   try {
+    const client = await getOutletRazorpayClient(order.outletId);
+
     // Razorpay expects amount in paise (1 INR = 100 paise)
     const gatewayOrder = await client.orders.create({
       amount: amountPaise,
@@ -841,20 +845,37 @@ async function processRefundAfterCommit(refundId, actorId) {
     return refund; // can't process — needs the gateway payment id
   }
 
-  // INO-AUDIT5-OUTBOX: if the refund already has a gatewayRef, the gateway
-  // call was already made (either by a previous processRefundAfterCommit call
-  // from the controller, or by the outbox worker). Don't create a duplicate
-  // refund at the gateway — the reconciliation worker (reconcilePendingRefunds)
-  // will poll the existing refund's status. This makes processRefundAfterCommit
-  // safe to call from both the controller + the outbox worker without risk
-  // of double-refunding.
-  if (refund.gatewayRef) {
-    // The gateway already has a refund for this row. Don't create another.
-    // The reconciliation worker will fetch the status on its next tick.
+  // INO-AUDIT5-OUTBOX: if the refund already has a REAL gatewayRef (not a
+  // sentinel), the gateway call was already made. Don't create a duplicate.
+  // The reconciliation worker (reconcilePendingRefunds) will poll the
+  // existing refund's status.
+  //
+  // INO-AUDIT8-#4 fix: atomic claim via sentinel. The previous check
+  // `if (refund.gatewayRef) return refund` had a TOCTOU race — two workers
+  // could both read gatewayRef=NULL and both call client.payments.refund().
+  // Fix: atomically claim via updateMany WHERE gatewayRef IS NULL. Only
+  // the worker whose count === 1 calls the gateway. On failure, the sentinel
+  // is reset to NULL so the next worker can retry. The stale-sentinel
+  // cleanup in reconciliation.js handles crashes between the claim and
+  // the gateway call.
+  if (refund.gatewayRef && !refund.gatewayRef.startsWith('refund-in-progress-')) {
+    // A REAL gateway refund ID is set — the gateway call already succeeded.
     return refund;
   }
 
-  let gatewayRef = refund.gatewayRef;
+  // Atomic claim: set a sentinel so concurrent workers can't both call the gateway.
+  const refundSentinel = `refund-in-progress-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const claimed = await prisma.refund.updateMany({
+    where: { id: refundId, gatewayRef: null },
+    data: { gatewayRef: refundSentinel },
+  });
+  if (claimed.count !== 1) {
+    // Another worker already claimed it (sentinel set) OR a real gatewayRef
+    // was set between our read and our claim. Either way, don't call the gateway.
+    return prisma.refund.findUnique({ where: { id: refundId } });
+  }
+
+  let gatewayRef = refundSentinel; // start with the sentinel
   let newStatus = REFUND_STATUS.PENDING;
   try {
     const client = await getOutletRazorpayClient(refund.payment.order.outletId);
@@ -870,7 +891,14 @@ async function processRefundAfterCommit(refundId, actorId) {
     newStatus = (gatewayRefund.status || 'PENDING').toUpperCase();
   } catch (err) {
     console.error('[payments] post-commit gateway refund failed:', err.message);
-    // Leave as PENDING — admin can retry via /api/v1/admin/refunds.
+    // INO-AUDIT8-#4: reset the sentinel back to NULL so the next worker
+    // (outbox / admin retry) can retry the gateway call.
+    await prisma.refund.update({
+      where: { id: refundId },
+      data: { gatewayRef: null, status: REFUND_STATUS.PENDING },
+    }).catch(() => null);
+    // Return the refund in its PENDING state — the outbox worker will retry.
+    return prisma.refund.findUnique({ where: { id: refundId } });
   }
 
   const updated = await prisma.refund.update({

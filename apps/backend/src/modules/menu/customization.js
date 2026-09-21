@@ -90,14 +90,51 @@ function validateAndComputeOptionsDelta(menuItem, selectedOptions) {
   }
 
   // Sum the priceDelta for the selected options.
-  let priceDelta = 0;
+  // INO-AUDIT3-4 fix: use integer paise internally instead of JS Number
+  // floating-point. Prisma Decimal → paise (×100, rounded) at the read
+  // boundary; all arithmetic is integer-exact; convert back to a string
+  // at the DB write boundary. This matters when we add discounts/taxes/
+  // percentage fees/coupons/partial refunds later — those operations
+  // amplify floating-point error.
+  let priceDeltaPaise = 0;
   for (const sels of selectionsByGroup.values()) {
     for (const optionId of sels) {
       const { option } = optionMap.get(optionId);
-      priceDelta += Number(option.priceDelta || 0);
+      priceDeltaPaise += Math.round(Number(option.priceDelta || 0) * 100);
     }
   }
-  return priceDelta;
+  return priceDeltaPaise;
 }
 
-module.exports = { validateAndComputeOptionsDelta };
+/**
+ * INO-AUDIT3-6 fix: normalize a selectedOptions array so that the same
+ * logical set produces the same JSON string regardless of input order
+ * or duplicates. Used by cart.service.js addItem + cart.repository.js
+ * addItem to dedupe cart items correctly.
+ *
+ *   - Drops entries missing groupId or optionId
+ *   - Dedupes by (groupId, optionId)
+ *   - Sorts by (groupId, optionId)
+ *
+ * @param {Array<{groupId: string, optionId: string}>} selectedOptions
+ * @returns {Array<{groupId: string, optionId: string}>}
+ */
+function normalizeSelectedOptions(selectedOptions) {
+  if (!Array.isArray(selectedOptions)) return [];
+  const seen = new Set();
+  const result = [];
+  for (const opt of selectedOptions) {
+    if (!opt || !opt.groupId || !opt.optionId) continue;
+    const key = `${opt.groupId}|${opt.optionId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push({ groupId: opt.groupId, optionId: opt.optionId });
+  }
+  result.sort((a, b) => {
+    if (a.groupId !== b.groupId) return a.groupId < b.groupId ? -1 : 1;
+    return a.optionId < b.optionId ? -1 : 1;
+  });
+  return result;
+}
+
+module.exports = { validateAndComputeOptionsDelta, normalizeSelectedOptions };

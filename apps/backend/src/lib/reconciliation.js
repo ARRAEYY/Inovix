@@ -249,11 +249,48 @@ async function reconcileStalePendingPayments() {
       // Case 1: the gateway says the payment was captured (we missed the
       // payment.captured webhook). Mark PAID + emit socket event.
       if (gatewayAmountPaid >= expectedAmountPaise) {
+        // INO-AUDIT8-#1 fix: fetch the ACTUAL captured payment, not the order.
+        // The previous implementation stored gatewayOrder.id (an Order ID)
+        // as razorpayPaymentId — that's wrong. Later refund/reconciliation
+        // code expects razorpayPaymentId to be a Payment ID (pay_xxx),
+        // not an Order ID (order_xxx). Using the wrong ID causes refund
+        // failures + reconciliation against the wrong gateway object.
+        let realPaymentId = null;
+        try {
+          // Fetch all payment attempts for this order.
+          const orderPayments = await client.orders.fetchPayments(
+            payment.razorpayOrderId
+          );
+          // Find the captured payment with the correct amount.
+          const captured = (orderPayments.items || orderPayments || []).find(
+            p => p.status === 'captured' && p.amount === expectedAmountPaise
+          );
+          if (captured) {
+            realPaymentId = captured.id;
+          } else {
+            // No captured payment found — the order has amount_paid but no
+            // individual payment is 'captured'. This is unusual — log + skip.
+            console.error(
+              `[reconciliation:payment] payment ${payment.id}: order has amount_paid=${gatewayAmountPaid} but no captured payment found`
+            );
+            continue;
+          }
+        } catch (fetchErr) {
+          // The fetchPayments method might not be available in older SDK
+          // versions, or the API call failed. Log + skip — the webhook path
+          // should handle this payment if it was truly captured.
+          console.error(
+            `[reconciliation:payment] payment ${payment.id}: could not fetch order payments:`,
+            fetchErr.message
+          );
+          continue;
+        }
+
         const claimed = await prisma.payment.updateMany({
           where: { id: payment.id, status: PAYMENT_STATUS.PENDING },
           data: {
             status: PAYMENT_STATUS.PAID,
-            razorpayPaymentId: gatewayOrder.id, // the gateway order ID doubles as payment ID for orders API
+            razorpayPaymentId: realPaymentId, // REAL Payment ID (pay_xxx), not Order ID
           },
         });
         if (claimed.count !== 1) {
@@ -332,6 +369,102 @@ async function reconcileStalePendingPayments() {
     );
   }
   return { reconciled, stillPending, scanned: stalePayments.length };
+}
+
+// ─── Job: Stale sentinel cleanup (INO-AUDIT8-#3) ─────────────────────────────
+//
+// If a process crashes after setting a sentinel ("in-progress-..." for
+// order creation, "refund-in-progress-..." for refund processing) but
+// before completing the gateway call, the sentinel stays forever. Every
+// subsequent request sees GATEWAY_ORDER_IN_FLIGHT (for orders) or the
+// refund is skipped by the outbox worker (because gatewayRef is non-null).
+//
+// This cleanup finds stale sentinels and resets them:
+//   1. Payments with razorpayOrderId LIKE 'in-progress-%' older than
+//      SENTINEL_STALE_MINS → reset to NULL (so createRazorpayOrder can retry)
+//   2. Refunds with gatewayRef LIKE 'refund-in-progress-%' older than
+//      SENTINEL_STALE_MINS → reset to NULL (so the outbox worker can retry)
+//
+// For order sentinels, we ALSO try to recover: fetch the Razorpay order
+// by receipt (orderNumber). If it exists, the gateway call actually
+// succeeded but the DB update failed — store the real ID. If not found,
+// reset to NULL.
+async function cleanupStaleSentinels() {
+  const staleMins = parseInt(process.env.SENTINEL_STALE_MINS || '5', 10);
+  const cutoff = new Date(Date.now() - staleMins * 60 * 1000);
+  let recovered = 0, reset = 0;
+
+  // ─── Order sentinels ──────────────────────────────────────────────
+  const staleOrderSentinels = await prisma.payment.findMany({
+    where: {
+      razorpayOrderId: { startsWith: 'in-progress-' },
+      updatedAt: { lt: cutoff },
+    },
+    include: { order: { include: { outlet: true } } },
+  });
+
+  for (const payment of staleOrderSentinels) {
+    try {
+      const client = await getOutletRazorpayClient(payment.order.outletId);
+      // Try to find the Razorpay order by receipt (orderNumber)
+      const gatewayOrders = await client.orders.fetchAll({
+        receipt: payment.order.orderNumber,
+      });
+      const found = (gatewayOrders.items || gatewayOrders || [])[0];
+      if (found) {
+        // The gateway call succeeded but our DB update failed — recover.
+        await prisma.payment.update({
+          where: { id: payment.id },
+          data: {
+            razorpayOrderId: found.id,
+            gatewayRef: found.id,
+          },
+        });
+        recovered++;
+        console.log(
+          `[reconciliation:sentinel] payment ${payment.id}: recovered gateway order ${found.id} from receipt ${payment.order.orderNumber}`
+        );
+      } else {
+        // No gateway order found — the sentinel was never sent to Razorpay.
+        await prisma.payment.update({
+          where: { id: payment.id },
+          data: { razorpayOrderId: null },
+        });
+        reset++;
+      }
+    } catch (err) {
+      // Can't reach the gateway — reset the sentinel so the next request retries.
+      await prisma.payment.update({
+        where: { id: payment.id },
+        data: { razorpayOrderId: null },
+      }).catch(() => null);
+      reset++;
+    }
+  }
+
+  // ─── Refund sentinels ─────────────────────────────────────────────
+  const staleRefundSentinels = await prisma.refund.findMany({
+    where: {
+      gatewayRef: { startsWith: 'refund-in-progress-' },
+      updatedAt: { lt: cutoff },
+    },
+  });
+
+  for (const refund of staleRefundSentinels) {
+    // Reset to NULL so the outbox worker can retry the gateway call.
+    await prisma.refund.update({
+      where: { id: refund.id },
+      data: { gatewayRef: null },
+    }).catch(() => null);
+    reset++;
+  }
+
+  if (recovered > 0 || reset > 0) {
+    console.log(
+      `[reconciliation:sentinel] recovered ${recovered}, reset ${reset} stale sentinels`
+    );
+  }
+  return { recovered, reset };
 }
 
 // ─── Job 3: Outbox worker — process PENDING refunds that were never sent ──
@@ -429,5 +562,6 @@ module.exports = {
   reconcilePendingRefunds,
   reconcileStalePendingPayments,
   processPendingRefundOutbox,
+  cleanupStaleSentinels,
   mapGatewayRefundStatus,
 };

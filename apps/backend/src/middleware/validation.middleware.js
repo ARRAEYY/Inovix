@@ -13,8 +13,10 @@ function validateBody(schema) {
         const result = schema.safeParse(req.body);
 
         if (!result.success) {
-            const errors = result.error.errors.map(e => ({
-                field: e.path.join('.'),
+            // Zod 4 renamed .errors → .issues; support both for safety.
+            const issues = result.error.issues || result.error.errors || [];
+            const errors = issues.map(e => ({
+                field: (e.path || []).join('.'),
                 message: e.message,
             }));
 
@@ -40,8 +42,9 @@ function validateQuery(schema) {
         const result = schema.safeParse(req.query);
 
         if (!result.success) {
-            const errors = result.error.errors.map(e => ({
-                field: e.path.join('.'),
+            const issues = result.error.issues || result.error.errors || [];
+            const errors = issues.map(e => ({
+                field: (e.path || []).join('.'),
                 message: e.message,
             }));
 

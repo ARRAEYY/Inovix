@@ -282,13 +282,18 @@ async function verifyRazorpayPayment({ razorpayOrderId, razorpayPaymentId, razor
     throw { statusCode: 400, code: 'PAYMENT_FAILED', message: 'Invalid payment signature' };
   }
 
-  // ─── INO-AUDIT4-D5 fix: revalidate payment amount against the gateway ──
+  // ─── INO-AUDIT4-D5 + D25 fix: revalidate payment amount + status ─────
   // The signature proves the payment_id is associated with the order_id,
-  // but the AMOUNT isn't part of the signature. Fetch the payment from
-  // Razorpay to verify the captured amount matches what we expect
-  // (Payment.amount × 100 paise). Defense-in-depth — Razorpay enforces
-  // the amount at checkout time, but a backend bug or tampering attempt
-  // could otherwise let a mismatched payment slip through.
+  // but the AMOUNT isn't part of the signature, and the signature says
+  // nothing about whether the payment was actually captured. Fetch the
+  // payment from Razorpay to verify:
+  //   1. gatewayPayment.amount === Payment.amount × 100 (amount matches)
+  //   2. gatewayPayment.status === 'captured' (the payment is actually
+  //      captured, not just authorized/created — only captured payments
+  //      represent money that moved)
+  // Defense-in-depth — Razorpay enforces the amount at checkout time,
+  // but a backend bug or tampering attempt could otherwise let a
+  // mismatched or non-captured payment slip through.
   try {
     const gatewayPayment = await client.payments.fetch(razorpayPaymentId);
     const expectedAmountPaise = Math.round(Number(payment.amount) * 100);
@@ -307,13 +312,34 @@ async function verifyRazorpayPayment({ razorpayOrderId, razorpayPaymentId, razor
         message: `Gateway payment amount ${gatewayPayment.amount}p does not match expected ${expectedAmountPaise}p`,
       };
     }
+    // INO-AUDIT4-D25: verify the gateway payment is actually 'captured'.
+    // A payment that's only 'authorized' or 'created' hasn't moved money
+    // yet — marking it PAID would let the student's order proceed without
+    // actual payment. Accept only 'captured' (and the Razorpay alias
+    // 'processed' if it ever appears).
+    const gatewayStatus = String(gatewayPayment.status || '').toLowerCase();
+    if (gatewayStatus !== 'captured' && gatewayStatus !== 'processed') {
+      await audit({
+        actorId,
+        action: 'RAZORPAY_NOT_CAPTURED',
+        targetType: 'Payment',
+        targetId: payment.id,
+        after: { gatewayStatus, expectedStatus: 'captured' },
+        req: null,
+      });
+      throw {
+        statusCode: 400,
+        code: 'PAYMENT_NOT_CAPTURED',
+        message: `Gateway payment status is '${gatewayStatus}', expected 'captured'. The payment has not been captured yet.`,
+      };
+    }
   } catch (err) {
     if (err.statusCode && err.code) throw err; // re-throw our structured errors
     // If the fetch itself fails (network / 5xx), log but DON'T block —
-    // the signature already proved authenticity; the amount-fetch is
-    // defense-in-depth. The webhook path will reconcile on the next
+    // the signature already proved authenticity; the amount+status fetch
+    // is defense-in-depth. The webhook path will reconcile on the next
     // payment.captured event.
-    console.error('[payments] gateway amount fetch failed:', err.message);
+    console.error('[payments] gateway fetch (amount+status) failed:', err.message);
   }
 
   const claimed = await prisma.payment.updateMany({
@@ -422,6 +448,33 @@ async function handlePaymentEvent(event, eventType) {
     // Idempotent: if already PAID, just ack
     if (payment.status === PAYMENT_STATUS.PAID) return { alreadyPaid: true };
 
+    // ─── INO-AUDIT4-D24 fix: verify the webhook payment amount ──────────
+    // The webhook signature proves the payload is authentic from Razorpay,
+    // but we additionally verify the captured amount matches what we expect
+    // (Payment.amount × 100 paise). A mismatch indicates a serious state
+    // inconsistency (or a Razorpay bug). Log + audit + reject; don't mark
+    // PAID. (The /verify path already does this via client.payments.fetch;
+    // the webhook path uses the payload's amount field directly since the
+    // signature already proved authenticity.)
+    const expectedAmountPaise = Math.round(Number(payment.amount) * 100);
+    if (paymentEntity.amount !== undefined
+        && paymentEntity.amount !== null
+        && paymentEntity.amount !== expectedAmountPaise) {
+      console.error(
+        `[razorpay webhook] payment.captured: amount mismatch — ` +
+        `DB=${expectedAmountPaise}p gateway=${paymentEntity.amount}p (payment ${payment.id})`
+      );
+      await audit({
+        actorId: null,
+        action: 'PAYMENT_WEBHOOK_AMOUNT_MISMATCH',
+        targetType: 'Payment',
+        targetId: payment.id,
+        after: { dbAmountPaise: expectedAmountPaise, gatewayAmountPaise: paymentEntity.amount },
+        req: null,
+      });
+      return { ignored: true, reason: 'amount_mismatch' };
+    }
+
     const claimed = await prisma.payment.updateMany({
       where: { id: payment.id, status: PAYMENT_STATUS.PENDING },
       data: {
@@ -487,10 +540,58 @@ async function handleRefundEvent(event, eventType) {
   // Look up our Refund row by gatewayRef (set when we initiated the refund).
   // If we can't find it, this is a refund initiated outside our system
   // (e.g. directly in the Razorpay dashboard) — log + ack.
-  const refund = await prisma.refund.findFirst({
+  let refund = await prisma.refund.findFirst({
     where: { gatewayRef: gatewayRefundId },
     include: { payment: true },
   });
+
+  // ─── INO-AUDIT4-D26 fix: fallback reconciliation ───────────────────────
+  // If the gatewayRef lookup failed, the most likely cause is: the gateway
+  // accepted the refund but the HTTP response was lost (network timeout
+  // between Razorpay → our server). Our Refund row has gatewayRef = NULL
+  // because processRefundAfterCommit never got the gateway refund ID.
+  //
+  // Fallback: look up by (payment.razorpayPaymentId, amount, PENDING, gatewayRef=null).
+  // This matches a PENDING refund whose amount (× 100 paise) equals the
+  // gateway's amount field. There should be at most one such row per
+  // payment (the in-flight refund). If we find it, update the gatewayRef
+  // so future webhook deliveries match directly.
+  if (!refund && refundEntityPaymentId && refundEntityAmountPaise !== undefined) {
+    const candidates = await prisma.refund.findMany({
+      where: {
+        payment: { razorpayPaymentId: refundEntityPaymentId },
+        status: REFUND_STATUS.PENDING,
+        gatewayRef: null,
+      },
+      include: { payment: true },
+    });
+    // Filter by amount in JS (Prisma can't easily express "amount × 100 == X").
+    const match = candidates.find(r =>
+      Math.round(Number(r.amount) * 100) === refundEntityAmountPaise
+    );
+    if (match) {
+      // Update the gatewayRef now that we know it — future webhook
+      // deliveries will match directly via the primary lookup above.
+      refund = await prisma.refund.update({
+        where: { id: match.id },
+        data: { gatewayRef: gatewayRefundId },
+        include: { payment: true },
+      });
+      console.log(
+        `[razorpay webhook] refund ${refund.id} matched via fallback ` +
+        `(payment_id + amount + PENDING); gatewayRef updated to ${gatewayRefundId}`
+      );
+      await audit({
+        actorId: null,
+        action: 'REFUND_GATEWAYREF_RECONCILED',
+        targetType: 'Refund',
+        targetId: refund.id,
+        after: { gatewayRef: gatewayRefundId, reason: 'fallback_lookup_after_lost_response' },
+        req: null,
+      });
+    }
+  }
+
   if (!refund) {
     console.log(`[razorpay webhook] refund ${gatewayRefundId} not found in DB — external refund?`);
     return { ignored: true };

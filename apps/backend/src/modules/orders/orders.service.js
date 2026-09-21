@@ -132,8 +132,16 @@ async function createOrder(studentId, payload) {
     notes: notes || '',
     pickupCode: generatePickupCode(),
     scheduledFor,
+    // INO-AUDIT6-#1: paymentMethod + paymentStatus are NOT fields on the
+    // Order Prisma model — they're passed through to the repository which
+    // uses them to create the associated Payment row. The naming is kept
+    // flat (rather than nested under a `payment` sub-object) for backward
+    // compat with orders.repository.js createOrder(). The DB invariant is:
+    //   Order.status = 'PENDING'  (order lifecycle state)
+    //   Payment.status = 'PENDING' (payment lifecycle state — separate)
+    // These two fields control the Payment row only.
     paymentMethod,
-    paymentStatus: 'PENDING', // PAID will be set by webhook after Razorpay confirms
+    paymentStatus: 'PENDING', // PAID will be set by webhook/verify after Razorpay confirms
     items: processedItems,
   };
 

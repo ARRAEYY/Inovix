@@ -124,12 +124,17 @@ async function setOutletRazorpayCredentials(outletId, { keyId, keySecret, webhoo
  *
  * INO-P0-6 fix: idempotent — if the Payment row already has a
  * `razorpayOrderId` and is still PENDING, return the existing gateway
- * order info instead of creating a new one. The previous implementation
- * unconditionally called `client.orders.create(...)`, so a double-click,
- * network retry, or duplicate frontend request would mint N gateway orders
- * for one internal order and overwrite `payment.razorpayOrderId` each time,
- * making earlier gateway orders impossible to associate with the internal
- * payment during reconciliation.
+ * order info instead of creating a new one.
+ *
+ * INO-AUDIT6-#2 fix: atomic claim — the previous implementation had a
+ * TOCTOU race: two concurrent requests both read razorpayOrderId=NULL,
+ * both call client.orders.create(), both update. The second update
+ * overwrites the first's gateway order, leaving the first orphaned at
+ * the gateway. Fix: atomically claim the Payment row with a sentinel
+ * ("in-progress-...") before calling the gateway. Only the request
+ * whose updateMany count === 1 proceeds; the other re-reads + returns
+ * 409 GATEWAY_ORDER_IN_FLIGHT. On gateway failure, the sentinel is
+ * reset to NULL so the next request can retry.
  */
 async function createRazorpayOrder(orderId, actorId) {
   const order = await prisma.order.findUnique({
@@ -147,14 +152,15 @@ async function createRazorpayOrder(orderId, actorId) {
     throw { statusCode: 409, message: 'Order is already paid' };
   }
 
-  const amountPaise = Math.round(Number(order.totalAmount) * 100);
+  // INO-AUDIT6-#4: use the centralized money helper, not Math.round(Number(x)*100)
+  const amountPaise = toPaise(order.totalAmount);
   const keyId = decrypt(order.outlet.razorpayKeyIdEnc);
 
-  // Idempotent: if we already have a gateway order id and the payment is
-  // still PENDING (not yet verified), reuse it. The frontend can re-enter
-  // checkout with the same gateway order id.
+  // Idempotent: if we already have a REAL gateway order id and the payment
+  // is still PENDING (not yet verified), reuse it.
   if (
     order.payment?.razorpayOrderId &&
+    !order.payment.razorpayOrderId.startsWith('in-progress-') &&
     order.payment?.status === PAYMENT_STATUS.PENDING
   ) {
     return {
@@ -165,44 +171,87 @@ async function createRazorpayOrder(orderId, actorId) {
     };
   }
 
+  // INO-AUDIT6-#2: atomic claim — set a sentinel so concurrent requests
+  // can't both create gateway orders. The sentinel "in-progress-..." is
+  // recognizable in the DB + reconciliation worker.
+  const claimSentinel = `in-progress-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const claimed = await prisma.payment.updateMany({
+    where: {
+      id: order.payment.id,
+      razorpayOrderId: null,
+    },
+    data: { razorpayOrderId: claimSentinel },
+  });
+
+  if (claimed.count !== 1) {
+    // Another request already set razorpayOrderId — either a real one
+    // (just finished) or another sentinel (in-flight). Re-read to decide.
+    const current = await prisma.payment.findUnique({ where: { id: order.payment.id } });
+    if (current?.razorpayOrderId && !current.razorpayOrderId.startsWith('in-progress-')) {
+      // A real gateway order ID was set by another request — return it.
+      return {
+        razorpayOrderId: current.razorpayOrderId,
+        amount: amountPaise,
+        currency: 'INR',
+        keyId,
+      };
+    }
+    // Another request is in-flight (sentinel set) — return 409.
+    throw {
+      statusCode: 409,
+      code: 'GATEWAY_ORDER_IN_FLIGHT',
+      message: 'Another gateway order creation is in progress. Please retry.',
+    };
+  }
+
+  // We've claimed the row — now call the gateway.
   const client = await getOutletRazorpayClient(order.outletId);
 
-  // Razorpay expects amount in paise (1 INR = 100 paise)
-  const gatewayOrder = await client.orders.create({
-    amount: amountPaise,
-    currency: 'INR',
-    receipt: order.orderNumber,
-    notes: {
-      orderId: order.id,
-      outletId: order.outletId,
-      studentId: order.studentId,
-    },
-  });
+  try {
+    // Razorpay expects amount in paise (1 INR = 100 paise)
+    const gatewayOrder = await client.orders.create({
+      amount: amountPaise,
+      currency: 'INR',
+      receipt: order.orderNumber,
+      notes: {
+        orderId: order.id,
+        outletId: order.outletId,
+        studentId: order.studentId,
+      },
+    });
 
-  // Persist gateway ref on the Payment row
-  const updated = await prisma.payment.update({
-    where: { orderId: order.id },
-    data: {
-      gatewayRef: gatewayOrder.id,
+    // Persist the real gateway order ID (replacing the sentinel).
+    await prisma.payment.update({
+      where: { orderId: order.id },
+      data: {
+        gatewayRef: gatewayOrder.id,
+        razorpayOrderId: gatewayOrder.id,
+        method: 'ONLINE',
+      },
+    });
+
+    await audit({
+      actorId,
+      action: 'RAZORPAY_ORDER_CREATED',
+      targetType: 'Payment',
+      targetId: order.payment.id,
+      after: { gatewayRef: gatewayOrder.id, amount: order.totalAmount },
+    });
+
+    return {
       razorpayOrderId: gatewayOrder.id,
-      method: 'ONLINE',
-    },
-  });
-
-  await audit({
-    actorId,
-    action: 'RAZORPAY_ORDER_CREATED',
-    targetType: 'Payment',
-    targetId: updated.id,
-    after: { gatewayRef: gatewayOrder.id, amount: order.totalAmount },
-  });
-
-  return {
-    razorpayOrderId: gatewayOrder.id,
-    amount: amountPaise,
-    currency: 'INR',
-    keyId,
-  };
+      amount: amountPaise,
+      currency: 'INR',
+      keyId,
+    };
+  } catch (err) {
+    // Gateway call failed — reset the sentinel so the next request can retry.
+    await prisma.payment.update({
+      where: { id: order.payment.id },
+      data: { razorpayOrderId: null },
+    }).catch(() => null);
+    throw err;
+  }
 }
 
 /**
@@ -297,7 +346,7 @@ async function verifyRazorpayPayment({ razorpayOrderId, razorpayPaymentId, razor
   // mismatched or non-captured payment slip through.
   try {
     const gatewayPayment = await client.payments.fetch(razorpayPaymentId);
-    const expectedAmountPaise = Math.round(Number(payment.amount) * 100);
+    const expectedAmountPaise = toPaise(payment.amount);
     if (gatewayPayment.amount !== expectedAmountPaise) {
       await audit({
         actorId,
@@ -457,7 +506,7 @@ async function handlePaymentEvent(event, eventType) {
     // PAID. (The /verify path already does this via client.payments.fetch;
     // the webhook path uses the payload's amount field directly since the
     // signature already proved authenticity.)
-    const expectedAmountPaise = Math.round(Number(payment.amount) * 100);
+    const expectedAmountPaise = toPaise(payment.amount);
     if (paymentEntity.amount !== undefined
         && paymentEntity.amount !== null
         && paymentEntity.amount !== expectedAmountPaise) {
@@ -568,7 +617,7 @@ async function handleRefundEvent(event, eventType) {
     });
     // Filter by amount in JS (Prisma can't easily express "amount × 100 == X").
     const match = candidates.find(r =>
-      Math.round(Number(r.amount) * 100) === refundEntityAmountPaise
+      toPaise(r.amount) === refundEntityAmountPaise
     );
     if (match) {
       // Update the gatewayRef now that we know it — future webhook
@@ -622,7 +671,7 @@ async function handleRefundEvent(event, eventType) {
     });
     return { ignored: true, reason: 'payment_id_mismatch' };
   }
-  const expectedAmountPaise = Math.round(Number(refund.amount) * 100);
+  const expectedAmountPaise = toPaise(refund.amount);
   if (refundEntityAmountPaise !== undefined && refundEntityAmountPaise !== null
       && Math.abs(refundEntityAmountPaise - expectedAmountPaise) > 1) {
     // Allow 1 paise tolerance for rounding differences. Anything beyond
@@ -799,7 +848,7 @@ async function processRefundAfterCommit(refundId, actorId) {
   try {
     const client = await getOutletRazorpayClient(refund.payment.order.outletId);
     const gatewayRefund = await client.payments.refund(refund.payment.razorpayPaymentId, {
-      amount: Math.round(Number(refund.amount) * 100),
+      amount: toPaise(refund.amount),
       notes: {
         orderId: refund.payment.order.id,
         trigger: refund.triggeredBy,

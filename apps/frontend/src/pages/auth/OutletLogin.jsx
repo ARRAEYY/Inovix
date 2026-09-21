@@ -6,7 +6,7 @@ const OutletLogin = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  
+
   const navigate = useNavigate();
   const { login } = useAuth();
 
@@ -14,77 +14,56 @@ const OutletLogin = () => {
     e.preventDefault();
     setError('');
     try {
-      await login(email, password);
-      navigate('/outlet');
+      const user = await login(email, password);
+      if (user.role?.startsWith('OUTLET')) navigate('/outlet');
+      else if (user.role === 'SUPER_ADMIN') navigate('/admin');
+      else if (user.role === 'STUDENT') navigate('/student');
+      else navigate('/');
     } catch (err) {
-      setError(err.message || 'Login failed. Please check your credentials.');
+      setError(err?.response?.data?.message || err.message || 'Login failed');
     }
   };
+
+  const handleGoogle = () => {
+    alert('Google login requires GOOGLE_CLIENT_ID to be configured. Use dev-login below for local testing.');
+  };
+
   return (
     <div className="login-container">
       <div className="login-left">
-        <div className="brand">
-          <span className="brand-name">nosh</span>
-        </div>
-
+        <div className="brand"><span className="brand-name">nosh</span></div>
         <div className="hero-content">
           <h1 className="hero-title">
             Grow your business.<br />
             <span className="highlight"> Zero hassle.</span>
           </h1>
           <p className="hero-description">
-            Manage your campus outlet, process orders,
-            <br />
+            Manage your campus outlet, process orders,<br />
             and track your revenue easily.
           </p>
         </div>
       </div>
-
       <div className="login-right">
         <div className="login-card">
           <p className="card-subheading">Outlet Login</p>
           <h2 className="card-title">Welcome, Partner</h2>
-
           <form className="login-form" onSubmit={handleLogin}>
             <div className="input-group">
               <label htmlFor="email">Work email</label>
-              <input 
-                type="email" 
-                id="email" 
-                placeholder="manager@outlet.com" 
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-              />
+              <input type="email" id="email" placeholder="manager@outlet.com" value={email}
+                onChange={(e) => setEmail(e.target.value)} required />
             </div>
-
             <div className="input-group">
               <label htmlFor="password">Password</label>
-              <input 
-                type="password" 
-                id="password" 
-                placeholder="Your password" 
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-              />
-              <div className="forgot-password-container">
-                <a href="#" className="forgot-password">Forgot password?</a>
-              </div>
+              <input type="password" id="password" placeholder="Your password" value={password}
+                onChange={(e) => setPassword(e.target.value)} required />
+              <div className="forgot-password-container"><a href="#" className="forgot-password">Forgot password?</a></div>
             </div>
-
             {error && <p style={{ color: 'var(--primary)', fontSize: '0.85rem', fontWeight: 500, marginTop: '0.25rem' }}>{error}</p>}
-
-            <button type="submit" className="primary-btn">
-              Sign in <span className="arrow">→</span>
-            </button>
+            <button type="submit" className="primary-btn">Sign in <span className="arrow">→</span></button>
           </form>
-
-          <div className="divider">
-            <span>or</span>
-          </div>
-
-          <button type="button" className="google-btn">
+          <div className="divider"><span>or</span></div>
+          <button type="button" className="google-btn" onClick={handleGoogle}>
             <svg width="18" height="18" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
               <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
               <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />

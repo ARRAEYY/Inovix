@@ -117,32 +117,6 @@ async function getUserOrders(studentId, { page, pageSize, status } = {}) {
   return ordersRepo.findByUserId(studentId, { page, pageSize, status });
 }
 
-async function cancelOrder(studentId, orderId) {
-  const order = await ordersRepo.findById(orderId);
-  if (!order) throw { statusCode: 404, message: 'Order not found' };
-  if (order.studentId !== studentId) throw { statusCode: 403, message: 'You are not authorized to cancel this order' };
-  if (order.status !== ORDER_STATUS.PENDING) {
-    throw { statusCode: 400, code: ERROR_CODES.INVALID_TRANSITION, message: 'Orders can only be cancelled before the outlet accepts them' };
-  }
-
-  const before = { status: order.status };
-  const updated = await ordersRepo.updateStatus(
-    orderId,
-    order.status,
-    ORDER_STATUS.CANCELLED,
-    studentId,
-    { reason: 'Cancelled by customer' }
-  );
-  if (!updated) {
-    const error = new Error('Order was modified by another request; please retry');
-    error.statusCode = 409;
-    error.code = ERROR_CODES.CONFLICT;
-    throw error;
-  }
-
-  return { updated, before };
-}
-
 async function getOrderById(studentId, orderId) {
   const order = await ordersRepo.findById(orderId);
   if (!order) throw { statusCode: 404, message: 'Order not found' };
@@ -178,40 +152,18 @@ async function getOutletOrder(outletId, orderId) {
   return order;
 }
 
-async function updateOrderStatus(outletId, orderId, status, actorId, reason) {
-  const order = await ordersRepo.findById(orderId);
-  if (!order) throw { statusCode: 404, message: 'Order not found' };
-  if (order.outletId !== outletId) {
-    throw { statusCode: 403, message: 'You are not authorized to modify this order' };
-  }
-
-  if (!Object.values(ORDER_STATUS).includes(status)) {
-    throw { statusCode: 400, message: 'Invalid status' };
-  }
-
-  const allowedNext = ALLOWED_TRANSITIONS[order.status] || [];
-  if (!allowedNext.includes(status)) {
-    const error = new Error(`Cannot transition from ${order.status} to ${status}`);
-    error.statusCode = 400;
-    error.code = ERROR_CODES.INVALID_TRANSITION;
-    throw error;
-  }
-
-  // Payment guard: don't allow state changes on unpaid orders
-  if (order.payment?.status !== 'PAID' && status !== 'CANCELLED' && status !== 'REJECTED') {
-    throw { statusCode: 400, code: ERROR_CODES.PAYMENT_REQUIRED, message: 'Order payment has not been confirmed' };
-  }
-
-  const before = { status: order.status };
-  const updated = await ordersRepo.updateStatus(orderId, order.status, status, actorId, { reason });
-  if (!updated) {
-    const error = new Error('Order was modified by another request; please retry');
-    error.statusCode = 409;
-    error.code = ERROR_CODES.CONFLICT || 'CONFLICT';
-    throw error;
-  }
-  return { updated, before };
-}
+// INO-AUDIT3-13: the old updateOrderStatus + cancelOrder functions were
+// superseded by transition.service.js performTransition() in commit
+// 1447845. They're deleted here so there's a single source of truth for
+// order transitions. The controller now calls performTransition directly;
+// these old functions were dead code that could mislead future developers
+// into thinking they were the authoritative path.
+//
+// The orders.repository.js updateStatus() function is still used by the
+// transition service (which calls prisma.order.updateMany directly inside
+// the tx for the atomic claim — see transition.service.js for details).
+// The repository function is kept for backward compat in case any future
+// caller wants a non-transactional update.
 
 module.exports = {
   createOrder,
@@ -220,8 +172,6 @@ module.exports = {
   getOutletOrders,
   getOutletKPIs,
   getOutletOrder,
-  updateOrderStatus,
-  cancelOrder,
   generateOrderNumber,
   generatePickupCode,
 };

@@ -70,8 +70,17 @@ const roleEnum = z.enum(['STUDENT', 'OUTLET_STAFF', 'OUTLET_ADMIN', 'SUPER_ADMIN
 
 const outletStaffRoleEnum = z.enum(['STAFF', 'ADMIN']);
 
+// INO-AUDIT3-8 fix: CUSTOMER_CANCEL was missing from the canonical enum.
+// The transition service + admin controller pass `triggerOverride: 'CUSTOMER_CANCEL'`
+// when a student cancels their PENDING order, but the validation package
+// didn't list it — so the shared schema didn't reflect the actual refund
+// trigger space. Drift like this causes bugs later when someone adds
+// validation against the enum and forgets the CUSTOMER_CANCEL case.
 const refundTriggerEnum = z.enum([
-  'OUTLET_REJECT', 'OUTLET_CANCEL', 'SUPER_ADMIN_MANUAL',
+  'OUTLET_REJECT',
+  'OUTLET_CANCEL',
+  'CUSTOMER_CANCEL',
+  'SUPER_ADMIN_MANUAL',
 ]);
 
 // ─── 1. Dev login (M1) ──────────────────────────────────────────────────────

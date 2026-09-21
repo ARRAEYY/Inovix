@@ -261,7 +261,44 @@ async function issueManualRefund(orderId, { amount, reason }, actorId) {
     };
   }
 
+  // ─── INO-AUDIT3-1 fix: enforce refund amount bounds server-side ──────
+  // The previous implementation passed `amount` straight to Razorpay without
+  // checking it against the payment's remaining refundable amount. A super-
+  // admin could submit { amount: 999999 } and the app would rely on Razorpay
+  // to reject it. The business invariant belongs to the application.
+  //
+  //   remaining = payment.amount - sum(COMPLETED refunds) - sum(PENDING refunds)
+  //
+  // PENDING refunds are subtracted too because they represent in-flight
+  // refund attempts that may still complete. If a PENDING refund exists,
+  // the retry path below handles it — the fresh-refund path is only
+  // reached when no PENDING refund exists, so remaining is just
+  // payment.amount - sum(COMPLETED refunds) in practice.
+  const paymentAmount = Number(order.payment.amount);
+  const alreadyRefunded = order.payment.refunds
+    .filter(r => r.status === REFUND_STATUS.COMPLETED || r.status === REFUND_STATUS.PENDING)
+    .reduce((sum, r) => sum + Number(r.amount), 0);
+  const remainingRefundable = paymentAmount - alreadyRefunded;
+
+  const requestedAmount = Number(amount);
+  if (!Number.isFinite(requestedAmount) || requestedAmount <= 0) {
+    throw {
+      statusCode: 400,
+      code: 'INVALID_REFUND_AMOUNT',
+      message: 'Refund amount must be a positive number.',
+    };
+  }
+  if (requestedAmount > remainingRefundable) {
+    throw {
+      statusCode: 400,
+      code: 'REFUND_AMOUNT_EXCEEDS_REMAINING',
+      message: `Refund amount ₹${requestedAmount.toFixed(2)} exceeds remaining refundable amount ₹${remainingRefundable.toFixed(2)} (payment ₹${paymentAmount.toFixed(2)} − already refunded ₹${alreadyRefunded.toFixed(2)}).`,
+    };
+  }
+
   // Retry path: a PENDING refund exists (likely from a failed auto-refund).
+  // The existing PENDING refund's amount was already validated when it
+  // was created, so we don't re-check here — we just retry the gateway call.
   const existingPending = order.payment.refunds.find(r => r.status === REFUND_STATUS.PENDING);
   if (existingPending) {
     let gatewayRef = existingPending.gatewayRef;
@@ -305,13 +342,14 @@ async function issueManualRefund(orderId, { amount, reason }, actorId) {
     return { refund: updated, retried: true };
   }
 
-  // Fresh manual refund path.
+  // Fresh manual refund path. Amount has been validated above against
+  // the remaining refundable cap.
   let gatewayRef = null;
   let refundStatus = REFUND_STATUS.PENDING;
   try {
     const client = await getOutletRazorpayClient(order.outletId);
     const gatewayRefund = await client.payments.refund(order.payment.razorpayPaymentId, {
-      amount: Math.round(Number(amount) * 100),
+      amount: Math.round(requestedAmount * 100),
       notes: {
         orderId: order.id,
         trigger: REFUND_TRIGGER.SUPER_ADMIN_MANUAL,

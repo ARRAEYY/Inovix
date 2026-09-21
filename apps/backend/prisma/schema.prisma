@@ -345,7 +345,7 @@ model Refund {
   reason        String
   gatewayRef    String?
   status        String    @default("PENDING") // PENDING | COMPLETED | FAILED
-  triggeredBy   String    // OUTLET_REJECT | OUTLET_CANCEL | SUPER_ADMIN_MANUAL
+  triggeredBy   String    // OUTLET_REJECT | OUTLET_CANCEL | CUSTOMER_CANCEL | SUPER_ADMIN_MANUAL
   initiatedBy   String?   // userId of the actor
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -353,6 +353,13 @@ model Refund {
   payment       Payment   @relation(fields: [paymentId], references: [id])
 
   @@index([paymentId])
+  // INO-AUDIT3-2 fix: enforce (paymentId, triggeredBy) uniqueness at the DB
+  // level. The application-level check in transition.service.js +
+  // admin.service.js guards against the common case, but two concurrent
+  // requests could both pass the check before either INSERT runs. This
+  // unique constraint makes the guarantee airtight — the second INSERT
+  // fails with a unique-violation, which the caller translates to a 409.
+  @@unique([paymentId, triggeredBy])
 }
 
 // ─── 17. Notification ──────────────────────────────────────────────────────

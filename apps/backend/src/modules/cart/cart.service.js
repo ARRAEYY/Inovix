@@ -9,9 +9,36 @@
 
 const cartRepo = require('./cart.repository');
 const menuRepo = require('../menu/menu.repository');
-const { validateAndComputeOptionsDelta } = require('../menu/customization');
+const { validateAndComputeOptionsDelta, normalizeSelectedOptions } = require('../menu/customization');
 const { OUTLET_STATUS, ERROR_CODES } = require('../../lib/constants');
 const prisma = require('../../lib/prisma');
+
+// INO-AUDIT3-4: cart totals use integer paise internally — same primitive
+// as orders.service.js createOrder, so the cart preview total matches the
+// eventual checkout total exactly (no floating-point drift).
+function toPaise(decimal) {
+  return Math.round(Number(decimal) * 100);
+}
+function fromPaise(paise) {
+  return (paise / 100).toFixed(2);
+}
+
+// INO-AUDIT3-5 fix: compute the priceDelta for a cart item's selectedOptions
+// using the menu item's customizationGroups + options (now included in
+// CART_INCLUDE in cart.repository.js). Returns paise (integer).
+function computeOptionsDeltaPaise(menuItem, selectedOptionsJson) {
+  if (!menuItem?.customizationGroups || !selectedOptionsJson) return 0;
+  let selected;
+  try { selected = JSON.parse(selectedOptionsJson); } catch { return 0; }
+  if (!Array.isArray(selected) || selected.length === 0) return 0;
+  // Reuse the validation helper — it builds the lookup, sums paise.
+  // Note: this assumes the cart item's selectedOptions were validated at
+  // add time (cart.service.js addItem calls validateAndComputeOptionsDelta).
+  // If the menu item's options changed after add-time, this recomputes
+  // based on the CURRENT state (which is correct — the cart preview
+  // should reflect what the user would actually pay today).
+  return validateAndComputeOptionsDelta(menuItem, selected);
+}
 
 // INO-P0-15: outlets in any of these statuses cannot accept new cart
 // activity. The previous `getCart` only checked `if (!outlet)` — CLOSED,
@@ -57,12 +84,13 @@ async function addItem(studentId, outletId, { menuItemId, quantity, selectedOpti
   // at order creation). Without this, a student could add a cart item with
   // a non-existent optionId or an option from a different menu item, and
   // the bad data would only fail at checkout. Now we reject early.
-  // The returned priceDelta is discarded here — the cart preview uses the
-  // base menu price (see `computeTotals`); the order-time computation is
-  // the source of truth for the actual charge.
-  validateAndComputeOptionsDelta(menuItem, selectedOptions);
+  // INO-AUDIT3-6: pass normalized options to cartRepo.addItem so the
+  // dedup/sort happens before the JSON comparison (same logical set
+  // produces the same stored string).
+  const normalizedOptions = normalizeSelectedOptions(selectedOptions);
+  validateAndComputeOptionsDelta(menuItem, normalizedOptions);
 
-  const item = await cartRepo.addItem(cart.id, menuItemId, quantity, selectedOptions);
+  const item = await cartRepo.addItem(cart.id, menuItemId, quantity, normalizedOptions);
   // Refresh cart expiry
   await prisma.cart.update({
     where: { id: cart.id },
@@ -107,16 +135,38 @@ async function clearCart(studentId) {
 /**
  * Compute cart totals — subtotal, platform fee, total.
  * Used by checkout endpoint to preview the order before payment.
+ *
+ * INO-AUDIT3-5 fix: previously this computed `Number(menuItem.price) *
+ * quantity` — ignoring customization priceDeltas. So the cart preview
+ * showed ₹100 for "burger + extra cheese" while the actual order charge
+ * was ₹130. Now we include the customization priceDelta by re-running
+ * the validation helper against the cart item's selectedOptions (parsed
+ * from the stored JSON string).
+ *
+ * INO-AUDIT3-4 fix: all arithmetic is integer paise — no floating-point
+ * drift between cart preview and checkout.
  */
 function computeTotals(cart) {
-  if (!cart || !cart.items) return { subtotal: 0, platformFee: 0, total: 0, itemCount: 0 };
-  const subtotal = cart.items.reduce((sum, i) => sum + Number(i.menuItem.price) * i.quantity, 0);
-  const platformFee = subtotal > 0 ? 5 : 0;
+  if (!cart || !cart.items) return { subtotal: '0.00', platformFee: '0.00', total: '0.00', itemCount: 0 };
+
+  let subtotalPaise = 0;
+  let itemCount = 0;
+  for (const i of cart.items) {
+    const basePricePaise = toPaise(i.menuItem.price);
+    const optionsDeltaPaise = computeOptionsDeltaPaise(i.menuItem, i.selectedOptions);
+    const unitPricePaise = basePricePaise + optionsDeltaPaise;
+    subtotalPaise += unitPricePaise * i.quantity;
+    itemCount += i.quantity;
+  }
+
+  const platformFeePaise = subtotalPaise > 0 ? 500 : 0; // ₹5 in paise
+  const totalPaise = subtotalPaise + platformFeePaise;
+
   return {
-    subtotal,
-    platformFee,
-    total: subtotal + platformFee,
-    itemCount: cart.items.reduce((sum, i) => sum + i.quantity, 0),
+    subtotal: fromPaise(subtotalPaise),
+    platformFee: fromPaise(platformFeePaise),
+    total: fromPaise(totalPaise),
+    itemCount,
   };
 }
 

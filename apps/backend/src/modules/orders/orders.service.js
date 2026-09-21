@@ -14,11 +14,28 @@ const crypto = require('crypto');
 const prisma = require('../../lib/prisma');
 const ordersRepo = require('./orders.repository');
 const menuRepo = require('../menu/menu.repository');
-const { validateAndComputeOptionsDelta } = require('../menu/customization');
+const { validateAndComputeOptionsDelta, normalizeSelectedOptions } = require('../menu/customization');
 const { ORDER_STATUS, ALLOWED_TRANSITIONS, ERROR_CODES } = require('../../lib/constants');
 
-const PLATFORM_FEE = 5;
+// INO-AUDIT3-4 fix: use integer paise internally for money arithmetic.
+// PLATFORM_FEE is in rupees; the paise equivalent is 500.
+const PLATFORM_FEE_RUPEES = 5;
+const PLATFORM_FEE_PAISE = PLATFORM_FEE_RUPEES * 100;
 const ORDER_STATUS_PREFIX = 'NOSH-';
+
+// Convert a Prisma Decimal value to integer paise (multiply by 100, round).
+// Math.round handles the JS floating-point representation quirk where
+// 99.50 * 100 might give 9950.0000001.
+function toPaise(decimal) {
+  return Math.round(Number(decimal) * 100);
+}
+
+// Convert integer paise back to a string with 2 decimal places for DB
+// storage. String output avoids any further floating-point representation
+// issues — Prisma accepts strings for Decimal fields.
+function fromPaise(paise) {
+  return (paise / 100).toFixed(2);
+}
 
 function generateOrderNumber() {
   // Spec format: NOSH-NNNN. Sequential would require a counter table; we use
@@ -47,7 +64,7 @@ async function createOrder(studentId, payload) {
     throw { statusCode: 400, code: ERROR_CODES.OUTLET_CLOSED, message: 'Outlet is not accepting orders right now' };
   }
 
-  let subtotal = 0;
+  let subtotalPaise = 0;
   const processedItems = [];
 
   for (const itemReq of items) {
@@ -71,26 +88,34 @@ async function createOrder(studentId, payload) {
     // rejected). Also compute the price delta so the actual charge
     // reflects customizations. Previously `itemTotal` was
     // `menuItem.price * quantity` — extra cheese at +₹30 was free.
-    const optionsDelta = validateAndComputeOptionsDelta(menuItem, itemReq.selectedOptions);
-    const unitPrice = Number(menuItem.price) + optionsDelta;
-    const itemTotal = unitPrice * itemReq.quantity;
-    subtotal += itemTotal;
+    //
+    // INO-AUDIT3-6 fix: normalize the selectedOptions (sort by groupId +
+    // optionId, dedupe) so the same logical set produces the same stored
+    // string regardless of input order.
+    const normalizedOptions = normalizeSelectedOptions(itemReq.selectedOptions);
+    // INO-AUDIT3-4 fix: returns paise (integer), not rupees. All arithmetic
+    // below is integer-exact — no floating-point error accumulation.
+    const optionsDeltaPaise = validateAndComputeOptionsDelta(menuItem, itemReq.selectedOptions);
+    const unitPricePaise = toPaise(menuItem.price) + optionsDeltaPaise;
+    const itemTotalPaise = unitPricePaise * itemReq.quantity; // int * int = exact
+    subtotalPaise += itemTotalPaise;
 
     processedItems.push({
       menuItemId: menuItem.id,
       name: menuItem.name,
-      price: unitPrice,
+      price: fromPaise(unitPricePaise),       // string w/ 2 decimals for DB
       quantity: itemReq.quantity,
       image: menuItem.imageUrl,
-      selectedOptions: itemReq.selectedOptions || [],
-      itemTotal,
+      selectedOptions: normalizedOptions,
+      itemTotal: fromPaise(itemTotalPaise),
     });
   }
 
   // Discount logic — V1 keeps it at 0 (per Phase 7 mock-data note).
   // The schema column exists so M2 can add a discount engine without a migration.
-  const discount = 0;
-  const totalAmount = subtotal - discount + PLATFORM_FEE;
+  const discountPaise = 0;
+  const subtotalPaiseFinal = subtotalPaise;
+  const totalAmountPaise = subtotalPaiseFinal - discountPaise + PLATFORM_FEE_PAISE;
 
   const newOrder = {
     orderNumber: generateOrderNumber(),
@@ -98,10 +123,10 @@ async function createOrder(studentId, payload) {
     outletId,
     outletSnapshot: JSON.stringify({ id: outlet.id, name: outlet.name }),
     status: ORDER_STATUS.PENDING,
-    subtotal,
-    discount,
-    platformFee: PLATFORM_FEE,
-    totalAmount,
+    subtotal: fromPaise(subtotalPaiseFinal),
+    discount: fromPaise(discountPaise),
+    platformFee: fromPaise(PLATFORM_FEE_PAISE),
+    totalAmount: fromPaise(totalAmountPaise),
     notes: notes || '',
     pickupCode: generatePickupCode(),
     scheduledFor,

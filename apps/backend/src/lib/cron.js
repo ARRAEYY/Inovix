@@ -218,6 +218,22 @@ async function processPickupTimeouts() {
   return completed;
 }
 
+// ─── Job 4: Expired cart cleanup (INO-AUDIT4-D20) ───────────────────────────
+// Cart rows past their `expiresAt` are technically dead — the cart
+// service's `findByStudent` already filters them out via
+// `expiresAt: { gt: new Date() }`. But the rows themselves accumulate
+// in the DB until manually cleaned. This job deletes them.
+async function purgeExpiredCarts() {
+  const result = await prisma.cart.deleteMany({
+    where: { expiresAt: { lt: new Date() } },
+  });
+  if (result.count > 0) {
+    console.log(`[cron:cart-purge] deleted ${result.count} expired cart rows`);
+    // CartItem rows cascade-delete via the CartItem.cartId FK onDelete: Cascade.
+  }
+  return result.count;
+}
+
 // ─── Init ─────────────────────────────────────────────────────────────────────
 function initCron() {
   if (!isCronEnabled()) {
@@ -228,12 +244,14 @@ function initCron() {
   scheduled = [
     cron.schedule(DAILY_AT_3AM, () => runCronJob('audit-purge', purgeAuditLogs), { name: 'audit-purge' }),
     cron.schedule(DAILY_AT_3AM, () => runCronJob('refresh-purge', purgeExpiredRefreshTokens), { name: 'refresh-purge' }),
+    cron.schedule(DAILY_AT_3AM, () => runCronJob('cart-purge', purgeExpiredCarts), { name: 'cart-purge' }),
     cron.schedule(PICKUP_TIMEOUT_CHECK_INTERVAL, () => runCronJob('pickup-timeout', processPickupTimeouts), { name: 'pickup-timeout' }),
   ];
 
   console.log(`[cron] scheduled: ${scheduled.map(s => s.name || '?').join(', ')}`);
   console.log(`[cron] audit purge: daily at 03:00 (${process.env.AUDIT_LOG_RETENTION_DAYS || 90}-day retention)`);
   console.log(`[cron] refresh purge: daily at 03:00 (delete tokens older than 30d)`);
+  console.log(`[cron] cart purge: daily at 03:00 (delete carts past expiresAt)`);
   console.log(`[cron] pickup timeout: every 5 min (default window: ${process.env.PICKUP_TIMEOUT_MINS || 30} min)`);
   console.log(`[cron] advisory-lock: ${require('./distributedLock').isPostgres() ? 'postgres pg_try_advisory_xact_lock' : 'disabled (sqlite dev)'}`);
 }
@@ -250,6 +268,7 @@ module.exports = {
   stopCron,
   purgeAuditLogs,
   purgeExpiredRefreshTokens,
+  purgeExpiredCarts,
   processPickupTimeouts,
   isCronEnabled,
 };

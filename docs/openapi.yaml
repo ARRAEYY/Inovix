@@ -1,0 +1,905 @@
+openapi: 3.1.0
+info:
+  title: Nosh Campus Food API
+  version: 1.0.0
+  description: |
+    Campus-only prepaid food ordering platform.
+
+    Spec source: `Campus_Food_Design_Spec.pdf` (58 pages).
+    - 4 roles: Student, Outlet Staff, Outlet Admin, Super Admin
+    - 19 DB tables (User, StudentProfile, Campus, Outlet, OutletStaff,
+      OperatingHours, MenuCategory, MenuItem, CustomizationGroup,
+      CustomizationOption, Cart, CartItem, Order, OrderItem, Payment,
+      Refund, Notification, RefreshToken, AuditLog)
+    - Order state machine: PENDING → ACCEPTED → PREPARING → READY → COMPLETED,
+      with REJECTED and CANCELLED branches per §8.6
+    - Per-outlet Razorpay integration (encrypted credentials, AES-256-GCM)
+    - Socket.IO realtime events: order:new, order:status:changed, notification:created
+    - JWT 15-min access + 7-day rotating refresh tokens
+
+    ## Auth
+    All endpoints (except `/health`, `/auth/google`, `/auth/dev-login`, `/auth/refresh`,
+    and the Razorpay webhook) require `Authorization: Bearer <accessToken>`.
+
+    ## Envelope
+    Success: `{ success: true, data: ..., meta?: { page, pageSize, total } }`
+    Error:   `{ success: false, message, code, errors: [] }`
+  contact:
+    name: Nosh
+    url: https://github.com/ARRAEYY/Inovix
+  license:
+    name: ISC
+
+servers:
+  - url: http://localhost:3000
+    description: Local dev
+  - url: https://api.yourcollege.edu.in
+    description: Production (replace with actual domain)
+
+tags:
+  - name: Health
+  - name: Auth
+  - name: Onboarding
+  - name: Catalog
+  - name: Cart
+  - name: Orders
+  - name: Outlet Orders
+  - name: Outlet Menu
+  - name: Notifications
+  - name: Admin
+  - name: Payments
+  - name: Audit
+  - name: Uploads
+  - name: Realtime
+
+# ─── Common schemas ────────────────────────────────────────────────────────
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    pageParam:
+      in: query
+      name: page
+      schema: { type: integer, minimum: 1, default: 1 }
+    pageSizeParam:
+      in: query
+      name: pageSize
+      schema: { type: integer, minimum: 1, maximum: 500, default: 20 }
+  schemas:
+    Error:
+      type: object
+      required: [success, message, code, errors]
+      properties:
+        success: { type: boolean, example: false }
+        message: { type: string }
+        code: { type: string }
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              field: { type: string }
+              message: { type: string }
+    User:
+      type: object
+      properties:
+        id: { type: string }
+        email: { type: string, format: email }
+        name: { type: string, nullable: true }
+        role: { type: string, enum: [STUDENT, OUTLET_STAFF, OUTLET_ADMIN, SUPER_ADMIN] }
+        status: { type: string, enum: [ACTIVE, SUSPENDED, PENDING] }
+        onboardingCompleted: { type: boolean }
+        outletId: { type: string, nullable: true }
+        outletRole: { type: string, nullable: true, enum: [STAFF, ADMIN, null] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    Outlet:
+      type: object
+      properties:
+        id: { type: string }
+        slug: { type: string }
+        name: { type: string }
+        description: { type: string }
+        status: { type: string, enum: [OPEN, BUSY, CLOSED, PENDING, SUSPENDED] }
+        rating: { type: number, format: float }
+        estimatedTime: { type: string }
+        location: { type: string }
+        tags: { type: string }
+        featured: { type: boolean }
+        defaultPrepMins: { type: integer }
+        pickupTimeoutMins: { type: integer }
+    MenuItem:
+      type: object
+      properties:
+        id: { type: string }
+        outletId: { type: string }
+        name: { type: string }
+        description: { type: string }
+        price: { type: number, format: float }
+        imageUrl: { type: string, nullable: true }
+        isAvailable: { type: boolean }
+        prepTimeMins: { type: integer }
+        discount: { type: string, nullable: true }
+        popular: { type: boolean }
+        vegetarian: { type: boolean }
+        dietaryFlags: { type: string }
+    Order:
+      type: object
+      properties:
+        id: { type: string }
+        orderNumber: { type: string }
+        studentId: { type: string }
+        outletId: { type: string }
+        status: { type: string, enum: [PENDING, ACCEPTED, PREPARING, READY, COMPLETED, REJECTED, CANCELLED] }
+        subtotal: { type: number, format: float }
+        discount: { type: number, format: float }
+        platformFee: { type: number, format: float }
+        totalAmount: { type: number, format: float }
+        notes: { type: string }
+        pickupCode: { type: string }
+        scheduledFor: { type: string, format: date-time, nullable: true }
+        timeline: { type: string, description: "JSON array of {status, at, by}" }
+        cancelReason: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        acceptedAt: { type: string, format: date-time, nullable: true }
+        readyAt: { type: string, format: date-time, nullable: true }
+        completedAt: { type: string, format: date-time, nullable: true }
+        cancelledAt: { type: string, format: date-time, nullable: true }
+    OrderItem:
+      type: object
+      properties:
+        id: { type: string }
+        orderId: { type: string }
+        menuItemId: { type: string }
+        name: { type: string }
+        price: { type: number, format: float }
+        quantity: { type: integer }
+        imageUrl: { type: string, nullable: true }
+        optionsSnapshot: { type: string }
+        itemTotal: { type: number, format: float }
+    Payment:
+      type: object
+      properties:
+        id: { type: string }
+        orderId: { type: string }
+        gatewayRef: { type: string, nullable: true }
+        razorpayOrderId: { type: string, nullable: true }
+        razorpayPaymentId: { type: string, nullable: true }
+        amount: { type: number, format: float }
+        status: { type: string, enum: [PENDING, PAID, FAILED, REFUNDED] }
+        method: { type: string, nullable: true, enum: [ONLINE, WALLET, null] }
+    Notification:
+      type: object
+      properties:
+        id: { type: string }
+        userId: { type: string }
+        type: { type: string, enum: [ORDER_ACCEPTED, ORDER_PREPARING, ORDER_READY, ORDER_COMPLETED, ORDER_REJECTED, ORDER_CANCELLED] }
+        title: { type: string }
+        message: { type: string }
+        payload: { type: string }
+        isRead: { type: boolean }
+        orderId: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+    AuditLog:
+      type: object
+      properties:
+        id: { type: string }
+        actorUserId: { type: string, nullable: true }
+        action: { type: string }
+        targetType: { type: string }
+        targetId: { type: string, nullable: true }
+        before: { type: string }
+        after: { type: string }
+        ip: { type: string, nullable: true }
+        userAgent: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+
+security:
+  - bearerAuth: []
+
+# ─── Paths ─────────────────────────────────────────────────────────────────
+paths:
+  /health:
+    get:
+      tags: [Health]
+      security: []
+      summary: Health check
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  message: { type: string }
+                  environment: { type: string }
+                  timestamp: { type: string, format: date-time }
+
+  # ─── Auth ───────────────────────────────────────────────────────────────
+  /api/v1/auth/google:
+    post:
+      tags: [Auth]
+      security: []
+      summary: Google Sign-In
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [credential]
+              properties:
+                credential: { type: string, description: Google ID token }
+      responses:
+        '200': { description: Login or register success, content: { application/json: { schema: { type: object, properties: { success: { type: boolean }, data: { type: object, properties: { user: { $ref: '#/components/schemas/User' }, accessToken: { type: string }, refreshToken: { type: string } } } } } } } }
+        '400': { description: Bad credential, $ref: '#/components/schemas/Error' }
+        '401': { description: Google verification failed }
+        '403': { description: Email not in college domain / suspended }
+
+  /api/v1/auth/dev-login:
+    post:
+      tags: [Auth]
+      security: []
+      summary: Dev-only login (disabled when NODE_ENV=production)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: object, properties: { success: { type: boolean }, data: { type: object, properties: { user: { $ref: '#/components/schemas/User' }, accessToken: { type: string }, refreshToken: { type: string } } } } } } } }
+        '401': { description: Invalid password }
+        '403': { description: Account suspended }
+        '404': { description: User not found }
+
+  /api/v1/auth/me:
+    get:
+      tags: [Auth]
+      summary: Current user
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: object, properties: { success: { type: boolean }, data: { type: object, properties: { user: { $ref: '#/components/schemas/User' } } } } } } } }
+        '401': { $ref: '#/components/schemas/Error' }
+
+  /api/v1/auth/refresh:
+    post:
+      tags: [Auth]
+      security: []
+      summary: Rotate refresh token + issue new access token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken: { type: string }
+      responses:
+        '200': { description: New token pair, content: { application/json: { schema: { type: object, properties: { success: { type: boolean }, data: { type: object, properties: { user: { $ref: '#/components/schemas/User' }, accessToken: { type: string }, refreshToken: { type: string } } } } } } } }
+        '401': { description: Invalid / expired / revoked refresh }
+
+  /api/v1/auth/logout:
+    post:
+      tags: [Auth]
+      summary: Revoke refresh token
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refreshToken: { type: string }
+      responses:
+        '200': { description: OK }
+
+  # ─── Onboarding ────────────────────────────────────────────────────────
+  /api/v1/onboarding:
+    post:
+      tags: [Onboarding]
+      summary: First-time password + student profile setup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password, profile]
+              properties:
+                password:
+                  type: string
+                  minLength: 8
+                  description: Must contain upper, lower, digit
+                profile:
+                  type: object
+                  required: [fullName, phone, course, year, collegeId]
+                  properties:
+                    fullName: { type: string }
+                    phone: { type: string, pattern: '^[0-9]{10}$' }
+                    course: { type: string }
+                    year: { type: string }
+                    collegeId: { type: string }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: object, properties: { success: { type: boolean }, data: { type: object, properties: { user: { $ref: '#/components/schemas/User' } } } } } } } }
+        '400': { description: Weak password / missing fields, $ref: '#/components/schemas/Error' }
+        '409': { description: Already onboarded }
+
+  # ─── Catalog ───────────────────────────────────────────────────────────
+  /api/v1/catalog/outlets:
+    get:
+      tags: [Catalog]
+      summary: List OPEN/BUSY outlets
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: object, properties: { success: { type: boolean }, data: { type: array, items: { $ref: '#/components/schemas/Outlet' } } } } } } }
+
+  /api/v1/catalog/outlets/{id}:
+    get:
+      tags: [Catalog]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: object, properties: { success: { type: boolean }, data: { $ref: '#/components/schemas/Outlet' } } } } } }
+        '404': { $ref: '#/components/schemas/Error' }
+
+  /api/v1/catalog/outlets/{id}/menu:
+    get:
+      tags: [Catalog]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: object, properties: { success: { type: boolean }, data: { type: array, items: { $ref: '#/components/schemas/MenuItem' } } } } } } }
+
+  /api/v1/catalog/outlets/{id}/categories:
+    get:
+      tags: [Catalog]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      responses:
+        '200': { description: OK }
+
+  /api/v1/catalog/menu/popular:
+    get:
+      tags: [Catalog]
+      responses:
+        '200': { description: OK }
+
+  /api/v1/catalog/search:
+    get:
+      tags: [Catalog]
+      parameters:
+        - { in: query, name: q, schema: { type: string } }
+      responses:
+        '200': { description: OK }
+
+  # ─── Cart ───────────────────────────────────────────────────────────────
+  /api/v1/cart:
+    get:
+      tags: [Cart]
+      summary: Get active cart
+      responses:
+        '200': { description: OK }
+    delete:
+      tags: [Cart]
+      summary: Clear active cart
+      responses:
+        '200': { description: OK }
+
+  /api/v1/cart/totals:
+    get:
+      tags: [Cart]
+      responses:
+        '200': { description: OK }
+
+  /api/v1/cart/outlets/{outletId}:
+    get:
+      tags: [Cart]
+      parameters:
+        - { in: path, name: outletId, required: true, schema: { type: string } }
+      responses:
+        '200': { description: OK }
+
+  /api/v1/cart/outlets/{outletId}/items:
+    post:
+      tags: [Cart]
+      parameters:
+        - { in: path, name: outletId, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [menuItemId, quantity]
+              properties:
+                menuItemId: { type: string }
+                quantity: { type: integer, minimum: 1 }
+                selectedOptions:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      groupId: { type: string }
+                      optionId: { type: string }
+      responses:
+        '200': { description: OK }
+        '400': { description: Item unavailable / not in outlet }
+        '404': { description: Item not found }
+
+  /api/v1/cart/items/{cartItemId}:
+    patch:
+      tags: [Cart]
+      parameters:
+        - { in: path, name: cartItemId, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [quantity]
+              properties:
+                quantity: { type: integer, minimum: 1 }
+      responses:
+        '200': { description: OK }
+    delete:
+      tags: [Cart]
+      parameters:
+        - { in: path, name: cartItemId, required: true, schema: { type: string } }
+      responses:
+        '200': { description: OK }
+
+  # ─── Orders (student) ─────────────────────────────────────────────────
+  /api/v1/orders:
+    post:
+      tags: [Orders]
+      summary: Create order
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [outletId, items, paymentMethod]
+              properties:
+                outletId: { type: string }
+                items:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    required: [menuItemId, quantity]
+                    properties:
+                      menuItemId: { type: string }
+                      quantity: { type: integer, minimum: 1 }
+                      selectedOptions:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            groupId: { type: string }
+                            optionId: { type: string }
+                paymentMethod: { type: string, enum: [ONLINE, WALLET] }
+                notes: { type: string, maxLength: 500 }
+                scheduledFor: { type: string, format: date-time }
+      responses:
+        '201': { description: Created, content: { application/json: { schema: { type: object, properties: { success: { type: boolean }, data: { $ref: '#/components/schemas/Order' } } } } } }
+        '400': { description: Outlet closed / item unavailable / invalid transition, $ref: '#/components/schemas/Error' }
+        '404': { description: Outlet or menu item not found }
+    get:
+      tags: [Orders]
+      parameters:
+        - { $ref: '#/components/parameters/pageParam' }
+        - { $ref: '#/components/parameters/pageSizeParam' }
+        - { in: query, name: status, schema: { type: string } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: object, properties: { success: { type: boolean }, data: { type: array, items: { $ref: '#/components/schemas/Order' } } } } } } }
+
+  /api/v1/orders/{orderId}:
+    get:
+      tags: [Orders]
+      parameters:
+        - { in: path, name: orderId, required: true, schema: { type: string } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: object, properties: { success: { type: boolean }, data: { $ref: '#/components/schemas/Order' } } } } } }
+        '403': { description: Not your order, $ref: '#/components/schemas/Error' }
+        '404': { $ref: '#/components/schemas/Error' }
+
+  # ─── Outlet Orders ─────────────────────────────────────────────────────
+  /api/v1/outlet/orders:
+    get:
+      tags: [Outlet Orders]
+      parameters:
+        - { $ref: '#/components/parameters/pageParam' }
+        - { $ref: '#/components/parameters/pageSizeParam' }
+        - { in: query, name: status, schema: { type: string } }
+      responses:
+        '200': { description: OK }
+
+  /api/v1/outlet/orders/{orderId}:
+    get:
+      tags: [Outlet Orders]
+      parameters:
+        - { in: path, name: orderId, required: true, schema: { type: string } }
+      responses:
+        '200': { description: OK }
+        '403': { description: Cross-outlet access blocked, $ref: '#/components/schemas/Error' }
+
+  /api/v1/outlet/orders/{orderId}/status:
+    patch:
+      tags: [Outlet Orders]
+      summary: Transition order status
+      parameters:
+        - { in: path, name: orderId, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: { type: string, enum: [PENDING, ACCEPTED, PREPARING, READY, COMPLETED, REJECTED, CANCELLED] }
+                reason: { type: string, maxLength: 300 }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: object, properties: { success: { type: boolean }, data: { $ref: '#/components/schemas/Order' } } } } } }
+        '400': { description: Invalid transition / payment not yet PAID, $ref: '#/components/schemas/Error' }
+
+  # ─── Outlet Menu ──────────────────────────────────────────────────────
+  /api/v1/outlet/menu:
+    get:
+      tags: [Outlet Menu]
+      responses:
+        '200': { description: OK }
+    post:
+      tags: [Outlet Menu]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, price, category]
+              properties:
+                name: { type: string, minLength: 1, maxLength: 120 }
+                description: { type: string, maxLength: 1000 }
+                price: { type: number, exclusiveMinimum: 0 }
+                category: { type: string, minLength: 1, maxLength: 60 }
+                image: { type: string, format: uri }
+                isAvailable: { type: boolean }
+                discount: { oneOf: [{ type: string }, { type: number }] }
+                popular: { type: boolean }
+                vegetarian: { type: boolean }
+                preparationTime: { type: integer, minimum: 0 }
+                dietaryFlags:
+                  type: array
+                  items: { type: string }
+      responses:
+        '201': { description: Created }
+
+  /api/v1/outlet/menu/{itemId}:
+    get:
+      tags: [Outlet Menu]
+      parameters:
+        - { in: path, name: itemId, required: true, schema: { type: string } }
+      responses:
+        '200': { description: OK }
+    patch:
+      tags: [Outlet Menu]
+      parameters:
+        - { in: path, name: itemId, required: true, schema: { type: string } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Partial of the create schema
+      responses:
+        '200': { description: OK }
+    delete:
+      tags: [Outlet Menu]
+      parameters:
+        - { in: path, name: itemId, required: true, schema: { type: string } }
+      responses:
+        '200': { description: OK }
+
+  # ─── Notifications ─────────────────────────────────────────────────────
+  /api/v1/notifications:
+    get:
+      tags: [Notifications]
+      parameters:
+        - { $ref: '#/components/parameters/pageParam' }
+        - { $ref: '#/components/parameters/pageSizeParam' }
+        - { in: query, name: unread, schema: { type: string, enum: ['true', 'false'] } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: object, properties: { success: { type: boolean }, data: { type: object, properties: { items: { type: array, items: { $ref: '#/components/schemas/Notification' } }, total: { type: integer }, unreadCount: { type: integer } } } } } } } }
+
+  /api/v1/notifications/read/all:
+    post:
+      tags: [Notifications]
+      responses:
+        '200': { description: OK }
+
+  /api/v1/notifications/read/{notificationId}:
+    post:
+      tags: [Notifications]
+      parameters:
+        - { in: path, name: notificationId, required: true, schema: { type: string } }
+      responses:
+        '200': { description: OK }
+        '403': { description: Not your notification }
+        '404': { $ref: '#/components/schemas/Error' }
+
+  # ─── Admin ──────────────────────────────────────────────────────────────
+  /api/v1/admin/overview:
+    get:
+      tags: [Admin]
+      responses:
+        '200': { description: OK }
+
+  /api/v1/admin/users:
+    get:
+      tags: [Admin]
+      parameters:
+        - { $ref: '#/components/parameters/pageParam' }
+        - { $ref: '#/components/parameters/pageSizeParam' }
+      responses:
+        '200': { description: OK }
+
+  /api/v1/admin/users/{userId}:
+    get:
+      tags: [Admin]
+      parameters:
+        - { in: path, name: userId, required: true, schema: { type: string } }
+      responses:
+        '200': { description: OK }
+
+  /api/v1/admin/users/{userId}/status:
+    patch:
+      tags: [Admin]
+      parameters:
+        - { in: path, name: userId, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: { type: string, enum: [ACTIVE, SUSPENDED] }
+      responses:
+        '200': { description: OK }
+        '400': { description: Cannot suspend self }
+
+  /api/v1/admin/outlets:
+    get:
+      tags: [Admin]
+      responses:
+        '200': { description: OK }
+
+  /api/v1/admin/outlets/{outletId}:
+    get:
+      tags: [Admin]
+      parameters:
+        - { in: path, name: outletId, required: true, schema: { type: string } }
+      responses:
+        '200': { description: OK }
+
+  /api/v1/admin/outlets/{outletId}/status:
+    patch:
+      tags: [Admin]
+      parameters:
+        - { in: path, name: outletId, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: { type: string, enum: [OPEN, BUSY, CLOSED, PENDING, SUSPENDED] }
+      responses:
+        '200': { description: OK }
+
+  /api/v1/admin/orders:
+    get:
+      tags: [Admin]
+      parameters:
+        - { $ref: '#/components/parameters/pageParam' }
+        - { $ref: '#/components/parameters/pageSizeParam' }
+      responses:
+        '200': { description: OK }
+
+  /api/v1/admin/orders/{orderId}:
+    get:
+      tags: [Admin]
+      parameters:
+        - { in: path, name: orderId, required: true, schema: { type: string } }
+      responses:
+        '200': { description: OK }
+
+  /api/v1/admin/menu:
+    get:
+      tags: [Admin]
+      responses:
+        '200': { description: OK }
+
+  /api/v1/admin/menu/{itemId}:
+    get:
+      tags: [Admin]
+      parameters:
+        - { in: path, name: itemId, required: true, schema: { type: string } }
+      responses:
+        '200': { description: OK }
+
+  /api/v1/admin/menu/{itemId}/status:
+    patch:
+      tags: [Admin]
+      parameters:
+        - { in: path, name: itemId, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [isAvailable]
+              properties:
+                isAvailable: { type: boolean }
+      responses:
+        '200': { description: OK }
+
+  # ─── Payments ──────────────────────────────────────────────────────────
+  /api/v1/payments/razorpay/order:
+    post:
+      tags: [Payments]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [orderId]
+              properties:
+                orderId: { type: string }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: object, properties: { success: { type: boolean }, data: { type: object, properties: { razorpayOrderId: { type: string }, amount: { type: integer, description: "paise" }, currency: { type: string }, keyId: { type: string } } } } } } } }
+        '400': { description: Outlet has no Razorpay credentials, $ref: '#/components/schemas/Error' }
+        '403': { description: Not your order }
+        '409': { description: Already paid }
+
+  /api/v1/payments/razorpay/verify:
+    post:
+      tags: [Payments]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [razorpayOrderId, razorpayPaymentId, razorpaySignature]
+              properties:
+                razorpayOrderId: { type: string }
+                razorpayPaymentId: { type: string }
+                razorpaySignature: { type: string }
+      responses:
+        '200': { description: OK }
+        '400': { description: Invalid signature, $ref: '#/components/schemas/Error' }
+
+  /api/v1/payments/razorpay/webhook:
+    post:
+      tags: [Payments]
+      security: []
+      summary: Razorpay webhook (verified via X-Razorpay-Signature header)
+      description: |
+        The body is parsed as raw bytes (not JSON) because the signature is
+        computed over the raw body.
+      parameters:
+        - { in: header, name: X-Razorpay-Signature, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, description: Razorpay event payload }
+      responses:
+        '200': { description: Acknowledged }
+
+  /api/v1/payments/admin/outlets/{outletId}/razorpay-credentials:
+    post:
+      tags: [Payments]
+      summary: Super-admin: store encrypted per-outlet Razorpay credentials
+      parameters:
+        - { in: path, name: outletId, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [keyId, keySecret, webhookSecret]
+              properties:
+                keyId: { type: string }
+                keySecret: { type: string }
+                webhookSecret: { type: string }
+      responses:
+        '200': { description: Stored encrypted }
+
+  # ─── Audit ────────────────────────────────────────────────────────────
+  /api/v1/audit:
+    get:
+      tags: [Audit]
+      parameters:
+        - { $ref: '#/components/parameters/pageParam' }
+        - { $ref: '#/components/parameters/pageSizeParam' }
+        - { in: query, name: targetType, schema: { type: string } }
+        - { in: query, name: targetId, schema: { type: string } }
+        - { in: query, name: actorUserId, schema: { type: string } }
+        - { in: query, name: action, schema: { type: string } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: object, properties: { success: { type: boolean }, data: { type: object, properties: { items: { type: array, items: { $ref: '#/components/schemas/AuditLog' } }, total: { type: integer } } } } } } } }
+
+  # ─── Uploads (Cloudinary signed uploads) ────────────────────────────────
+  /api/v1/uploads/sign:
+    post:
+      tags: [Uploads]
+      summary: Mint a signed-upload payload for direct Cloudinary upload
+      description: |
+        Backend signs the upload params (folder, public_id, tags, timestamp)
+        with CLOUDINARY_API_SECRET. Frontend POSTs the file directly to
+        Cloudinary with the signed params — backend never proxies bytes.
+
+        Folder role policy:
+        - `menu-items`    → OUTLET_ADMIN, SUPER_ADMIN
+        - `outlet-logos`  → OUTLET_ADMIN, SUPER_ADMIN
+        - `students`      → STUDENT, SUPER_ADMIN
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [folder]
+              properties:
+                folder: { type: string, enum: [menu-items, outlet-logos, students] }
+                publicId:
+                  type: string
+                  pattern: '^[a-zA-Z0-9_-]+$'
+                  minLength: 1
+                  maxLength: 120
+                tags:
+                  type: object
+                  additionalProperties: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      uploadUrl: { type: string, format: uri }
+                      publicId: { type: string }
+                      apiKey: { type: string }
+                      cloudName: { type: string }
+                      timestamp: { type: integer }
+                      signature: { type: string, description: 'SHA-1 hex' }
+                      params:
+                        type: object
+                        description: 'Params to send in the multipart form to Cloudinary'
+        '400': { description: Invalid folder or publicId, $ref: '#/components/schemas/Error' }
+        '403': { description: 'Role not allowed for folder', $ref: '#/components/schemas/Error' }
+        '500': { description: 'Cloudinary not configured', $ref: '#/components/schemas/Error' }

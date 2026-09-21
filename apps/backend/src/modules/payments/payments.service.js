@@ -781,6 +781,19 @@ async function processRefundAfterCommit(refundId, actorId) {
     return refund; // can't process — needs the gateway payment id
   }
 
+  // INO-AUDIT5-OUTBOX: if the refund already has a gatewayRef, the gateway
+  // call was already made (either by a previous processRefundAfterCommit call
+  // from the controller, or by the outbox worker). Don't create a duplicate
+  // refund at the gateway — the reconciliation worker (reconcilePendingRefunds)
+  // will poll the existing refund's status. This makes processRefundAfterCommit
+  // safe to call from both the controller + the outbox worker without risk
+  // of double-refunding.
+  if (refund.gatewayRef) {
+    // The gateway already has a refund for this row. Don't create another.
+    // The reconciliation worker will fetch the status on its next tick.
+    return refund;
+  }
+
   let gatewayRef = refund.gatewayRef;
   let newStatus = REFUND_STATUS.PENDING;
   try {

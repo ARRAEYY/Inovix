@@ -27,7 +27,7 @@ const prisma = require('./prisma');
 const { audit } = require('./audit');
 const { ORDER_STATUS } = require('./constants');
 const { runWithAdvisoryLock } = require('./distributedLock');
-const { reconcilePendingRefunds, reconcileStalePendingPayments } = require('./reconciliation');
+const { reconcilePendingRefunds, reconcileStalePendingPayments, processPendingRefundOutbox } = require('./reconciliation');
 
 const REFRESH_TOKEN_PURGE_AGE_DAYS = 30;
 const PICKUP_TIMEOUT_CHECK_INTERVAL = '*/5 * * * *'; // every 5 minutes
@@ -36,6 +36,11 @@ const DAILY_AT_3AM = '0 3 * * *';
 // Polls Razorpay for PENDING refund + stale PENDING payment status.
 const RECONCILIATION_INTERVAL_MINS = parseInt(process.env.RECONCILIATION_INTERVAL_MINS || '10', 10);
 const RECONCILIATION_CRON = `*/${RECONCILIATION_INTERVAL_MINS} * * * *`;
+// INO-AUDIT5-OUTBOX: outbox worker interval (default 2 min — more frequent
+// than reconciliation because it processes NEW orphans, not stale ones).
+// Processes PENDING refunds with gatewayRef=NULL (never sent to the gateway).
+const OUTBOX_INTERVAL_MINS = parseInt(process.env.OUTBOX_INTERVAL_MINS || '2', 10);
+const OUTBOX_CRON = `*/${OUTBOX_INTERVAL_MINS} * * * *`;
 
 let scheduled = [];
 
@@ -255,6 +260,11 @@ function initCron() {
     // + stale PENDING payment status (missed webhooks). Default every 10 min.
     cron.schedule(RECONCILIATION_CRON, () => runCronJob('reconcile-refunds', reconcilePendingRefunds), { name: 'reconcile-refunds' }),
     cron.schedule(RECONCILIATION_CRON, () => runCronJob('reconcile-payments', reconcileStalePendingPayments), { name: 'reconcile-payments' }),
+    // INO-AUDIT5-OUTBOX: outbox worker — processes PENDING refunds with
+    // gatewayRef=NULL (never sent to the gateway). More frequent than
+    // reconciliation (default every 2 min) because it processes new
+    // orphans, not stale ones.
+    cron.schedule(OUTBOX_CRON, () => runCronJob('refund-outbox', processPendingRefundOutbox), { name: 'refund-outbox' }),
   ];
 
   console.log(`[cron] scheduled: ${scheduled.map(s => s.name || '?').join(', ')}`);
@@ -262,6 +272,7 @@ function initCron() {
   console.log(`[cron] refresh purge: daily at 03:00 (delete tokens older than 30d)`);
   console.log(`[cron] cart purge: daily at 03:00 (delete carts past expiresAt)`);
   console.log(`[cron] pickup timeout: every 5 min (default window: ${process.env.PICKUP_TIMEOUT_MINS || 30} min)`);
+  console.log(`[cron] refund outbox: every ${OUTBOX_INTERVAL_MINS} min (min age: ${process.env.OUTBOX_MIN_AGE_MINS || 2} min)`);
   console.log(`[cron] reconcile refunds: every ${RECONCILIATION_INTERVAL_MINS} min (min age: ${process.env.RECONCILIATION_MIN_AGE_MINS || 5} min)`);
   console.log(`[cron] reconcile payments: every ${RECONCILIATION_INTERVAL_MINS} min (stale after: ${process.env.PAYMENT_RECONCILIATION_MIN_AGE_MINS || 30} min)`);
   console.log(`[cron] advisory-lock: ${require('./distributedLock').isPostgres() ? 'postgres pg_try_advisory_xact_lock' : 'disabled (sqlite dev)'}`);
@@ -281,8 +292,9 @@ module.exports = {
   purgeExpiredRefreshTokens,
   purgeExpiredCarts,
   processPickupTimeouts,
-  // INO-AUDIT5: reconciliation worker (re-exported for testing)
+  // INO-AUDIT5: reconciliation + outbox workers (re-exported for testing)
   reconcilePendingRefunds,
   reconcileStalePendingPayments,
+  processPendingRefundOutbox,
   isCronEnabled,
 };

@@ -1,102 +1,188 @@
+/**
+ * Auth controller — endpoints for Google login, dev-login, current user,
+ * refresh, and logout.
+ *
+ * Token model (spec §3.2 Layer 1):
+ *   - access token: 15 min, sent in response body
+ *   - refresh token: 7 days, rotating; sent in response body (frontend can
+ *     store in httpOnly cookie — recommended — or localStorage fallback)
+ *
+ * Refresh rotation: each refresh can be used exactly once. Re-use of an
+ * already-rotated refresh triggers token-theft detection and revokes all
+ * the user's refresh tokens.
+ */
+
 const { verifyGoogleCredential } = require('./google.service');
-const { findOrCreateGoogleUser, getCurrentUser: getCurrentUserService } = require('./auth.service');
-const jwt = require('jsonwebtoken');
+const {
+  findOrCreateGoogleUser,
+  getCurrentUser: getCurrentUserService,
+  devLogin: devLoginService,
+} = require('./auth.service');
+const {
+  signAccessToken,
+  issueRefreshToken,
+  rotateRefreshToken,
+  revokeRefreshToken,
+  revokeAllForUser,
+} = require('../../lib/tokens');
+const { audit } = require('../../lib/audit');
+const { USER_STATUS } = require('../../lib/constants');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'fallback-secret-for-development';
-
-async function googleLogin(req, res, next) {
-    try {
-        const { credential } = req.body;
-
-        const googleUser = await verifyGoogleCredential(credential);
-        const { user, isNew } = await findOrCreateGoogleUser(googleUser);
-
-        if (user.status === 'SUSPENDED') {
-            return res.status(403).json({ success: false, message: 'Your account has been suspended' });
-        }
-
-        const accessToken = jwt.sign(
-            { id: user.id, email: user.email },
-            JWT_SECRET,
-            { expiresIn: '7d' }
-        );
-
-        return res.status(200).json({
-            success: true,
-            message: isNew ? 'Google registration successful' : 'Google authentication successful',
-            data: {
-                user,
-                accessToken
-            }
-        });
-    } catch (error) {
-        next(error);
-    }
+function stripSensitive(user) {
+  if (!user) return null;
+  const { passwordHash, googleId, ...safe } = user;
+  return {
+    ...safe,
+    outletId: user.outletStaff?.outletId || null,
+    outletRole: user.outletStaff?.role || null,
+  };
 }
 
-async function getCurrentUser(req, res, next) {
-    try {
-        const userId = req.user.id;
-        const user = await getCurrentUserService(userId);
+async function googleLogin(req, res, next) {
+  try {
+    const { credential } = req.body;
+    const googleUser = await verifyGoogleCredential(credential);
+    const { user, isNew } = await findOrCreateGoogleUser(googleUser);
 
-        return res.status(200).json({
-            success: true,
-            data: {
-                user
-            }
-        });
-    } catch (error) {
-        next(error);
+    if (user.status === USER_STATUS.SUSPENDED) {
+      return res.status(403).json({
+        success: false,
+        message: 'Your account has been suspended',
+      });
     }
+
+    const accessToken = signAccessToken(user);
+    const refreshToken = await issueRefreshToken(user, { req });
+
+    await audit({
+      actorId: user.id,
+      action: isNew ? 'USER_GOOGLE_REGISTER' : 'USER_GOOGLE_LOGIN',
+      targetType: 'User',
+      targetId: user.id,
+      req,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: isNew ? 'Google registration successful' : 'Google authentication successful',
+      data: {
+        user: stripSensitive(user),
+        accessToken,
+        refreshToken,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
 }
 
 async function devLogin(req, res, next) {
-    if (process.env.NODE_ENV === 'production') {
-        return res.status(403).json({ success: false, message: 'Not available in production' });
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(403).json({
+      success: false,
+      message: 'Not available in production',
+    });
+  }
+
+  try {
+    const user = await devLoginService(req.body);
+    const accessToken = signAccessToken(user);
+    const refreshToken = await issueRefreshToken(user, { req });
+
+    await audit({
+      actorId: user.id,
+      action: 'USER_DEV_LOGIN',
+      targetType: 'User',
+      targetId: user.id,
+      req,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Dev login successful',
+      data: {
+        user: stripSensitive(user),
+        accessToken,
+        refreshToken,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function getCurrentUser(req, res, next) {
+  try {
+    const user = await getCurrentUserService(req.user.id);
+    return res.status(200).json({
+      success: true,
+      data: { user: stripSensitive(user) },
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function refresh(req, res, next) {
+  try {
+    const { refreshToken } = req.body;
+    if (!refreshToken) {
+      const error = new Error('refreshToken is required');
+      error.statusCode = 400;
+      throw error;
     }
 
-    try {
-        const { email } = req.body;
-        const mockUsers = require('../../data/mockUsers');
-        
-        const user = mockUsers.find(u => u.email === email);
-        if (!user) {
-            return res.status(404).json({ success: false, message: 'Dev user not found' });
-        }
-
-        if (req.body.password && user.passwordHash) {
-            const { comparePassword } = require('../../utils/password');
-            const isMatch = await comparePassword(req.body.password, user.passwordHash);
-            if (!isMatch) {
-                return res.status(401).json({ success: false, message: 'Invalid credentials' });
-            }
-        }
-
-        if (user.status === 'SUSPENDED') {
-            return res.status(403).json({ success: false, message: 'Your account has been suspended' });
-        }
-
-        const accessToken = jwt.sign(
-            { id: user.id, email: user.email },
-            JWT_SECRET,
-            { expiresIn: '7d' }
-        );
-
-        return res.status(200).json({
-            success: true,
-            message: 'Dev login successful',
-            data: {
-                user,
-                accessToken
-            }
-        });
-    } catch (error) {
-        next(error);
+    const result = await rotateRefreshToken(refreshToken, { req });
+    if (!result) {
+      const error = new Error('Invalid or expired refresh token');
+      error.statusCode = 401;
+      throw error;
     }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Token refreshed',
+      data: {
+        user: stripSensitive(result.user),
+        accessToken: result.accessToken,
+        refreshToken: result.refreshToken,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function logout(req, res, next) {
+  try {
+    const { refreshToken } = req.body;
+    if (refreshToken) {
+      await revokeRefreshToken(refreshToken);
+    }
+    // Optional: revoke all sessions for this user (more aggressive)
+    // await revokeAllForUser(req.user.id);
+
+    await audit({
+      actorId: req.user?.id,
+      action: 'USER_LOGOUT',
+      targetType: 'User',
+      targetId: req.user?.id,
+      req,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Logged out successfully',
+    });
+  } catch (error) {
+    next(error);
+  }
 }
 
 module.exports = {
-    googleLogin,
-    getCurrentUser,
-    devLogin
+  googleLogin,
+  devLogin,
+  getCurrentUser,
+  refresh,
+  logout,
 };

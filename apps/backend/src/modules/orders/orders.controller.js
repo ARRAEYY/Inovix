@@ -1,8 +1,9 @@
 const ordersService = require('./orders.service');
+const { performTransition } = require('./transition.service');
 const { audit } = require('../../lib/audit');
-const { emitOrderEvent } = require('../../lib/socket');
-const { ORDER_STATUS } = require('../../lib/constants');
-const { processAutoRefundOnTransition } = require('../payments/payments.service');
+const { emitOrderEvent, emitNotificationEvent } = require('../../lib/socket');
+const { ORDER_STATUS, ERROR_CODES } = require('../../lib/constants');
+const { processRefundAfterCommit } = require('../payments/payments.service');
 const notificationsService = require('../notifications/notifications.service');
 
 async function createOrder(req, res, next) {
@@ -27,37 +28,62 @@ async function createOrder(req, res, next) {
 
 async function cancelOrder(req, res, next) {
   try {
-    const { updated, before } = await ordersService.cancelOrder(req.user.id, req.params.orderId);
+    // Pre-flight authorization — read the order to verify studentId matches.
+    // (Kept outside the tx so we don't hold a lock during the auth check.)
+    const existing = await ordersService.getOrderById(req.user.id, req.params.orderId);
+    if (existing.status !== ORDER_STATUS.PENDING) {
+      throw {
+        statusCode: 400,
+        code: ERROR_CODES.INVALID_TRANSITION,
+        message: 'Orders can only be cancelled before the outlet accepts them',
+      };
+    }
 
-    // INO-P0-3: process refund BEFORE responding so the HTTP response reflects
-    // the actual refund outcome. (Refund idempotency is enforced in
-    // processAutoRefundOnTransition — it now checks for an existing Refund
-    // row with the same paymentId + trigger before issuing another.)
-    await processAutoRefundOnTransition(req.params.orderId, before.status, ORDER_STATUS.CANCELLED, req.user.id, 'CUSTOMER_CANCEL');
+    // Architectural refactor: the order transition + audit + notification +
+    // refund intent are now atomic (single prisma.$transaction in
+    // performTransition). The gateway refund call + socket emit are
+    // post-commit best-effort.
+    const result = await performTransition({
+      orderId: req.params.orderId,
+      expectedFromStatus: existing.status,
+      toStatus: ORDER_STATUS.CANCELLED,
+      actorId: req.user.id,
+      reason: 'Cancelled by customer',
+      triggerOverride: 'CUSTOMER_CANCEL',
+      req,
+    });
 
+    // Audit the customer-initiated cancel action (separate from the
+    // ORDER_STATUS_CHANGED row that performTransition already wrote).
     await audit({
       actorId: req.user.id,
       action: 'ORDER_CANCELLED_BY_CUSTOMER',
       targetType: 'Order',
       targetId: req.params.orderId,
-      before,
-      after: { status: updated.status },
+      before: result.before,
+      after: { status: result.updated.status },
       req,
     });
 
-    // INO-P0-2 fix: socket room names must include the `outlet:` prefix —
-    // the socket server joins outlet staff to `outlet:<id>` rooms (see
-    // lib/socket.js). Emitting to bare `<outletId>` reaches no-one.
-    emitOrderEvent('order:status:changed', `student:${updated.studentId}`, { order: updated });
-    emitOrderEvent('order:status:changed', `outlet:${updated.outletId}`, { order: updated });
+    // Post-commit: best-effort gateway refund. The Refund row was created
+    // inside the tx with status=PENDING. If the gateway call fails, the
+    // Refund row stays PENDING — recoverable via /api/v1/admin/refunds.
+    if (result.refundIntent && result.refundIntent.status !== 'COMPLETED') {
+      try {
+        await processRefundAfterCommit(result.refundIntent.id, req.user.id);
+      } catch (err) {
+        console.error('[orders.cancel] post-commit refund failed:', err.message);
+      }
+    }
 
-    // INO-P0-11 fix: await notification creation so a failure here surfaces
-    // as a 500 instead of being silently lost. Previously the promise was
-    // floating — the HTTP response could succeed while notification
-    // creation failed silently.
-    await notificationsService.createForOrder(updated, req.user.id);
+    // Post-commit: socket events (DB state is already consistent).
+    emitOrderEvent('order:status:changed', `student:${result.updated.studentId}`, { order: result.updated });
+    emitOrderEvent('order:status:changed', `outlet:${result.updated.outletId}`, { order: result.updated });
+    if (result.notification) {
+      emitNotificationEvent(result.updated.studentId, result.notification);
+    }
 
-    res.status(200).json({ success: true, data: updated });
+    res.status(200).json({ success: true, data: result.updated });
   } catch (error) {
     next(error);
   }
@@ -139,48 +165,61 @@ async function updateOrderStatus(req, res, next) {
     const { orderId } = req.params;
     const { status, reason } = req.body;
 
-    const { updated, before } = await ordersService.updateOrderStatus(
-      outletId, orderId, status, req.user.id, reason
-    );
+    // Pre-flight: read the order for authorization (outlet scope check)
+    // + payment-status guard. Kept outside the tx so we don't hold a lock
+    // during the auth check.
+    const existing = await ordersService.getOutletOrder(outletId, orderId);
+    // ^ throws 404 if not found, 403 if outletId mismatch — same behavior
+    //   as the previous ordersService.updateOrderStatus implementation.
 
-    await audit({
+    if (!Object.values(ORDER_STATUS).includes(status)) {
+      throw { statusCode: 400, message: 'Invalid status' };
+    }
+
+    // Payment guard: don't allow state changes on unpaid orders (except
+    // for CANCELLED/REJECTED which can refund an unpaid-but-confirmed
+    // order — edge case but the spec allows it for outlet rejection).
+    if (existing.payment?.status !== 'PAID' && status !== 'CANCELLED' && status !== 'REJECTED') {
+      throw {
+        statusCode: 400,
+        code: ERROR_CODES.PAYMENT_REQUIRED,
+        message: 'Order payment has not been confirmed',
+      };
+    }
+
+    // Architectural refactor: the order transition + audit + notification +
+    // refund intent are now atomic (single prisma.$transaction in
+    // performTransition). The gateway refund call + socket emit are
+    // post-commit best-effort.
+    const result = await performTransition({
+      orderId,
+      expectedFromStatus: existing.status,
+      toStatus: status,
       actorId: req.user.id,
-      action: 'ORDER_STATUS_CHANGED',
-      targetType: 'Order',
-      targetId: orderId,
-      before,
-      after: { status: updated.status },
+      reason,
       req,
     });
 
-    // INO-P0-3: process refund BEFORE responding so the HTTP response reflects
-    // the actual refund outcome.
-    if (status === ORDER_STATUS.REJECTED || status === ORDER_STATUS.CANCELLED) {
-      await processAutoRefundOnTransition(orderId, before.status, status, req.user.id);
+    // Post-commit: best-effort gateway refund. The Refund row was created
+    // inside the tx with status=PENDING. If the gateway call fails, the
+    // Refund row stays PENDING — recoverable via /api/v1/admin/refunds.
+    if (result.refundIntent && result.refundIntent.status !== 'COMPLETED') {
+      try {
+        await processRefundAfterCommit(result.refundIntent.id, req.user.id);
+      } catch (err) {
+        console.error('[orders.updateStatus] post-commit refund failed:', err.message);
+      }
     }
 
-    // INO-P0-2 fix: socket room names must include the `outlet:` prefix.
-    // Real-time updates to both outlet and student.
-    emitOrderEvent('order:status:changed', `outlet:${outletId}`, { order: updated });
-    emitOrderEvent('order:status:changed', `student:${updated.studentId}`, { order: updated });
-
-    // INO-P0-10 fix: PREPARING was missing from the notification trigger
-    // list — students never got a "your order is being prepared" push.
-    // notifications.service.createForOrder already has the template; the
-    // controller just wasn't calling it for PREPARING transitions.
-    // INO-P0-11 fix: also await the call so failures surface.
-    if (
-      status === ORDER_STATUS.ACCEPTED ||
-      status === ORDER_STATUS.PREPARING ||
-      status === ORDER_STATUS.READY ||
-      status === ORDER_STATUS.COMPLETED ||
-      status === ORDER_STATUS.REJECTED ||
-      status === ORDER_STATUS.CANCELLED
-    ) {
-      await notificationsService.createForOrder(updated, req.user.id);
+    // Post-commit: socket events. INO-P0-2 fix — room names with `outlet:`
+    // prefix; PREPARING notification now triggered (INO-P0-10).
+    emitOrderEvent('order:status:changed', `outlet:${outletId}`, { order: result.updated });
+    emitOrderEvent('order:status:changed', `student:${result.updated.studentId}`, { order: result.updated });
+    if (result.notification) {
+      emitNotificationEvent(result.updated.studentId, result.notification);
     }
 
-    res.status(200).json({ success: true, data: updated });
+    res.status(200).json({ success: true, data: result.updated });
   } catch (error) {
     next(error);
   }

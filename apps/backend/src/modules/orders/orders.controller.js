@@ -105,6 +105,20 @@ async function getOutletOrders(req, res, next) {
   }
 }
 
+// INO-P1-32: dedicated KPI endpoint for the outlet dashboard. Returns
+// per-status counts via a single DB groupBy query — the frontend no
+// longer needs to pull up to 200 order rows and filter in JS.
+async function getOutletKPIs(req, res, next) {
+  try {
+    const outletId = req.user.outletId;
+    if (!outletId) throw { statusCode: 403, message: 'User is not assigned to an outlet' };
+    const counts = await ordersService.getOutletKPIs(outletId);
+    res.status(200).json({ success: true, data: counts });
+  } catch (error) {
+    next(error);
+  }
+}
+
 async function getOutletOrder(req, res, next) {
   try {
     const outletId = req.user.outletId;
@@ -178,6 +192,7 @@ module.exports = {
   cancelOrder,
   getOrderById,
   getOutletOrders,
+  getOutletKPIs,
   getOutletOrder,
   updateOrderStatus,
 };

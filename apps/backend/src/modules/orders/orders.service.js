@@ -157,6 +157,18 @@ async function getOutletOrders(outletId, { page, pageSize, status } = {}) {
   return ordersRepo.findByOutletId(outletId, { page, pageSize, status });
 }
 
+// INO-P1-32 fix: expose the existing ordersRepo.countByStatus via a
+// dedicated KPI endpoint. Previously the outlet dashboard would fetch up
+// to 200 orders via listOutletOrders({ pageSize: 200 }) and compute
+// per-status counts in JS — accurate only if there were ≤ 200 active
+// orders, and wasteful of bandwidth. This endpoint returns just the
+// counts via a single DB-level groupBy query (see orders.repository.js
+// countByStatus), so the frontend can render the KPIs without pulling
+// any order rows.
+async function getOutletKPIs(outletId) {
+  return ordersRepo.countByStatus(outletId);
+}
+
 async function getOutletOrder(outletId, orderId) {
   const order = await ordersRepo.findById(orderId);
   if (!order) throw { statusCode: 404, message: 'Order not found' };
@@ -206,6 +218,7 @@ module.exports = {
   getUserOrders,
   getOrderById,
   getOutletOrders,
+  getOutletKPIs,
   getOutletOrder,
   updateOrderStatus,
   cancelOrder,

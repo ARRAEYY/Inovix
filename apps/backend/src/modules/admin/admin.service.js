@@ -9,46 +9,84 @@ const menuRepo = require('../menu/menu.repository');
 const ordersRepo = require('../orders/orders.repository');
 const { getOutletRazorpayClient } = require('../payments/payments.service');
 const { audit } = require('../../lib/audit');
-const { ROLES, OUTLET_STATUS, USER_STATUS, PAYMENT_STATUS, REFUND_TRIGGER, REFUND_STATUS } = require('../../lib/constants');
+const {
+  ROLES,
+  OUTLET_STATUS,
+  USER_STATUS,
+  PAYMENT_STATUS,
+  REFUND_TRIGGER,
+  REFUND_STATUS,
+  ORDER_STATUS,
+} = require('../../lib/constants');
 
+// INO-P1-31 fix: previously getOverview loaded EVERY user, outlet, order,
+// and menu item into memory and counted in JS via `.filter().length`. For
+// a deployment with 100k orders / 100k users, every dashboard refresh
+// pulled the entire tables across the wire and looped through them — slow
+// and memory-heavy. Now we push the counts to the DB via groupBy/count
+// aggregation queries. The response shape is unchanged so the admin
+// frontend doesn't need updating.
 async function getOverview() {
-  const [users, outlets, menu, orders] = await Promise.all([
-    prisma.user.findMany(),
-    prisma.outlet.findMany(),
-    menuRepo.findAll(),
-    prisma.order.findMany(),
+  const [
+    userRoleGroups,
+    outletStatusGroups,
+    orderStatusGroups,
+    menuAvailableCount,
+    menuUnavailableCount,
+    userTotal,
+    outletTotal,
+    orderTotal,
+    menuTotal,
+  ] = await Promise.all([
+    prisma.user.groupBy({ by: ['role'], _count: true }),
+    prisma.outlet.groupBy({ by: ['status'], _count: true }),
+    prisma.order.groupBy({ by: ['status'], _count: true }),
+    prisma.menuItem.count({ where: { isAvailable: true } }),
+    prisma.menuItem.count({ where: { isAvailable: false } }),
+    prisma.user.count(),
+    prisma.outlet.count(),
+    prisma.order.count(),
+    prisma.menuItem.count(),
   ]);
+
+  // Reassemble the groupBy results into the same response shape as before.
+  const usersByRole = {};
+  for (const g of userRoleGroups) usersByRole[g.role] = g._count;
+  const outletsByStatus = {};
+  for (const g of outletStatusGroups) outletsByStatus[g.status] = g._count;
+  const ordersByStatus = {};
+  for (const g of orderStatusGroups) ordersByStatus[g.status] = g._count;
 
   return {
     users: {
-      students: users.filter((u) => u.role === ROLES.STUDENT).length,
-      outletAdmins: users.filter((u) => u.role === ROLES.OUTLET_ADMIN).length,
-      outletStaff: users.filter((u) => u.role === ROLES.OUTLET_STAFF).length,
-      superAdmins: users.filter((u) => u.role === ROLES.SUPER_ADMIN).length,
-      total: users.length,
+      students: usersByRole[ROLES.STUDENT] || 0,
+      outletAdmins: usersByRole[ROLES.OUTLET_ADMIN] || 0,
+      outletStaff: usersByRole[ROLES.OUTLET_STAFF] || 0,
+      superAdmins: usersByRole[ROLES.SUPER_ADMIN] || 0,
+      total: userTotal,
     },
     outlets: {
-      total: outlets.length,
-      open: outlets.filter((o) => o.status === 'OPEN').length,
-      busy: outlets.filter((o) => o.status === 'BUSY').length,
-      closed: outlets.filter((o) => o.status === 'CLOSED').length,
-      pending: outlets.filter((o) => o.status === 'PENDING').length,
-      suspended: outlets.filter((o) => o.status === 'SUSPENDED').length,
+      total: outletTotal,
+      open: outletsByStatus[OUTLET_STATUS.OPEN] || 0,
+      busy: outletsByStatus[OUTLET_STATUS.BUSY] || 0,
+      closed: outletsByStatus[OUTLET_STATUS.CLOSED] || 0,
+      pending: outletsByStatus[OUTLET_STATUS.PENDING] || 0,
+      suspended: outletsByStatus[OUTLET_STATUS.SUSPENDED] || 0,
     },
     menu: {
-      total: menu.length,
-      available: menu.filter((m) => m.isAvailable).length,
-      unavailable: menu.filter((m) => !m.isAvailable).length,
+      total: menuTotal,
+      available: menuAvailableCount,
+      unavailable: menuUnavailableCount,
     },
     orders: {
-      total: orders.length,
-      pending: orders.filter((o) => o.status === 'PENDING').length,
-      accepted: orders.filter((o) => o.status === 'ACCEPTED').length,
-      preparing: orders.filter((o) => o.status === 'PREPARING').length,
-      ready: orders.filter((o) => o.status === 'READY').length,
-      completed: orders.filter((o) => o.status === 'COMPLETED').length,
-      rejected: orders.filter((o) => o.status === 'REJECTED').length,
-      cancelled: orders.filter((o) => o.status === 'CANCELLED').length,
+      total: orderTotal,
+      pending: ordersByStatus[ORDER_STATUS.PENDING] || 0,
+      accepted: ordersByStatus[ORDER_STATUS.ACCEPTED] || 0,
+      preparing: ordersByStatus[ORDER_STATUS.PREPARING] || 0,
+      ready: ordersByStatus[ORDER_STATUS.READY] || 0,
+      completed: ordersByStatus[ORDER_STATUS.COMPLETED] || 0,
+      rejected: ordersByStatus[ORDER_STATUS.REJECTED] || 0,
+      cancelled: ordersByStatus[ORDER_STATUS.CANCELLED] || 0,
     },
   };
 }

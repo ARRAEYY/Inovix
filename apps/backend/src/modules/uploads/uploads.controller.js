@@ -52,9 +52,19 @@ async function signMenuItemUpload(req, res, next) {
       });
     }
 
-    // OUTLET_ADMIN can only upload to their own outlet's namespace
+    // ─── INO-004 fix: broken condition ─────────────────────────────────────
+    // The previous check used `folder === 'menu-items' && folder === 'outlet-logos'`,
+    // which is *always false* (a string cannot equal two different values).
+    // The intended semantics: OUTLET_ADMIN uploading to either menu-items
+    // or outlet-logos MUST have an outlet assignment. Without this gate,
+    // an OUTLET_ADMIN with no outletId could mint a signed upload payload
+    // to either folder, breaking the per-outlet isolation model.
     const outletId = req.user.outletId || null;
-    if (folder === 'menu-items' && folder === 'outlet-logos' && req.user.role === ROLES.OUTLET_ADMIN && !outletId) {
+    if (
+      (folder === 'menu-items' || folder === 'outlet-logos') &&
+      req.user.role === ROLES.OUTLET_ADMIN &&
+      !outletId
+    ) {
       return res.status(403).json({
         success: false,
         message: 'User is not assigned to an outlet',
@@ -63,7 +73,21 @@ async function signMenuItemUpload(req, res, next) {
       });
     }
 
-    const payload = signUpload({ folder, publicId, tags, outletId });
+    // ─── INO-006 fix: server-controlled namespace for student uploads ──────
+    // For the `students` folder the client-supplied publicId is ignored —
+    // the server scopes the object name to `students/<userId>/<random>` so
+    // one student can't impersonate another's profile picture. The signing
+    // helper in lib/cloudinary.js enforces this when `ownerId` is passed.
+    const isStudentUpload =
+      folder === 'students' && req.user.role === ROLES.STUDENT;
+
+    const payload = signUpload({
+      folder,
+      publicId: isStudentUpload ? undefined : publicId,
+      tags,
+      outletId,
+      ownerId: isStudentUpload ? req.user.id : null,
+    });
 
     await audit({
       actorId: req.user.id,

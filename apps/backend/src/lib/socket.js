@@ -18,6 +18,7 @@
 const { Server } = require('socket.io');
 const jwt = require('jsonwebtoken');
 const prisma = require('./prisma');
+const { USER_STATUS, ROLES, ERROR_CODES } = require('./constants');
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const CORS_ORIGIN = process.env.SOCKET_IO_CORS_ORIGIN || 'http://localhost:5173';
@@ -28,7 +29,9 @@ function initSocketServer(httpServer) {
   if (io) return io;
 
   io = new Server(httpServer, {
-    cors: { origin: CORS_ORIGIN.split(','), credentials: true },
+    // INO-011 (mirror): in production, operators must set SOCKET_IO_CORS_ORIGIN
+    // to the production frontend URL. localhost is a dev default only.
+    cors: { origin: CORS_ORIGIN.split(',').map(s => s.trim()).filter(Boolean), credentials: true },
     // Long-polling fallback is on by default. The transports array
     // orders preferred → fallback. College networks that block ws://
     // will silently downgrade to polling.
@@ -36,11 +39,31 @@ function initSocketServer(httpServer) {
     allowEIO3: true,
   });
 
-  // Auth middleware — verify access token, join rooms
+  // ─── INO-012 fix: harden socket auth ─────────────────────────────────────
+  // The previous middleware mirrored `protect` only loosely — it checked
+  // `user.status === 'SUSPENDED'` but didn't reject PENDING users (who
+  // haven't completed onboarding and shouldn't be receiving realtime
+  // events), and didn't catch JWT/DB role drift (e.g. a user whose role
+  // was changed by a super-admin after the access token was issued).
+  //
+  // The audit explicitly classified this as hardening, not a confirmed
+  // vuln: server-side emission only, no obvious client-to-server order-
+  // manipulation event. The fixes below are conservative:
+  //   1. Reject both SUSPENDED and PENDING users with a clear reason.
+  //   2. Reject if decoded.role exists and doesn't match the live DB role.
+  //   3. Use ERROR_CODES for consistency with the HTTP protect middleware.
+  //
+  // This file does NOT emit any client-to-server events. If that ever
+  // changes, every incoming event MUST be authorized via the same RBAC
+  // matrix used by the HTTP protect/authorizeRole/requireOutletScope chain.
   io.use(async (socket, next) => {
     try {
       const { token } = socket.handshake.auth || {};
-      if (!token) return next(new Error('Authentication required'));
+      if (!token) {
+        const err = new Error('Authentication required');
+        err.code = ERROR_CODES.UNAUTHORIZED;
+        return next(err);
+      }
 
       const decoded = jwt.verify(token, JWT_SECRET);
       const user = await prisma.user.findUnique({
@@ -48,8 +71,32 @@ function initSocketServer(httpServer) {
         include: { outletStaff: true },
       });
 
-      if (!user) return next(new Error('User not found'));
-      if (user.status === 'SUSPENDED') return next(new Error('Account suspended'));
+      if (!user) {
+        const err = new Error('User not found');
+        err.code = ERROR_CODES.UNAUTHORIZED;
+        return next(err);
+      }
+
+      if (user.status === USER_STATUS.SUSPENDED) {
+        const err = new Error('Account suspended');
+        err.code = ERROR_CODES.ACCOUNT_SUSPENDED;
+        return next(err);
+      }
+      if (user.status === USER_STATUS.PENDING) {
+        // PENDING users haven't completed onboarding — they shouldn't be
+        // joining realtime rooms yet.
+        const err = new Error('Account pending — complete onboarding first');
+        err.code = ERROR_CODES.ACCOUNT_SUSPENDED;
+        return next(err);
+      }
+
+      // Defense-in-depth: if the JWT-embedded role exists and disagrees with
+      // the live DB role, the token is stale — reject and force re-auth.
+      if (decoded.role && decoded.role !== user.role) {
+        const err = new Error('Authentication failed');
+        err.code = ERROR_CODES.UNAUTHORIZED;
+        return next(err);
+      }
 
       socket.data.userId = user.id;
       socket.data.role = user.role;
@@ -60,11 +107,13 @@ function initSocketServer(httpServer) {
       if (user.outletStaff?.outletId) {
         socket.join(`outlet:${user.outletStaff.outletId}`);
       }
-      if (user.role === 'SUPER_ADMIN') socket.join('super-admin');
+      if (user.role === ROLES.SUPER_ADMIN) socket.join('super-admin');
 
       next();
     } catch (err) {
-      next(new Error('Authentication failed'));
+      const error = new Error('Authentication failed');
+      error.code = ERROR_CODES.UNAUTHORIZED;
+      next(error);
     }
   });
 

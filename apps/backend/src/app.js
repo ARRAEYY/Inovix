@@ -24,9 +24,19 @@ const app = express();
 app.use(helmet());
 
 // ── CORS ──────────────────────────────────────────────────────────────────────
+// INO-011 fix: in production, accept ONLY the configured FRONTEND_URL. The
+// previous implementation unconditionally appended `http://localhost:5173`
+// and `http://localhost:3001` to the origin list — a staging/preview/prod
+// deploy kept localhost origins live, expanding the browser-trusted surface
+// for any attacker who can run code on localhost. Localhost origins are
+// accepted only when NODE_ENV !== 'production' so dev workflows keep working.
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
+const isProduction = process.env.NODE_ENV === 'production';
+const corsOrigins = isProduction
+  ? [FRONTEND_URL]
+  : Array.from(new Set([FRONTEND_URL, 'http://localhost:5173', 'http://localhost:3001']));
 app.use(cors({
-  origin: [FRONTEND_URL, 'http://localhost:5173', 'http://localhost:3001'],
+  origin: corsOrigins,
   credentials: true,
 }));
 

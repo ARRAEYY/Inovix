@@ -67,17 +67,11 @@ async function rotateRefreshToken(presentedToken, { req } = {}) {
   const stored = await prisma.refreshToken.findUnique({ where: { id: idPart } });
   if (!stored) return null;
 
-  // Token theft detection: someone is using a token that was already rotated.
-  if (stored.revokedAt !== null || stored.replacedBy) {
-    // Revoke EVERYTHING for this user — they may be under attack.
-    await prisma.refreshToken.updateMany({
-      where: { userId: stored.userId, revokedAt: null },
-      data: { revokedAt: new Date() },
-    });
-    return null;
-  }
+  // Hash must match before anything else — prevents info leak via timing
+  // and ensures we only touch rows whose presented secret matches the DB.
+  if (stored.tokenHash !== tokenHash) return null;
 
-  // Expired?
+  // Expired? — read-only check, no race impact.
   if (stored.expiresAt.getTime() < Date.now()) {
     await prisma.refreshToken.update({
       where: { id: stored.id },
@@ -86,23 +80,45 @@ async function rotateRefreshToken(presentedToken, { req } = {}) {
     return null;
   }
 
-  // Hash matches?
-  if (stored.tokenHash !== tokenHash) return null;
+  // ─── INO-001 fix: atomic claim ─────────────────────────────────────────
+  // The previous implementation read `stored.revokedAt` / `stored.replacedBy`
+  // in a separate step from the UPDATE that marked the token as revoked.
+  // Two concurrent rotate requests for the same refresh token could both
+  // observe `revokedAt IS NULL` and both issue replacement tokens —
+  // defeating the "each refresh token can be used exactly once" property.
+  //
+  // Fix: claim the row atomically with `updateMany` filtered on
+  // `revokedAt IS NULL AND replacedBy IS NULL`. Only the request whose
+  // `count === 1` proceeds. The losing request falls into the theft-
+  // detection branch and revokes every refresh token for the user.
+  const claimed = await prisma.refreshToken.updateMany({
+    where: { id: stored.id, revokedAt: null, replacedBy: null },
+    data: { revokedAt: new Date() },
+  });
 
+  if (claimed.count !== 1) {
+    // Token was already claimed by a concurrent request — treat as theft.
+    // Revoke EVERYTHING for this user — they may be under attack.
+    await prisma.refreshToken.updateMany({
+      where: { userId: stored.userId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+    return null;
+  }
+
+  // From here we own the row. Look up the user; if suspended, fail silently
+  // (token is already revoked, so we're not leaving a live credential).
   const user = await prisma.user.findUnique({ where: { id: stored.userId } });
   if (!user || user.status !== 'ACTIVE') return null;
 
   // Issue new pair
   const newRefresh = await issueRefreshToken(user, { req });
 
-  // Mark old as rotated
+  // Fill in `replacedBy` on the row we already claimed.
   const [newId] = newRefresh.split('.', 1);
   await prisma.refreshToken.update({
     where: { id: stored.id },
-    data: {
-      revokedAt: new Date(),
-      replacedBy: newId,
-    },
+    data: { replacedBy: newId },
   });
 
   return {

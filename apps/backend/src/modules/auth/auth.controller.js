@@ -77,10 +77,17 @@ async function googleLogin(req, res, next) {
 }
 
 async function devLogin(req, res, next) {
-  if (process.env.NODE_ENV === 'production') {
+  // INO-007 fix: belt-and-suspenders guard at the controller level.
+  // The route is only mounted when NODE_ENV=development AND
+  // ENABLE_DEV_LOGIN=true (see auth.routes.js). Re-check here in case
+  // the controller is wired directly somewhere else.
+  if (
+    process.env.NODE_ENV !== 'development' ||
+    process.env.ENABLE_DEV_LOGIN !== 'true'
+  ) {
     return res.status(403).json({
       success: false,
-      message: 'Not available in production',
+      message: 'Dev login is disabled',
     });
   }
 

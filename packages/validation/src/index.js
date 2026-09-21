@@ -89,11 +89,30 @@ const googleLoginSchema = z.object({
 
 // ─── 3. Onboarding (M1) ─────────────────────────────────────────────────────
 
+// INO-P1-30: phone format. The platform is currently India-only (per spec
+// §1.1 — campus food ordering at Indian colleges). The default 10-digit
+// pattern matches Indian mobile numbers without country code. For other
+// regions, set the PHONE_REGEX env var to a different pattern (e.g.
+// '^\\+?[0-9]{10,15}$' for E.164 with optional +). The env var is read
+// once at module load; restart the server to change it. The default is
+// intentionally strict — a permissive regex would accept '12345' as a
+// phone number, which is worse than rejecting valid international formats.
+//
+// The `typeof process !== 'undefined'` guard lets this file load in the
+// browser (where `process` is undefined) — the frontend will get the
+// default India pattern. The backend reads the env var on startup.
+const _PHONE_REGEX_SOURCE =
+  (typeof process !== 'undefined' && process.env && process.env.PHONE_REGEX) || '^[0-9]{10}$';
+const _PHONE_MESSAGE =
+  (typeof process !== 'undefined' && process.env && process.env.PHONE_REGEX_MESSAGE) ||
+  'Phone must be a 10-digit number';
+const PHONE_REGEX = new RegExp(_PHONE_REGEX_SOURCE);
+
 const onboardingSchema = z.object({
   password: passwordField,
   profile: z.object({
     fullName: z.string().trim().min(1, { message: 'Full name is required' }).max(120),
-    phone: z.string().trim().regex(/^[0-9]{10}$/, { message: 'Phone must be a 10-digit number' }),
+    phone: z.string().trim().regex(PHONE_REGEX, { message: _PHONE_MESSAGE }),
     course: z.string().trim().min(1, { message: 'Course is required' }).max(120),
     year: z.string().trim().min(1, { message: 'Year is required' }).max(20),
     collegeId: z.string().trim().min(1, { message: 'College ID is required' }).max(60),

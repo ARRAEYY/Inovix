@@ -1,115 +1,101 @@
+/**
+ * Menu service — outlet-scoped CRUD + validation.
+ *
+ * Role policy (spec §3.1):
+ *   - OUTLET_STAFF + OUTLET_ADMIN: view menu (read)
+ *   - OUTLET_ADMIN only: create / update / delete items
+ *
+ * `outletId` always comes from req.user.outletId, never from req.body. This
+ * prevents the cross-outlet forgery attack (TEST 1 in test-menu-e2e.js).
+ */
+
 const menuRepo = require('./menu.repository');
-const { categories } = require('../../data/mockData');
+const prisma = require('../../lib/prisma');
 
-const validateMenuItemData = (data) => {
-  const { name, price, category } = data;
+async function getOutletMenu(outletId) {
+  return menuRepo.findAllByOutletId(outletId);
+}
 
-  if (!name || typeof name !== 'string' || name.trim() === '') {
-    throw { status: 400, message: 'Valid name is required' };
-  }
-
-  if (price === undefined || price === null || isNaN(Number(price)) || Number(price) <= 0) {
-    throw { status: 400, message: 'Price must be a number greater than 0' };
-  }
-
-  if (!category || !categories.includes(category)) {
-    throw { status: 400, message: `Invalid category. Must be one of: ${categories.join(', ')}` };
-  }
-
-  if (data.preparationTime !== undefined && data.preparationTime !== null) {
-    if (isNaN(Number(data.preparationTime)) || Number(data.preparationTime) < 0 || !Number.isInteger(Number(data.preparationTime))) {
-      throw { status: 400, message: 'Preparation time must be a positive integer' };
-    }
-  }
-
-  if (data.discount !== undefined && data.discount !== null) {
-    // We allow string discounts like '10%' or numbers. If it's a number, it shouldn't be negative.
-    if (typeof data.discount === 'number' && data.discount < 0) {
-      throw { status: 400, message: 'Discount cannot be negative' };
-    }
-  }
-};
-
-const sanitizeInput = (data, outletId) => {
-  return {
-    outletId,
-    name: data.name.trim(),
-    description: data.description ? data.description.trim() : '',
-    price: Number(data.price),
-    category: data.category,
-    image: data.image || null,
-    isAvailable: data.isAvailable !== undefined ? Boolean(data.isAvailable) : true,
-    discount: data.discount || null,
-    popular: data.popular !== undefined ? Boolean(data.popular) : false,
-    vegetarian: data.vegetarian !== undefined ? Boolean(data.vegetarian) : false,
-    preparationTime: data.preparationTime ? Number(data.preparationTime) : 0,
-  };
-};
-
-const getOutletMenu = async (outletId) => {
-  return await menuRepo.findAllByOutletId(outletId);
-};
-
-const getMenuItem = async (outletId, itemId) => {
+async function getMenuItem(outletId, itemId) {
   const item = await menuRepo.findById(itemId);
-  if (!item) {
-    throw { status: 404, message: 'Menu item not found' };
-  }
-
+  if (!item) throw { statusCode: 404, message: 'Menu item not found' };
   if (item.outletId !== outletId) {
-    throw { status: 403, message: 'You are not authorized to view this item' };
+    throw { statusCode: 403, message: 'You are not authorized to view this item' };
+  }
+  return item;
+}
+
+async function createMenuItem(outletId, data) {
+  // Resolve or create the category
+  let category = null;
+  if (data.category) {
+    category = await prisma.menuCategory.findUnique({
+      where: { outletId_name: { outletId, name: data.category } },
+    });
+    if (!category) {
+      category = await prisma.menuCategory.create({
+        data: { outletId, name: data.category, sortOrder: 0 },
+      });
+    }
   }
 
-  return item;
-};
+  return menuRepo.create({
+    outletId,
+    categoryId: category?.id || null,
+    name: data.name,
+    description: data.description || '',
+    price: data.price,
+    imageUrl: data.image || null,
+    isAvailable: data.isAvailable !== undefined ? data.isAvailable : true,
+    discount: data.discount != null ? String(data.discount) : null,
+    popular: data.popular || false,
+    vegetarian: data.vegetarian || false,
+    prepTimeMins: data.preparationTime || 0,
+    dietaryFlags: (data.dietaryFlags || []).join(','),
+  });
+}
 
-const createMenuItem = async (outletId, data) => {
-  validateMenuItemData(data);
-  const sanitizedData = sanitizeInput(data, outletId);
-  return await menuRepo.create(sanitizedData);
-};
+async function updateMenuItem(outletId, itemId, data) {
+  const existing = await getMenuItem(outletId, itemId); // ownership-checked
 
-const updateMenuItem = async (outletId, itemId, data) => {
-  // To allow partial updates like PATCH /availability, we first fetch the item
-  const existingItem = await getMenuItem(outletId, itemId);
+  // Category resolution
+  let categoryId = existing.categoryId;
+  if (data.category && data.category !== existing.category?.name) {
+    let cat = await prisma.menuCategory.findUnique({
+      where: { outletId_name: { outletId, name: data.category } },
+    });
+    if (!cat) {
+      cat = await prisma.menuCategory.create({ data: { outletId, name: data.category } });
+    }
+    categoryId = cat.id;
+  }
 
-  // Merge data for validation
-  const mergedData = { ...existingItem, ...data };
-  validateMenuItemData(mergedData);
-
-  // Sanitize updates but ensure outletId remains unchanged
   const updates = {
-    name: mergedData.name.trim(),
-    description: mergedData.description ? mergedData.description.trim() : '',
-    price: Number(mergedData.price),
-    category: mergedData.category,
-    image: mergedData.image || null,
-    isAvailable: mergedData.isAvailable !== undefined ? Boolean(mergedData.isAvailable) : true,
-    discount: mergedData.discount || null,
-    popular: mergedData.popular !== undefined ? Boolean(mergedData.popular) : false,
-    vegetarian: mergedData.vegetarian !== undefined ? Boolean(mergedData.vegetarian) : false,
-    preparationTime: mergedData.preparationTime ? Number(mergedData.preparationTime) : 0,
+    name: data.name?.trim() || existing.name,
+    description: data.description !== undefined ? data.description.trim() : existing.description,
+    price: data.price !== undefined ? Number(data.price) : Number(existing.price),
+    categoryId,
+    imageUrl: data.image !== undefined ? (data.image || null) : existing.imageUrl,
+    isAvailable: data.isAvailable !== undefined ? data.isAvailable : existing.isAvailable,
+    discount: data.discount !== undefined ? (data.discount != null ? String(data.discount) : null) : existing.discount,
+    popular: data.popular !== undefined ? data.popular : existing.popular,
+    vegetarian: data.vegetarian !== undefined ? data.vegetarian : existing.vegetarian,
+    prepTimeMins: data.preparationTime !== undefined ? Number(data.preparationTime) : existing.prepTimeMins,
+    dietaryFlags: data.dietaryFlags ? data.dietaryFlags.join(',') : existing.dietaryFlags,
   };
 
-  return await menuRepo.update(itemId, updates);
-};
+  return menuRepo.update(itemId, updates);
+}
 
-const deleteMenuItem = async (outletId, itemId) => {
-  // Implicitly checks existence and ownership
-  await getMenuItem(outletId, itemId);
-  
-  const success = await menuRepo.delete(itemId);
-  if (!success) {
-    throw { status: 500, message: 'Failed to delete menu item' };
-  }
-  
-  return true;
-};
+async function deleteMenuItem(outletId, itemId) {
+  await getMenuItem(outletId, itemId); // ownership-checked
+  return menuRepo.delete(itemId);
+}
 
 module.exports = {
   getOutletMenu,
   getMenuItem,
   createMenuItem,
   updateMenuItem,
-  deleteMenuItem
+  deleteMenuItem,
 };

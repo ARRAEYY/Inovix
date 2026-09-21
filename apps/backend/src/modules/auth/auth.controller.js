@@ -148,7 +148,14 @@ async function getCurrentUser(req, res, next) {
 
 async function refresh(req, res, next) {
   try {
-    const refreshToken = req.cookies?.[REFRESH_COOKIE] || req.body?.refreshToken;
+    // INO-P1-20 fix: the refresh token is ONLY accepted from the httpOnly
+    // cookie (`nosh_refresh`). The previous implementation also accepted
+    // `req.body.refreshToken` as a fallback — a second API path that
+    // put the long-lived credential into JSON, defeating the security
+    // benefit of the httpOnly cookie (any JS-readable client could use
+    // the body path). The frontend was migrated to cookies in d173314,
+    // so the body fallback is no longer needed.
+    const refreshToken = req.cookies?.[REFRESH_COOKIE];
     if (!refreshToken) {
       const error = new Error('Refresh session is required');
       error.statusCode = 400;
@@ -178,7 +185,8 @@ async function refresh(req, res, next) {
 
 async function logout(req, res, next) {
   try {
-    const refreshToken = req.cookies?.[REFRESH_COOKIE] || req.body?.refreshToken;
+    // INO-P1-20 fix: same as /refresh — only accept the cookie, not body.
+    const refreshToken = req.cookies?.[REFRESH_COOKIE];
     if (refreshToken) {
       await revokeRefreshToken(refreshToken);
     }

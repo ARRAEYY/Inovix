@@ -73,20 +73,42 @@ async function signMenuItemUpload(req, res, next) {
       });
     }
 
-    // ─── INO-006 fix: server-controlled namespace for student uploads ──────
-    // For the `students` folder the client-supplied publicId is ignored —
-    // the server scopes the object name to `students/<userId>/<random>` so
-    // one student can't impersonate another's profile picture. The signing
-    // helper in lib/cloudinary.js enforces this when `ownerId` is passed.
-    const isStudentUpload =
-      folder === 'students' && req.user.role === ROLES.STUDENT;
+    // ─── INO-P1-18 fix: server-controlled namespace for outlet-scoped uploads ──
+    // For the `students` folder (INO-006) the client-supplied publicId is
+    // ignored and the server scopes the object name to
+    // `students/<userId>/<random>`.
+    //
+    // The same principle now applies to `menu-items` and `outlet-logos`:
+    // the client-supplied publicId is ignored, and the server scopes the
+    // object name to `<folder>/<outletId>/<random>`. Previously the client
+    // could request any publicId in those folders — the outlet scoping
+    // was only a Cloudinary tag (not an enforced path). Now the path
+    // itself encodes the outlet, so any asset in `menu-items/<outletId>/`
+    // is provably owned by that outlet.
+    //
+    // For SUPER_ADMIN we let the client control the publicId since
+    // super-admins can manage any outlet's media library directly.
+    let effectivePublicId = publicId;
+    let ownerId = null;
+    const isStudentUpload = folder === 'students' && req.user.role === ROLES.STUDENT;
+    const isOutletScopedUpload =
+      (folder === 'menu-items' || folder === 'outlet-logos') &&
+      req.user.role === ROLES.OUTLET_ADMIN;
+
+    if (isStudentUpload) {
+      ownerId = req.user.id;
+      effectivePublicId = undefined; // server-controlled: students/<userId>/<random>
+    } else if (isOutletScopedUpload) {
+      ownerId = outletId;            // server-controlled: <folder>/<outletId>/<random>
+      effectivePublicId = undefined;
+    }
 
     const payload = signUpload({
       folder,
-      publicId: isStudentUpload ? undefined : publicId,
+      publicId: effectivePublicId,
       tags,
       outletId,
-      ownerId: isStudentUpload ? req.user.id : null,
+      ownerId,
     });
 
     await audit({

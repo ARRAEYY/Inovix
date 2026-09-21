@@ -4,8 +4,7 @@
  *
  * Token model (spec §3.2 Layer 1):
  *   - access token: 15 min, sent in response body
- *   - refresh token: 7 days, rotating; sent in response body (frontend can
- *     store in httpOnly cookie — recommended — or localStorage fallback)
+ *   - refresh token: 7 days, rotating; stored only in an httpOnly cookie
  *
  * Refresh rotation: each refresh can be used exactly once. Re-use of an
  * already-rotated refresh triggers token-theft detection and revokes all
@@ -27,6 +26,23 @@ const {
 } = require('../../lib/tokens');
 const { audit } = require('../../lib/audit');
 const { USER_STATUS } = require('../../lib/constants');
+
+const REFRESH_COOKIE = 'nosh_refresh';
+const REFRESH_COOKIE_OPTIONS = {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === 'production' || process.env.COOKIE_SECURE === 'true',
+  sameSite: process.env.COOKIE_SAMESITE || 'lax',
+  path: '/api/v1/auth',
+  maxAge: 7 * 24 * 60 * 60 * 1000,
+};
+
+function setRefreshCookie(res, token) {
+  res.cookie(REFRESH_COOKIE, token, REFRESH_COOKIE_OPTIONS);
+}
+
+function clearRefreshCookie(res) {
+  res.clearCookie(REFRESH_COOKIE, { ...REFRESH_COOKIE_OPTIONS, maxAge: undefined });
+}
 
 function stripSensitive(user) {
   if (!user) return null;
@@ -62,13 +78,13 @@ async function googleLogin(req, res, next) {
       req,
     });
 
+    setRefreshCookie(res, refreshToken);
     return res.status(200).json({
       success: true,
       message: isNew ? 'Google registration successful' : 'Google authentication successful',
       data: {
         user: stripSensitive(user),
         accessToken,
-        refreshToken,
       },
     });
   } catch (error) {
@@ -104,13 +120,13 @@ async function devLogin(req, res, next) {
       req,
     });
 
+    setRefreshCookie(res, refreshToken);
     return res.status(200).json({
       success: true,
       message: 'Dev login successful',
       data: {
         user: stripSensitive(user),
         accessToken,
-        refreshToken,
       },
     });
   } catch (error) {
@@ -132,9 +148,16 @@ async function getCurrentUser(req, res, next) {
 
 async function refresh(req, res, next) {
   try {
-    const { refreshToken } = req.body;
+    // INO-P1-20 fix: the refresh token is ONLY accepted from the httpOnly
+    // cookie (`nosh_refresh`). The previous implementation also accepted
+    // `req.body.refreshToken` as a fallback — a second API path that
+    // put the long-lived credential into JSON, defeating the security
+    // benefit of the httpOnly cookie (any JS-readable client could use
+    // the body path). The frontend was migrated to cookies in d173314,
+    // so the body fallback is no longer needed.
+    const refreshToken = req.cookies?.[REFRESH_COOKIE];
     if (!refreshToken) {
-      const error = new Error('refreshToken is required');
+      const error = new Error('Refresh session is required');
       error.statusCode = 400;
       throw error;
     }
@@ -146,13 +169,13 @@ async function refresh(req, res, next) {
       throw error;
     }
 
+    setRefreshCookie(res, result.refreshToken);
     return res.status(200).json({
       success: true,
       message: 'Token refreshed',
       data: {
         user: stripSensitive(result.user),
         accessToken: result.accessToken,
-        refreshToken: result.refreshToken,
       },
     });
   } catch (error) {
@@ -162,10 +185,12 @@ async function refresh(req, res, next) {
 
 async function logout(req, res, next) {
   try {
-    const { refreshToken } = req.body;
+    // INO-P1-20 fix: same as /refresh — only accept the cookie, not body.
+    const refreshToken = req.cookies?.[REFRESH_COOKIE];
     if (refreshToken) {
       await revokeRefreshToken(refreshToken);
     }
+    clearRefreshCookie(res);
     // Optional: revoke all sessions for this user (more aggressive)
     // await revokeAllForUser(req.user.id);
 

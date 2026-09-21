@@ -9,9 +9,21 @@
  */
 
 const prisma = require('../../lib/prisma');
+const { normalizeSelectedOptions } = require('../menu/customization');
 
+// INO-AUDIT3-5 fix: include customizationGroups.options on menuItem so
+// computeTotals in cart.service.js can look up the priceDelta for the
+// cart item's selectedOptions. Previously computeTotals used only the
+// base menu price, showing ₹100 instead of ₹130 when extra cheese at
+// +₹30 was selected.
 const CART_INCLUDE = {
-  items: { include: { menuItem: true } },
+  items: {
+    include: {
+      menuItem: {
+        include: { customizationGroups: { include: { options: true } } },
+      },
+    },
+  },
   outlet: { select: { id: true, name: true, slug: true, status: true } },
 };
 
@@ -59,9 +71,20 @@ async function findByStudent(studentId) {
 }
 
 async function addItem(cartId, menuItemId, quantity, selectedOptions) {
+  // INO-AUDIT3-6 fix: normalize selectedOptions (sort by groupId + optionId,
+  // dedupe) before storing/comparing. The previous implementation compared
+  // JSON.stringify(selectedOptions) directly, so the same logical set
+  // in different order was treated as a different cart item:
+  //   [{"groupId":"A","optionId":"1"},{"groupId":"B","optionId":"2"}]
+  //   [{"groupId":"B","optionId":"2"},{"groupId":"A","optionId":"1"}]
+  // Both represent the same customization choice; now they produce the
+  // same normalized JSON string and merge into one cart item.
+  const normalized = normalizeSelectedOptions(selectedOptions);
+  const normalizedJson = JSON.stringify(normalized);
+
   // If the same menu item + same options exists, increment quantity
   const existing = await prisma.cartItem.findFirst({
-    where: { cartId, menuItemId, selectedOptions: JSON.stringify(selectedOptions || []) },
+    where: { cartId, menuItemId, selectedOptions: normalizedJson },
   });
   if (existing) {
     return prisma.cartItem.update({
@@ -74,7 +97,7 @@ async function addItem(cartId, menuItemId, quantity, selectedOptions) {
       cartId,
       menuItemId,
       quantity,
-      selectedOptions: JSON.stringify(selectedOptions || []),
+      selectedOptions: normalizedJson,
     },
   });
 }

@@ -51,7 +51,11 @@ async function completeOnboarding(userId, payload) {
         course: profile.course,
         year: profile.year,
         collegeId: profile.collegeId,
-        verifiedAt: new Date(),
+        // INO-P1-29: renamed from verifiedAt — the value is the submission
+        // timestamp, not a verification timestamp. If a real verification
+        // flow is added later, use a separate `verifiedAt` column set
+        // only when an admin/directory-check approves the profile.
+        submittedAt: new Date(),
       },
       create: {
         userId,
@@ -60,7 +64,7 @@ async function completeOnboarding(userId, payload) {
         course: profile.course,
         year: profile.year,
         collegeId: profile.collegeId,
-        verifiedAt: new Date(),
+        submittedAt: new Date(),
       },
     });
 

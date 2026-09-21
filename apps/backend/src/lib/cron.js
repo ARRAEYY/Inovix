@@ -4,7 +4,7 @@
  * Spec ref:
  *   - AuditLog retention: §14 decision 8 — 90 days rolling
  *   - RefreshToken purge: §3.2 Layer 1 — expired tokens older than 30d
- *   - READY → COMPLETED pickup timeout: §4 entity #13 `pickupTimeoutMins`
+ *   - READY → CANCELLED pickup timeout: §4 entity #13 `pickupTimeoutMins`
  *     (default 30 min) — spec §8.6 "READY → CANCELLED-after-pickup-timeout
  *     is a no-show case with NO refund"
  *
@@ -17,14 +17,16 @@
  *   - AUDIT_LOG_RETENTION_DAYS (default 90)
  *   - PICKUP_TIMEOUT_MINS (default 30) — used to compute the no-show window
  *
- * The jobs write AuditLog rows for state changes (READY→COMPLETED) but
- * never throw — a failure in one job must not crash the scheduler.
+ * The jobs write AuditLog rows for state changes (READY→CANCELLED on pickup
+ * timeout). The jobs themselves never throw — a failure in one job must
+ * not crash the scheduler.
  */
 
 const cron = require('node-cron');
 const prisma = require('./prisma');
 const { audit } = require('./audit');
 const { ORDER_STATUS } = require('./constants');
+const { runWithAdvisoryLock } = require('./distributedLock');
 
 const REFRESH_TOKEN_PURGE_AGE_DAYS = 30;
 const PICKUP_TIMEOUT_CHECK_INTERVAL = '*/5 * * * *'; // every 5 minutes
@@ -37,6 +39,28 @@ function isCronEnabled() {
   if (flag === 'false' || flag === '0') return false;
   if (process.env.NODE_ENV === 'test') return false;
   return true;
+}
+
+// ─── INO-P1-34 wrapper ─────────────────────────────────────────────────────
+// Each cron job is wrapped in a Postgres transaction-scoped advisory lock
+// so that a multi-instance deploy (e.g. 3 backend containers behind a
+// load balancer) cannot run the same job on more than one instance at a
+// time. On SQLite (dev) the lock is a no-op (single-instance assumption).
+//
+// The wrapper also catches and logs errors so a failing job doesn't crash
+// the scheduler. If the lock is held by another instance, the wrapper
+// logs a "skipped" message and exits 0 (no error).
+async function runCronJob(jobName, fn) {
+  try {
+    const result = await runWithAdvisoryLock(`cron:${jobName}`, async () => {
+      return fn();
+    });
+    if (result && result.skipped) {
+      console.log(`[cron:${jobName}] skipped — another instance holds the advisory lock`);
+    }
+  } catch (e) {
+    console.error(`[cron:${jobName}] failed:`, e.message);
+  }
 }
 
 // ─── Job 1: Audit log purge ──────────────────────────────────────────────────
@@ -84,14 +108,48 @@ async function purgeExpiredRefreshTokens() {
   return { deleted: result.count, markedRevoked: expired.count };
 }
 
-// ─── Job 3: READY → COMPLETED pickup timeout (no-show) ───────────────────────
+// ─── Job 3: READY → CANCELLED pickup timeout (no-show) ───────────────────────
 async function processPickupTimeouts() {
   // We use the per-outlet `pickupTimeoutMins` (default 30) — spec §4 entity #4.
-  // Find all READY orders, then check each one's outlet's pickupTimeoutMins.
-  // For SQLite portability, we filter in JS rather than using SQL time math.
+  //
+  // INO-P1-33 fix: previously this job loaded EVERY READY order in the DB
+  // and skipped each one whose readyAt + pickupTimeoutMins > now in JS.
+  // For a deployment with many active READY orders, that's a lot of rows
+  // pulled across the wire every 5 minutes for nothing. Now we pre-filter
+  // at the DB level using `min(per-outlet pickupTimeoutMins)`: any READY
+  // order whose readyAt is newer than `now - minTimeoutMins` CANNOT be
+  // past its pickup window yet, so it's excluded from the result set.
+  // The per-outlet precision check still happens in JS for the candidates
+  // that survive the DB filter (since different outlets can have different
+  // timeouts, we can't push the full predicate to the DB without a JOIN
+  // with per-row time math, which is awkward in Prisma).
+  //
+  // INO-AUDIT4-D8 fix: previously this job did `prisma.order.updateMany`
+  // directly + manually created the notification + audit row afterward.
+  // That bypassed performTransition() — the single transactional owner of
+  // order status changes — so the cron transition wasn't atomic with the
+  // audit + notification. If the process died between the updateMany and
+  // the notification.create, the order was CANCELLED but the notification
+  // was missing. Now we call performTransition() (which owns the atomic
+  // order+audit+notification+refund-intent tx), then emit socket events
+  // post-commit (consistent with the API controller path).
   const now = new Date();
+
+  // Aggregate the minimum per-outlet pickupTimeoutMins across all outlets.
+  // _min returns null if there are no outlets — fall back to env default.
+  const minAgg = await prisma.outlet.aggregate({
+    _min: { pickupTimeoutMins: true },
+  });
+  const globalMinTimeoutMins =
+    minAgg._min?.pickupTimeoutMins ?? parseInt(process.env.PICKUP_TIMEOUT_MINS || '30', 10);
+
+  const candidateCutoff = new Date(now.getTime() - globalMinTimeoutMins * 60 * 1000);
+
   const readyOrders = await prisma.order.findMany({
-    where: { status: ORDER_STATUS.READY },
+    where: {
+      status: ORDER_STATUS.READY,
+      readyAt: { lt: candidateCutoff },
+    },
     include: { outlet: { select: { id: true, name: true, pickupTimeoutMins: true } } },
   });
 
@@ -100,62 +158,80 @@ async function processPickupTimeouts() {
     if (!order.readyAt) continue;
     const timeoutMins = order.outlet?.pickupTimeoutMins ?? parseInt(process.env.PICKUP_TIMEOUT_MINS || '30', 10);
     const cutoff = new Date(order.readyAt.getTime() + timeoutMins * 60 * 1000);
-    if (now < cutoff) continue; // still within pickup window
+    if (now < cutoff) continue; // still within this outlet's pickup window
 
-    // Auto-transition READY → COMPLETED (no refund — student picked up... or no-showed)
-    // Per spec §8.6: READY→CANCELLED is the no-show case (NO refund).
-    // We use COMPLETED here as the "item picked up or expired" cleanup.
-    // If the spec calls for CANCELLED, swap the line below.
-    const timeline = JSON.parse(order.timeline || '[]');
-    timeline.push({ status: ORDER_STATUS.COMPLETED, at: now.toISOString(), by: 'cron:pickup-timeout' });
-
-    await prisma.order.update({
-      where: { id: order.id },
-      data: {
-        status: ORDER_STATUS.COMPLETED,
-        completedAt: now,
-        timeline: JSON.stringify(timeline),
-      },
-    });
-
-    // Create a notification for the student (order auto-completed)
-    await prisma.notification.create({
-      data: {
-        userId: order.studentId,
-        type: 'ORDER_COMPLETED',
-        title: 'Order auto-completed',
-        message: `Order ${order.orderNumber} was auto-completed after the pickup window elapsed (${timeoutMins} min).`,
-        payload: JSON.stringify({ orderId: order.id, reason: 'pickup_timeout', timeoutMins }),
-        orderId: order.id,
-      },
-    }).catch(() => null); // notification must not block the cron
-
-    await audit({
-      actorId: null,
-      action: 'ORDER_PICKUP_TIMEOUT',
-      targetType: 'Order',
-      targetId: order.id,
-      before: { status: ORDER_STATUS.READY, readyAt: order.readyAt },
-      after: { status: ORDER_STATUS.COMPLETED, timeoutMins },
-    });
-
-    completed++;
-    // Emit a socket event so any open outlet dashboard / student tracking page refreshes
     try {
-      const { emitOrderEvent } = require('./socket');
-      emitOrderEvent('order:status:changed', `outlet:${order.outletId}`, {
-        order: { id: order.id, status: ORDER_STATUS.COMPLETED, reason: 'pickup_timeout' },
+      // Use the same transition service as the API path — atomic
+      // order + audit + notification + (no refund for READY→CANCELLED
+      // no-show per REFUND_TRIGGERS.READY_TO_CANCELLED = null).
+      const { performTransition } = require('../modules/orders/transition.service');
+      const result = await performTransition({
+        orderId: order.id,
+        expectedFromStatus: ORDER_STATUS.READY,
+        toStatus: ORDER_STATUS.CANCELLED,
+        actorId: null, // cron — no human actor
+        reason: `Pickup window expired (${timeoutMins} min)`,
+        // No triggerOverride — REFUND_TRIGGERS.READY_TO_CANCELLED is null,
+        // so no refund is created. (Per spec §8.6 no-show = no refund.)
       });
-      emitOrderEvent('order:status:changed', `student:${order.studentId}`, {
-        order: { id: order.id, status: ORDER_STATUS.COMPLETED, reason: 'pickup_timeout' },
+
+      // Additional cron-specific audit row (separate from the
+      // ORDER_STATUS_CHANGED row that performTransition wrote).
+      await audit({
+        actorId: null,
+        action: 'ORDER_PICKUP_TIMEOUT',
+        targetType: 'Order',
+        targetId: order.id,
+        before: { status: ORDER_STATUS.READY, readyAt: order.readyAt },
+        after: { status: ORDER_STATUS.CANCELLED, timeoutMins },
       });
-    } catch { /* socket not initialized */ }
+
+      completed++;
+      // Emit a socket event so any open outlet dashboard / student tracking
+      // page refreshes. (performTransition creates the notification row in
+      // the tx; we emit the socket event here so connected clients see it.)
+      try {
+        const { emitOrderEvent, emitNotificationEvent } = require('./socket');
+        emitOrderEvent('order:status:changed', `outlet:${order.outletId}`, {
+          order: { id: order.id, status: ORDER_STATUS.CANCELLED, reason: 'pickup_timeout' },
+        });
+        emitOrderEvent('order:status:changed', `student:${order.studentId}`, {
+          order: { id: order.id, status: ORDER_STATUS.CANCELLED, reason: 'pickup_timeout' },
+        });
+        if (result.notification) {
+          emitNotificationEvent(order.studentId, result.notification);
+        }
+      } catch { /* socket not initialized */ }
+    } catch (err) {
+      // If performTransition threw (e.g. 409 because the order was
+      // manually transitioned concurrently), skip silently — the order
+      // is no longer READY so the timeout doesn't apply.
+      if (err?.statusCode !== 409) {
+        console.error(`[cron:pickup-timeout] order ${order.id} transition failed:`, err.message);
+      }
+    }
   }
 
   if (completed > 0) {
-    console.log(`[cron:pickup-timeout] auto-completed ${completed} READY orders past their pickup window`);
+    console.log(`[cron:pickup-timeout] cancelled ${completed} READY orders past their pickup window (scanned ${readyOrders.length} candidates)`);
   }
   return completed;
+}
+
+// ─── Job 4: Expired cart cleanup (INO-AUDIT4-D20) ───────────────────────────
+// Cart rows past their `expiresAt` are technically dead — the cart
+// service's `findByStudent` already filters them out via
+// `expiresAt: { gt: new Date() }`. But the rows themselves accumulate
+// in the DB until manually cleaned. This job deletes them.
+async function purgeExpiredCarts() {
+  const result = await prisma.cart.deleteMany({
+    where: { expiresAt: { lt: new Date() } },
+  });
+  if (result.count > 0) {
+    console.log(`[cron:cart-purge] deleted ${result.count} expired cart rows`);
+    // CartItem rows cascade-delete via the CartItem.cartId FK onDelete: Cascade.
+  }
+  return result.count;
 }
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
@@ -166,23 +242,18 @@ function initCron() {
   }
 
   scheduled = [
-    cron.schedule(DAILY_AT_3AM, async () => {
-      try { await purgeAuditLogs(); } catch (e) { console.error('[cron:audit-purge] failed:', e.message); }
-    }, { name: 'audit-purge' }),
-
-    cron.schedule(DAILY_AT_3AM, async () => {
-      try { await purgeExpiredRefreshTokens(); } catch (e) { console.error('[cron:refresh-purge] failed:', e.message); }
-    }, { name: 'refresh-purge' }),
-
-    cron.schedule(PICKUP_TIMEOUT_CHECK_INTERVAL, async () => {
-      try { await processPickupTimeouts(); } catch (e) { console.error('[cron:pickup-timeout] failed:', e.message); }
-    }, { name: 'pickup-timeout' }),
+    cron.schedule(DAILY_AT_3AM, () => runCronJob('audit-purge', purgeAuditLogs), { name: 'audit-purge' }),
+    cron.schedule(DAILY_AT_3AM, () => runCronJob('refresh-purge', purgeExpiredRefreshTokens), { name: 'refresh-purge' }),
+    cron.schedule(DAILY_AT_3AM, () => runCronJob('cart-purge', purgeExpiredCarts), { name: 'cart-purge' }),
+    cron.schedule(PICKUP_TIMEOUT_CHECK_INTERVAL, () => runCronJob('pickup-timeout', processPickupTimeouts), { name: 'pickup-timeout' }),
   ];
 
   console.log(`[cron] scheduled: ${scheduled.map(s => s.name || '?').join(', ')}`);
   console.log(`[cron] audit purge: daily at 03:00 (${process.env.AUDIT_LOG_RETENTION_DAYS || 90}-day retention)`);
   console.log(`[cron] refresh purge: daily at 03:00 (delete tokens older than 30d)`);
+  console.log(`[cron] cart purge: daily at 03:00 (delete carts past expiresAt)`);
   console.log(`[cron] pickup timeout: every 5 min (default window: ${process.env.PICKUP_TIMEOUT_MINS || 30} min)`);
+  console.log(`[cron] advisory-lock: ${require('./distributedLock').isPostgres() ? 'postgres pg_try_advisory_xact_lock' : 'disabled (sqlite dev)'}`);
 }
 
 function stopCron() {
@@ -197,6 +268,7 @@ module.exports = {
   stopCron,
   purgeAuditLogs,
   purgeExpiredRefreshTokens,
+  purgeExpiredCarts,
   processPickupTimeouts,
   isCronEnabled,
 };

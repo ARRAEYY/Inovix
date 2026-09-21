@@ -31,10 +31,20 @@ const passwordField = z
   .regex(/[a-z]/, { message: 'Password must contain at least one lowercase letter' })
   .regex(/[0-9]/, { message: 'Password must contain at least one digit' });
 
+// INO-AUDIT4-D17 + D18 fix: reject Infinity + enforce a sane upper bound.
+// The previous check `!Number.isNaN(n) && n > 0` let Infinity through
+// (Infinity > 0 is true). An attacker could submit absurdly large values
+// that travel through Zod → JS Number → paise → Prisma Decimal → Razorpay.
+// Even if Razorpay ultimately rejects, application-level validation should
+// reject first. The upper bound is 1 crore paise = ₹10,00,000 — well
+// above any realistic campus food order, well below Infinity.
+const MAX_MONEY_RUPEES = 10_00_000; // ₹10 lakh = 1 million rupees
 const priceField = z
   .union([z.number(), z.string()])
   .transform((v) => (typeof v === 'string' ? Number(v) : v))
-  .refine((n) => !Number.isNaN(n) && n > 0, { message: 'Price must be a number greater than 0' });
+  .refine((n) => Number.isFinite(n) && n > 0 && n <= MAX_MONEY_RUPEES, {
+    message: `Price must be a finite number greater than 0 and at most ₹${MAX_MONEY_RUPEES}`,
+  });
 
 const positiveIntField = z
   .union([z.number(), z.string()])
@@ -52,7 +62,13 @@ const orderStatusEnum = z.enum([
   'PENDING', 'ACCEPTED', 'PREPARING', 'READY', 'COMPLETED', 'REJECTED', 'CANCELLED',
 ]);
 
-const outletStatusEnum = z.enum(['OPEN', 'BUSY', 'CLOSED']);
+// INO-adj-23 fix: the previous enum only accepted OPEN/BUSY/CLOSED, but
+// constants.js defines 5 outlet statuses (OPEN/BUSY/CLOSED/PENDING/
+// SUSPENDED). Super-admins can change an outlet to PENDING or SUSPENDED
+// via the admin UI, but the validation layer rejected those values,
+// producing a confusing frontend/backend contract mismatch
+// (admin clicks SUSPENDED → backend returns 400).
+const outletStatusEnum = z.enum(['OPEN', 'BUSY', 'CLOSED', 'PENDING', 'SUSPENDED']);
 
 const userStatusEnum = z.enum(['ACTIVE', 'SUSPENDED']);
 
@@ -64,8 +80,17 @@ const roleEnum = z.enum(['STUDENT', 'OUTLET_STAFF', 'OUTLET_ADMIN', 'SUPER_ADMIN
 
 const outletStaffRoleEnum = z.enum(['STAFF', 'ADMIN']);
 
+// INO-AUDIT3-8 fix: CUSTOMER_CANCEL was missing from the canonical enum.
+// The transition service + admin controller pass `triggerOverride: 'CUSTOMER_CANCEL'`
+// when a student cancels their PENDING order, but the validation package
+// didn't list it — so the shared schema didn't reflect the actual refund
+// trigger space. Drift like this causes bugs later when someone adds
+// validation against the enum and forgets the CUSTOMER_CANCEL case.
 const refundTriggerEnum = z.enum([
-  'OUTLET_REJECT', 'OUTLET_CANCEL', 'SUPER_ADMIN_MANUAL',
+  'OUTLET_REJECT',
+  'OUTLET_CANCEL',
+  'CUSTOMER_CANCEL',
+  'SUPER_ADMIN_MANUAL',
 ]);
 
 // ─── 1. Dev login (M1) ──────────────────────────────────────────────────────
@@ -83,11 +108,30 @@ const googleLoginSchema = z.object({
 
 // ─── 3. Onboarding (M1) ─────────────────────────────────────────────────────
 
+// INO-P1-30: phone format. The platform is currently India-only (per spec
+// §1.1 — campus food ordering at Indian colleges). The default 10-digit
+// pattern matches Indian mobile numbers without country code. For other
+// regions, set the PHONE_REGEX env var to a different pattern (e.g.
+// '^\\+?[0-9]{10,15}$' for E.164 with optional +). The env var is read
+// once at module load; restart the server to change it. The default is
+// intentionally strict — a permissive regex would accept '12345' as a
+// phone number, which is worse than rejecting valid international formats.
+//
+// The `typeof process !== 'undefined'` guard lets this file load in the
+// browser (where `process` is undefined) — the frontend will get the
+// default India pattern. The backend reads the env var on startup.
+const _PHONE_REGEX_SOURCE =
+  (typeof process !== 'undefined' && process.env && process.env.PHONE_REGEX) || '^[0-9]{10}$';
+const _PHONE_MESSAGE =
+  (typeof process !== 'undefined' && process.env && process.env.PHONE_REGEX_MESSAGE) ||
+  'Phone must be a 10-digit number';
+const PHONE_REGEX = new RegExp(_PHONE_REGEX_SOURCE);
+
 const onboardingSchema = z.object({
   password: passwordField,
   profile: z.object({
     fullName: z.string().trim().min(1, { message: 'Full name is required' }).max(120),
-    phone: z.string().trim().regex(/^[0-9]{10}$/, { message: 'Phone must be a 10-digit number' }),
+    phone: z.string().trim().regex(PHONE_REGEX, { message: _PHONE_MESSAGE }),
     course: z.string().trim().min(1, { message: 'Course is required' }).max(120),
     year: z.string().trim().min(1, { message: 'Year is required' }).max(20),
     collegeId: z.string().trim().min(1, { message: 'College ID is required' }).max(60),

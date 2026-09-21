@@ -25,6 +25,7 @@ const cron = require('node-cron');
 const prisma = require('./prisma');
 const { audit } = require('./audit');
 const { ORDER_STATUS } = require('./constants');
+const { runWithAdvisoryLock } = require('./distributedLock');
 
 const REFRESH_TOKEN_PURGE_AGE_DAYS = 30;
 const PICKUP_TIMEOUT_CHECK_INTERVAL = '*/5 * * * *'; // every 5 minutes
@@ -37,6 +38,28 @@ function isCronEnabled() {
   if (flag === 'false' || flag === '0') return false;
   if (process.env.NODE_ENV === 'test') return false;
   return true;
+}
+
+// ─── INO-P1-34 wrapper ─────────────────────────────────────────────────────
+// Each cron job is wrapped in a Postgres transaction-scoped advisory lock
+// so that a multi-instance deploy (e.g. 3 backend containers behind a
+// load balancer) cannot run the same job on more than one instance at a
+// time. On SQLite (dev) the lock is a no-op (single-instance assumption).
+//
+// The wrapper also catches and logs errors so a failing job doesn't crash
+// the scheduler. If the lock is held by another instance, the wrapper
+// logs a "skipped" message and exits 0 (no error).
+async function runCronJob(jobName, fn) {
+  try {
+    const result = await runWithAdvisoryLock(`cron:${jobName}`, async () => {
+      return fn();
+    });
+    if (result && result.skipped) {
+      console.log(`[cron:${jobName}] skipped — another instance holds the advisory lock`);
+    }
+  } catch (e) {
+    console.error(`[cron:${jobName}] failed:`, e.message);
+  }
 }
 
 // ─── Job 1: Audit log purge ──────────────────────────────────────────────────
@@ -84,14 +107,38 @@ async function purgeExpiredRefreshTokens() {
   return { deleted: result.count, markedRevoked: expired.count };
 }
 
-// ─── Job 3: READY → COMPLETED pickup timeout (no-show) ───────────────────────
+// ─── Job 3: READY → CANCELLED pickup timeout (no-show) ───────────────────────
 async function processPickupTimeouts() {
   // We use the per-outlet `pickupTimeoutMins` (default 30) — spec §4 entity #4.
-  // Find all READY orders, then check each one's outlet's pickupTimeoutMins.
-  // For SQLite portability, we filter in JS rather than using SQL time math.
+  //
+  // INO-P1-33 fix: previously this job loaded EVERY READY order in the DB
+  // and skipped each one whose readyAt + pickupTimeoutMins > now in JS.
+  // For a deployment with many active READY orders, that's a lot of rows
+  // pulled across the wire every 5 minutes for nothing. Now we pre-filter
+  // at the DB level using `min(per-outlet pickupTimeoutMins)`: any READY
+  // order whose readyAt is newer than `now - minTimeoutMins` CANNOT be
+  // past its pickup window yet, so it's excluded from the result set.
+  // The per-outlet precision check still happens in JS for the candidates
+  // that survive the DB filter (since different outlets can have different
+  // timeouts, we can't push the full predicate to the DB without a JOIN
+  // with per-row time math, which is awkward in Prisma).
   const now = new Date();
+
+  // Aggregate the minimum per-outlet pickupTimeoutMins across all outlets.
+  // _min returns null if there are no outlets — fall back to env default.
+  const minAgg = await prisma.outlet.aggregate({
+    _min: { pickupTimeoutMins: true },
+  });
+  const globalMinTimeoutMins =
+    minAgg._min?.pickupTimeoutMins ?? parseInt(process.env.PICKUP_TIMEOUT_MINS || '30', 10);
+
+  const candidateCutoff = new Date(now.getTime() - globalMinTimeoutMins * 60 * 1000);
+
   const readyOrders = await prisma.order.findMany({
-    where: { status: ORDER_STATUS.READY },
+    where: {
+      status: ORDER_STATUS.READY,
+      readyAt: { lt: candidateCutoff },
+    },
     include: { outlet: { select: { id: true, name: true, pickupTimeoutMins: true } } },
   });
 
@@ -100,7 +147,7 @@ async function processPickupTimeouts() {
     if (!order.readyAt) continue;
     const timeoutMins = order.outlet?.pickupTimeoutMins ?? parseInt(process.env.PICKUP_TIMEOUT_MINS || '30', 10);
     const cutoff = new Date(order.readyAt.getTime() + timeoutMins * 60 * 1000);
-    if (now < cutoff) continue; // still within pickup window
+    if (now < cutoff) continue; // still within this outlet's pickup window
 
     const timeline = JSON.parse(order.timeline || '[]');
     timeline.push({ status: ORDER_STATUS.CANCELLED, at: now.toISOString(), by: 'cron:pickup-timeout' });
@@ -116,7 +163,7 @@ async function processPickupTimeouts() {
     });
     if (updated.count !== 1) continue;
 
-    // Create a notification for the student (order auto-completed)
+    // Create a notification for the student (order auto-cancelled)
     await prisma.notification.create({
       data: {
         userId: order.studentId,
@@ -151,7 +198,7 @@ async function processPickupTimeouts() {
   }
 
   if (completed > 0) {
-    console.log(`[cron:pickup-timeout] cancelled ${completed} READY orders past their pickup window`);
+    console.log(`[cron:pickup-timeout] cancelled ${completed} READY orders past their pickup window (scanned ${readyOrders.length} candidates)`);
   }
   return completed;
 }
@@ -164,23 +211,16 @@ function initCron() {
   }
 
   scheduled = [
-    cron.schedule(DAILY_AT_3AM, async () => {
-      try { await purgeAuditLogs(); } catch (e) { console.error('[cron:audit-purge] failed:', e.message); }
-    }, { name: 'audit-purge' }),
-
-    cron.schedule(DAILY_AT_3AM, async () => {
-      try { await purgeExpiredRefreshTokens(); } catch (e) { console.error('[cron:refresh-purge] failed:', e.message); }
-    }, { name: 'refresh-purge' }),
-
-    cron.schedule(PICKUP_TIMEOUT_CHECK_INTERVAL, async () => {
-      try { await processPickupTimeouts(); } catch (e) { console.error('[cron:pickup-timeout] failed:', e.message); }
-    }, { name: 'pickup-timeout' }),
+    cron.schedule(DAILY_AT_3AM, () => runCronJob('audit-purge', purgeAuditLogs), { name: 'audit-purge' }),
+    cron.schedule(DAILY_AT_3AM, () => runCronJob('refresh-purge', purgeExpiredRefreshTokens), { name: 'refresh-purge' }),
+    cron.schedule(PICKUP_TIMEOUT_CHECK_INTERVAL, () => runCronJob('pickup-timeout', processPickupTimeouts), { name: 'pickup-timeout' }),
   ];
 
   console.log(`[cron] scheduled: ${scheduled.map(s => s.name || '?').join(', ')}`);
   console.log(`[cron] audit purge: daily at 03:00 (${process.env.AUDIT_LOG_RETENTION_DAYS || 90}-day retention)`);
   console.log(`[cron] refresh purge: daily at 03:00 (delete tokens older than 30d)`);
   console.log(`[cron] pickup timeout: every 5 min (default window: ${process.env.PICKUP_TIMEOUT_MINS || 30} min)`);
+  console.log(`[cron] advisory-lock: ${require('./distributedLock').isPostgres() ? 'postgres pg_try_advisory_xact_lock' : 'disabled (sqlite dev)'}`);
 }
 
 function stopCron() {

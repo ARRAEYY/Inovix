@@ -9,6 +9,8 @@ const menuRepo = require('../menu/menu.repository');
 const ordersRepo = require('../orders/orders.repository');
 const { getOutletRazorpayClient, markPaymentRefundedIfFullyRefunded } = require('../payments/payments.service');
 const { audit } = require('../../lib/audit');
+const { toPaise, remainingRefundable } = require('../../lib/money');
+const { isPostgres } = require('../../lib/distributedLock');
 const {
   ROLES,
   OUTLET_STATUS,
@@ -315,7 +317,7 @@ async function issueManualRefund(orderId, { amount, reason }, actorId) {
     try {
       const client = await getOutletRazorpayClient(order.outletId);
       const gatewayRefund = await client.payments.refund(order.payment.razorpayPaymentId, {
-        amount: Math.round(Number(existingPending.amount) * 100),
+        amount: toPaise(existingPending.amount),
         notes: {
           orderId: order.id,
           trigger: existingPending.triggeredBy,
@@ -351,12 +353,54 @@ async function issueManualRefund(orderId, { amount, reason }, actorId) {
 
   // Fresh manual refund path. Amount has been validated above against
   // the remaining refundable cap.
+  //
+  // INO-AUDIT6-#5 fix: concurrent refund race. The previous implementation
+  // did the remaining-check + Refund.create as separate writes — two
+  // concurrent requests could both see remaining=₹1000 and both create
+  // ₹700 refunds → ₹1400 refunded on a ₹1000 payment. Fix: wrap the
+  // remaining-check + Refund.create in a prisma.$transaction with a
+  // SELECT FOR UPDATE on the Payment row (Postgres; SQLite serializes
+  // writes automatically). The gateway call stays post-commit (same
+  // outbox pattern as the transition service). If the gateway call
+  // fails, the Refund row stays PENDING + gatewayRef=NULL → the outbox
+  // worker picks it up.
+  const refund = await prisma.$transaction(async (tx) => {
+    // Lock the payment row (Postgres only; SQLite serializes automatically)
+    if (isPostgres()) {
+      await tx.$queryRaw`SELECT * FROM "Payment" WHERE id = ${order.payment.id} FOR UPDATE`;
+    }
+    // Re-read the refunds INSIDE the tx (so we see the locked state)
+    const txRefunds = await tx.refund.findMany({ where: { paymentId: order.payment.id } });
+    const txRemaining = remainingRefundable(order.payment.amount, txRefunds);
+    if (requestedAmount > txRemaining) {
+      throw {
+        statusCode: 400,
+        code: 'REFUND_AMOUNT_EXCEEDS_REMAINING',
+        message: `Refund amount ₹${requestedAmount.toFixed(2)} exceeds remaining refundable amount ₹${txRemaining.toFixed(2)} (concurrent refund may have been processed).`,
+      };
+    }
+    // Create the Refund row INSIDE the tx (outbox message)
+    return tx.refund.create({
+      data: {
+        paymentId: order.payment.id,
+        amount,
+        reason,
+        gatewayRef: null, // filled post-commit if gateway call succeeds
+        status: REFUND_STATUS.PENDING,
+        triggeredBy: REFUND_TRIGGER.SUPER_ADMIN_MANUAL,
+        initiatedBy: actorId,
+      },
+    });
+  });
+
+  // Post-commit: best-effort gateway call. If it fails, the Refund stays
+  // PENDING + gatewayRef=NULL → the outbox worker picks it up.
   let gatewayRef = null;
   let refundStatus = REFUND_STATUS.PENDING;
   try {
     const client = await getOutletRazorpayClient(order.outletId);
     const gatewayRefund = await client.payments.refund(order.payment.razorpayPaymentId, {
-      amount: Math.round(requestedAmount * 100),
+      amount: toPaise(refund.amount),
       notes: {
         orderId: order.id,
         trigger: REFUND_TRIGGER.SUPER_ADMIN_MANUAL,
@@ -366,24 +410,19 @@ async function issueManualRefund(orderId, { amount, reason }, actorId) {
     gatewayRef = gatewayRefund.id;
     refundStatus = (gatewayRefund.status || 'PENDING').toUpperCase();
   } catch (err) {
-    console.error('[admin:refund] gateway call failed:', err.message);
-    // Mark refund as PENDING so it can be retried via this same endpoint.
+    console.error('[admin:refund] post-commit gateway call failed:', err.message);
+    // The outbox worker will retry automatically on its next tick.
   }
 
-  const refund = await prisma.refund.create({
-    data: {
-      paymentId: order.payment.id,
-      amount,
-      reason,
-      gatewayRef,
-      status: refundStatus,
-      triggeredBy: REFUND_TRIGGER.SUPER_ADMIN_MANUAL,
-      initiatedBy: actorId,
-    },
-  });
+  // Update the Refund row with the gateway result (if the call succeeded)
+  if (gatewayRef) {
+    await prisma.refund.update({
+      where: { id: refund.id },
+      data: { gatewayRef, status: refundStatus },
+    });
+  }
 
   if (refundStatus === REFUND_STATUS.COMPLETED || refundStatus === 'PROCESSED') {
-    // INO-AUDIT4-D2 fix: only mark Payment=REFUNDED if fully refunded.
     await markPaymentRefundedIfFullyRefunded(order.payment.id);
   }
 

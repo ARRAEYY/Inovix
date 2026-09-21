@@ -154,7 +154,20 @@ const createOrderSchema = z.object({
   items: z.array(orderItemInputSchema).min(1, { message: 'items array cannot be empty' }),
   paymentMethod: paymentMethodEnum,
   notes: z.string().max(500).optional(),
-  scheduledFor: z.string().datetime().optional(),
+  // INO-AUDIT6-#3: validate scheduledFor — must be a valid ISO datetime
+  // in the future + within 7 days from now. Prevents clients from
+  // submitting arbitrary past timestamps or dates years in the future.
+  // (Within-outlet-operating-hours validation is deferred — it requires
+  // querying the outlet's OperatingHours rows, which is a service-level
+  // check, not a schema-level check.)
+  scheduledFor: z.string().datetime().optional().refine((val) => {
+    if (!val) return true; // optional — no schedule = immediate pickup
+    const dt = new Date(val);
+    if (isNaN(dt.getTime())) return false;
+    const now = Date.now();
+    const maxFuture = now + 7 * 24 * 60 * 60 * 1000; // 7 days
+    return dt.getTime() > now && dt.getTime() < maxFuture;
+  }, { message: 'scheduledFor must be a future datetime within 7 days from now' }),
 }).strict();
 
 const updateOrderStatusSchema = z.object({
@@ -242,8 +255,12 @@ const outletProfileUpdateSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
   description: z.string().trim().max(1000).optional(),
   logoUrl: z.string().url().optional().or(z.literal('').transform(() => undefined)),
-  defaultPrepMins: nonNegativeIntField.optional(),
-  pickupTimeoutMins: nonNegativeIntField.optional(),
+  // INO-AUDIT6-#6: these must be strictly positive (> 0), not just
+  // non-negative. A pickupTimeoutMins of 0 would immediately cancel
+  // every READY order (pathological behavior from an invalid admin
+  // configuration). A defaultPrepMins of 0 is meaningless.
+  defaultPrepMins: positiveIntField.optional(),
+  pickupTimeoutMins: positiveIntField.optional(),
 }).strict();
 
 const operatingHoursSchema = z.object({

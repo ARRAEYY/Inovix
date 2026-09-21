@@ -31,10 +31,20 @@ const passwordField = z
   .regex(/[a-z]/, { message: 'Password must contain at least one lowercase letter' })
   .regex(/[0-9]/, { message: 'Password must contain at least one digit' });
 
+// INO-AUDIT4-D17 + D18 fix: reject Infinity + enforce a sane upper bound.
+// The previous check `!Number.isNaN(n) && n > 0` let Infinity through
+// (Infinity > 0 is true). An attacker could submit absurdly large values
+// that travel through Zod → JS Number → paise → Prisma Decimal → Razorpay.
+// Even if Razorpay ultimately rejects, application-level validation should
+// reject first. The upper bound is 1 crore paise = ₹10,00,000 — well
+// above any realistic campus food order, well below Infinity.
+const MAX_MONEY_RUPEES = 10_00_000; // ₹10 lakh = 1 million rupees
 const priceField = z
   .union([z.number(), z.string()])
   .transform((v) => (typeof v === 'string' ? Number(v) : v))
-  .refine((n) => !Number.isNaN(n) && n > 0, { message: 'Price must be a number greater than 0' });
+  .refine((n) => Number.isFinite(n) && n > 0 && n <= MAX_MONEY_RUPEES, {
+    message: `Price must be a finite number greater than 0 and at most ₹${MAX_MONEY_RUPEES}`,
+  });
 
 const positiveIntField = z
   .union([z.number(), z.string()])

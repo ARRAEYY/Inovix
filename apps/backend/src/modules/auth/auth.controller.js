@@ -11,6 +11,12 @@
  * the user's refresh tokens.
  */
 
+const crypto = require('crypto');
+const prisma = require('../../lib/prisma');
+const { hashToken } = require('../../lib/tokens');
+const { hashPassword } = require('../../utils/password');
+const { sendPasswordResetOTP } = require('../../lib/email');
+const { audit } = require('../../lib/audit');
 const { verifyGoogleCredential } = require('./google.service');
 const {
   findOrCreateGoogleUser,
@@ -24,7 +30,6 @@ const {
   revokeRefreshToken,
   revokeAllForUser,
 } = require('../../lib/tokens');
-const { audit } = require('../../lib/audit');
 const { USER_STATUS } = require('../../lib/constants');
 
 const REFRESH_COOKIE = 'nosh_refresh';
@@ -217,4 +222,180 @@ module.exports = {
   getCurrentUser,
   refresh,
   logout,
+  forgotPassword,
+  resetPassword,
 };
+
+/**
+ * Forgot Password — generates a 6-digit OTP, stores the hash in the
+ * PasswordReset table (expires in 10 min), and sends the OTP via email.
+ *
+ * In dev mode (no SMTP configured), the OTP is logged to the console
+ * so you can test without real email credentials.
+ *
+ * Rate limited: one OTP per email per 60 seconds (prevents spam).
+ */
+async function forgotPassword(req, res, next) {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ success: false, message: 'Email is required' });
+    }
+
+    // Find the user by email
+    const user = await prisma.user.findUnique({
+      where: { email: email.toLowerCase().trim() },
+    });
+
+    // Don't reveal whether the email exists (security — prevent user enumeration)
+    // Always return success, but only send OTP if the user exists
+    if (!user) {
+      return res.status(200).json({
+        success: true,
+        message: 'If an account exists for that email, a reset code has been sent.',
+      });
+    }
+
+    // Rate limit: check if an OTP was sent in the last 60 seconds
+    const recentOtp = await prisma.passwordReset.findFirst({
+      where: {
+        userId: user.id,
+        createdAt: { gt: new Date(Date.now() - 60 * 1000) }, // last 60 seconds
+      },
+    });
+    if (recentOtp) {
+      return res.status(429).json({
+        success: false,
+        message: 'A reset code was recently sent. Please wait 60 seconds before requesting another.',
+      });
+    }
+
+    // Generate 6-digit OTP
+    const otp = String(crypto.randomInt(100000, 999999));
+    const otpHash = hashToken(otp); // SHA-256 hash
+
+    // Store in DB (expires in 10 min)
+    await prisma.passwordReset.create({
+      data: {
+        userId: user.id,
+        otpHash,
+        expiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10 min
+      },
+    });
+
+    // Send OTP via email (or log to console in dev mode)
+    const name = user.name || '';
+    await sendPasswordResetOTP(user.email, otp, name);
+
+    // Audit
+    await audit({
+      actorId: null,
+      action: 'PASSWORD_RESET_OTP_SENT',
+      targetType: 'User',
+      targetId: user.id,
+      after: { email: user.email },
+      req,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'If an account exists for that email, a reset code has been sent.',
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * Reset Password — validates the OTP, sets the new password.
+ *
+ * The OTP must be valid (matches the hash), not expired, and not already used.
+ * On success, the PasswordReset row is marked as used, the user's passwordHash
+ * is updated, and all refresh tokens are revoked (force re-login on all devices).
+ */
+async function resetPassword(req, res, next) {
+  try {
+    const { email, otp, newPassword } = req.body;
+    if (!email || !otp || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email, OTP code, and new password are all required',
+      });
+    }
+
+    // Validate password strength (same rules as onboarding)
+    if (newPassword.length < 8) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password must be at least 8 characters',
+      });
+    }
+
+    // Find the user
+    const user = await prisma.user.findUnique({
+      where: { email: email.toLowerCase().trim() },
+    });
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    // Find the most recent valid OTP for this user
+    const resetRecord = await prisma.passwordReset.findFirst({
+      where: {
+        userId: user.id,
+        usedAt: null,
+        expiresAt: { gt: new Date() },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (!resetRecord) {
+      return res.status(400).json({
+        success: false,
+        message: 'No valid reset code found. Please request a new code.',
+      });
+    }
+
+    // Validate OTP hash
+    const otpHash = hashToken(otp);
+    if (otpHash !== resetRecord.otpHash) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid reset code. Please check and try again.',
+      });
+    }
+
+    // Mark OTP as used
+    await prisma.passwordReset.update({
+      where: { id: resetRecord.id },
+      data: { usedAt: new Date() },
+    });
+
+    // Update password
+    const newHash = await hashPassword(newPassword);
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { passwordHash: newHash },
+    });
+
+    // Revoke all refresh tokens (force re-login on all devices)
+    const { revokeAllForUser } = require('../../lib/tokens');
+    await revokeAllForUser(user.id);
+
+    // Audit
+    await audit({
+      actorId: user.id,
+      action: 'PASSWORD_RESET_COMPLETED',
+      targetType: 'User',
+      targetId: user.id,
+      req: null,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Password reset successfully. Please log in with your new password.',
+    });
+  } catch (error) {
+    next(error);
+  }
+}

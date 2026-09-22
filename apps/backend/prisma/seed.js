@@ -191,7 +191,7 @@ async function main() {
         create: {
           userId: user.id, fullName: u.profile.fullName, phone: u.profile.phone,
           course: u.profile.course, year: u.profile.year, collegeId: u.profile.collegeId,
-          verifiedAt: new Date(),
+          submittedAt: new Date(),
         },
       });
     }

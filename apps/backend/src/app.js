@@ -20,6 +20,11 @@ const { authRateLimit, apiRateLimit } = require('./middleware/rateLimit.middlewa
 
 const app = express();
 
+// Trust the first proxy hop (Caddy in dev, the load balancer in prod) so
+// req.ip reflects the real client IP and express-rate-limit doesn't crash
+// with ERR_ERL_UNEXPECTED_X_FORWARDED_FOR on proxied requests.
+app.set('trust proxy', 1);
+
 // ── Security ──────────────────────────────────────────────────────────────────
 app.use(helmet());
 

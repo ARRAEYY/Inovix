@@ -234,4 +234,81 @@ module.exports = {
   getOutletKPIs,
   getOutletOrder,
   updateOrderStatus,
+  verifyPickupCode,
 };
+
+/**
+ * Verify Pickup Code — outlet staff enters the 4-digit code the student
+ * gives them at the counter. If it matches order.pickupCode, the order
+ * is transitioned READY → COMPLETED.
+ *
+ * Only works on READY orders (the student should have the food in hand).
+ * Returns 400 if the code doesn't match or the order isn't READY.
+ */
+async function verifyPickupCode(req, res, next) {
+  try {
+    const outletId = req.user.outletId;
+    if (!outletId) throw { statusCode: 403, message: 'User is not assigned to an outlet' };
+
+    const { orderId } = req.params;
+    const { pickupCode } = req.body;
+
+    if (!pickupCode || !/^\d{4}$/.test(pickupCode)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Pickup code must be a 4-digit number',
+        code: 'INVALID_PICKUP_CODE',
+      });
+    }
+
+    // Verify outlet scope
+    const existing = await ordersService.getOutletOrder(outletId, orderId);
+
+    if (existing.status !== ORDER_STATUS.READY) {
+      return res.status(400).json({
+        success: false,
+        message: `Order must be READY to verify pickup. Current status: ${existing.status}`,
+        code: 'INVALID_TRANSITION',
+      });
+    }
+
+    // Check the pickup code
+    if (existing.pickupCode !== pickupCode) {
+      await audit({
+        actorId: req.user.id,
+        action: 'PICKUP_CODE_MISMATCH',
+        targetType: 'Order',
+        targetId: orderId,
+        after: { providedCode: pickupCode },
+        req,
+      });
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid pickup code. Please ask the student for the correct code.',
+        code: 'PICKUP_CODE_MISMATCH',
+      });
+    }
+
+    // Code matches — transition READY → COMPLETED
+    const result = await performTransition({
+      orderId,
+      expectedFromStatus: ORDER_STATUS.READY,
+      toStatus: ORDER_STATUS.COMPLETED,
+      actorId: req.user.id,
+      req,
+    });
+
+    await audit({
+      actorId: req.user.id,
+      action: 'PICKUP_VERIFIED',
+      targetType: 'Order',
+      targetId: orderId,
+      after: { status: ORDER_STATUS.COMPLETED, pickupCode },
+      req,
+    });
+
+    res.status(200).json({ success: true, data: result.updated });
+  } catch (error) {
+    next(error);
+  }
+}

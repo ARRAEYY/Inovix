@@ -5,8 +5,24 @@
  * server running.
  */
 
+// ─── Sentry (error monitoring) — MUST be first ──────────────────────────────
+// In dev (no SENTRY_DSN), Sentry is a no-op — it just doesn't send events.
+const Sentry = require('@sentry/node');
+
 require('dotenv').config({ path: require('path').resolve(__dirname, '../../../.env') });
-require('dotenv').config({ path: require('path').resolve(__dirname, '.env') }); // backend-local overrides
+require('dotenv').config({ path: require('path').resolve(__dirname, '.env') });
+
+if (process.env.SENTRY_DSN) {
+  Sentry.init({
+    dsn: process.env.SENTRY_DSN,
+    environment: process.env.NODE_ENV || 'development',
+    tracesSampleRate: process.env.NODE_ENV === 'production' ? 0.1 : 1.0,
+  });
+  console.log(`[sentry] initialized (env: ${process.env.NODE_ENV || 'development'})`);
+} else {
+  console.log('[sentry] not configured (no SENTRY_DSN) — error monitoring disabled');
+}
+
 const http = require('http');
 const app = require('./app');
 const { initSocketServer } = require('./lib/socket');

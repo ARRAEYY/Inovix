@@ -44,6 +44,7 @@ model User {
   orders              Order[]
   auditLogs           AuditLog[]
   notifications       Notification[]
+  passwordResets      PasswordReset[]
 
   @@index([email])
 }
@@ -425,4 +426,21 @@ model AuditLog {
   @@index([targetType, targetId])
   @@index([actorUserId])
   @@index([createdAt])
+}
+
+// ─── 20. PasswordReset ─────────────────────────────────────────────────────
+// Stores 6-digit OTP codes for password reset. Hashed at rest.
+// Expires after 10 minutes. Single-use (usedAt set on successful reset).
+model PasswordReset {
+  id        String   @id @default(cuid())
+  userId    String
+  otpHash   String   // SHA-256 hash of the 6-digit OTP
+  expiresAt DateTime // now + 10 minutes
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
 }

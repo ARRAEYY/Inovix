@@ -31,8 +31,8 @@ function generateOrderNumber() {
 }
 
 function generatePickupCode() {
-  // 6 alphanumeric chars, easy to read out at the counter
-  return crypto.randomBytes(3).toString('hex').toUpperCase();
+  // 4-digit numeric code — student tells the outlet, outlet enters it to verify pickup
+  return String(crypto.randomInt(1000, 10000));
 }
 
 async function createOrder(studentId, payload) {

@@ -28,6 +28,7 @@ const { audit } = require('./audit');
 const { ORDER_STATUS } = require('./constants');
 const { runWithAdvisoryLock } = require('./distributedLock');
 const { reconcilePendingRefunds, reconcileStalePendingPayments, processPendingRefundOutbox, cleanupStaleSentinels } = require('./reconciliation');
+const { backupDatabase } = require('./backup');
 
 const REFRESH_TOKEN_PURGE_AGE_DAYS = 30;
 const PICKUP_TIMEOUT_CHECK_INTERVAL = '*/5 * * * *'; // every 5 minutes
@@ -268,6 +269,8 @@ function initCron() {
     // INO-AUDIT8-#3: stale sentinel cleanup — resets stuck "in-progress-*"
     // sentinels (order creation + refund processing) so they can be retried.
     cron.schedule(RECONCILIATION_CRON, () => runCronJob('sentinel-cleanup', cleanupStaleSentinels), { name: 'sentinel-cleanup' }),
+    // DB backup — daily at 03:30 (after the purge jobs at 03:00)
+    cron.schedule('30 3 * * *', () => runCronJob('db-backup', backupDatabase), { name: 'db-backup' }),
   ];
 
   console.log(`[cron] scheduled: ${scheduled.map(s => s.name || '?').join(', ')}`);
@@ -279,6 +282,7 @@ function initCron() {
   console.log(`[cron] sentinel cleanup: every ${RECONCILIATION_INTERVAL_MINS} min (stale after: ${process.env.SENTINEL_STALE_MINS || 5} min)`);
   console.log(`[cron] reconcile refunds: every ${RECONCILIATION_INTERVAL_MINS} min (min age: ${process.env.RECONCILIATION_MIN_AGE_MINS || 5} min)`);
   console.log(`[cron] reconcile payments: every ${RECONCILIATION_INTERVAL_MINS} min (stale after: ${process.env.PAYMENT_RECONCILIATION_MIN_AGE_MINS || 30} min)`);
+  console.log(`[cron] db backup: daily at 03:30 (${process.env.BACKUP_RETENTION_DAYS || 30}-day retention)`);
   console.log(`[cron] advisory-lock: ${require('./distributedLock').isPostgres() ? 'postgres pg_try_advisory_xact_lock' : 'disabled (sqlite dev)'}`);
 }
 
@@ -300,5 +304,7 @@ module.exports = {
   reconcilePendingRefunds,
   reconcileStalePendingPayments,
   processPendingRefundOutbox,
+  // DB backup
+  backupDatabase,
   isCronEnabled,
 };

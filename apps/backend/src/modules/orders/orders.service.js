@@ -196,17 +196,41 @@ async function getOutletOrder(outletId, orderId) {
 //
 // The orders.repository.js updateStatus() function is still used by the
 // transition service (which calls prisma.order.updateMany directly inside
-// the tx for the atomic claim — see transition.service.js for details).
-// The repository function is kept for backward compat in case any future
-// caller wants a non-transactional update.
+async function cancelOrder(studentId, orderId) {
+  const order = await ordersRepo.findById(orderId);
+  if (!order) throw { statusCode: 404, message: 'Order not found' };
+  if (order.studentId !== studentId) throw { statusCode: 403, message: 'You are not authorized to cancel this order' };
+  if (order.status !== ORDER_STATUS.PENDING) {
+    throw { statusCode: 400, code: ERROR_CODES.INVALID_TRANSITION, message: 'Orders can only be cancelled before the outlet accepts them' };
+  }
+
+  const before = { status: order.status };
+  const updated = await ordersRepo.updateStatus(
+    orderId,
+    order.status,
+    ORDER_STATUS.CANCELLED,
+    studentId,
+    { reason: 'Cancelled by customer' }
+  );
+  if (!updated) {
+    const error = new Error('Order was modified by another request; please retry');
+    error.statusCode = 409;
+    error.code = ERROR_CODES.CONFLICT;
+    throw error;
+  }
+
+  return { updated, before };
+}
 
 module.exports = {
   createOrder,
   getUserOrders,
   getOrderById,
+  cancelOrder,
   getOutletOrders,
   getOutletKPIs,
   getOutletOrder,
   generateOrderNumber,
   generatePickupCode,
 };
+

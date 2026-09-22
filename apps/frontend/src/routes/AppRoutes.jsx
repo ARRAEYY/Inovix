@@ -4,12 +4,15 @@ import { useAuth } from '../hooks/useAuth';
 
 // Auth Pages
 import StudentLogin from '../pages/auth/StudentLogin';
+import StudentSignUp from '../pages/auth/StudentSignUp';
+import ForgotPassword from '../pages/auth/ForgotPassword';
 import OutletLogin from '../pages/auth/OutletLogin';
 import AdminLogin from '../pages/auth/AdminLogin';
 
 // Dashboards (Dummy)
 import StudentHome from '../pages/student/Home';
 import StudentOrders from '../pages/student/Orders';
+import StudentProfile from '../pages/student/Profile';
 import OutletMenu from '../pages/student/OutletMenu';
 import OutletDashboard from '../pages/outlet/Dashboard';
 import AdminDashboard from '../pages/admin/Dashboard';
@@ -24,7 +27,6 @@ const PrivateRoute = ({ children, allowedRolePrefix }) => {
   
   // Basic role check: if a specific role prefix is required
   if (allowedRolePrefix && user?.role && !user.role.startsWith(allowedRolePrefix)) {
-    // If not authorized for this route, go to root (or an unauthorized page)
     return <Navigate to="/" replace />;
   }
   
@@ -37,6 +39,10 @@ const AppRoutes = () => {
       {/* Public Routes - Auth */}
       <Route path="/" element={<StudentLogin />} />
       <Route path="/login" element={<Navigate to="/" replace />} />
+      <Route path="/signup" element={<StudentSignUp />} />
+      <Route path="/student/signup" element={<StudentSignUp />} />
+      <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/student/forgot-password" element={<ForgotPassword />} />
       <Route path="/outlet/login" element={<OutletLogin />} />
       <Route path="/admin/login" element={<AdminLogin />} />
 
@@ -48,6 +54,7 @@ const AppRoutes = () => {
             <Routes>
               <Route path="/" element={<StudentHome />} />
               <Route path="/orders" element={<StudentOrders />} />
+              <Route path="/profile" element={<StudentProfile />} />
               <Route path="/outlet/:id" element={<OutletMenu />} />
             </Routes>
           </PrivateRoute>

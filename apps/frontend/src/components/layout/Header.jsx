@@ -1,7 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
-import { ShoppingCart, Bell, ChevronDown, LogOut, User } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 
 const Header = ({ cartCount, onCartClick }) => {
@@ -12,7 +10,7 @@ const Header = ({ cartCount, onCartClick }) => {
 
   const getInitials = (name) => {
     if (!name) return 'U';
-    return name.split(' ').map((n) => n[0]).join('').substring(0, 2).toUpperCase();
+    return name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
   };
 
   useEffect(() => {
@@ -26,103 +24,110 @@ const Header = ({ cartCount, onCartClick }) => {
   }, []);
 
   return (
-    <header className="bg-card/80 backdrop-blur-lg border-b border-border sticky top-0 z-40">
-      <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-        {/* Brand */}
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center shadow-md shadow-primary/30">
-            <span className="text-primary-foreground font-extrabold text-sm">n</span>
-          </div>
-          <span className="font-extrabold text-xl tracking-tight text-foreground">nosh</span>
+    <header className="main-header">
+      <div className="header-container">
+        <div className="brand">
+          <span className="brand-name">nosh</span>
         </div>
-
-        <div className="flex items-center gap-1.5">
-          {/* Cart */}
+        
+        <div className="header-right">
           {cartCount !== undefined && (
-            <motion.button
-              whileTap={{ scale: 0.95 }}
-              className="relative p-2.5 rounded-lg hover:bg-muted text-foreground transition-colors"
-              title="Cart"
-              onClick={onCartClick}
-              aria-label="Cart"
-            >
-              <ShoppingCart className="w-5 h-5" />
-              <AnimatePresence>
-                {cartCount > 0 && (
-                  <motion.span
-                    initial={{ scale: 0 }}
-                    animate={{ scale: 1 }}
-                    exit={{ scale: 0 }}
-                    transition={{ type: 'spring', stiffness: 500, damping: 25 }}
-                    className="absolute -top-1 -right-1 bg-primary text-primary-foreground text-[0.65rem] font-bold min-w-[18px] h-[18px] px-1 rounded-full flex items-center justify-center"
-                  >
-                    {cartCount}
-                  </motion.span>
-                )}
-              </AnimatePresence>
-            </motion.button>
+            <button className="icon-btn" style={{ position: 'relative' }} title="Cart" onClick={onCartClick}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="9" cy="21" r="1"></circle>
+                <circle cx="20" cy="21" r="1"></circle>
+                <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path>
+              </svg>
+              {cartCount > 0 && (
+                <span className="cart-badge" style={{
+                  position: 'absolute',
+                  top: '-5px',
+                  right: '-5px',
+                  backgroundColor: 'var(--primary)',
+                  color: 'white',
+                  fontSize: '0.65rem',
+                  fontWeight: 'bold',
+                  width: '18px',
+                  height: '18px',
+                  borderRadius: '50%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}>
+                  {cartCount}
+                </span>
+              )}
+            </button>
           )}
 
-          {/* Notifications */}
-          <motion.button
-            whileTap={{ scale: 0.95 }}
-            className="relative p-2.5 rounded-lg hover:bg-muted text-foreground transition-colors"
-            title="Notifications"
-            aria-label="Notifications"
-          >
-            <Bell className="w-5 h-5" />
-          </motion.button>
+          <button className="icon-btn" title="Notifications">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+              <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+            </svg>
+          </button>
 
-          {/* Profile */}
-          <div className="relative" ref={dropdownRef}>
-            <button
-              className={`flex items-center gap-1 p-1 pr-2 rounded-lg hover:bg-muted transition-colors ${dropdownOpen ? 'bg-muted' : ''}`}
+          <div className="profile-wrapper" ref={dropdownRef}>
+            <button 
+              className={`profile-btn ${dropdownOpen ? 'open' : ''}`} 
               onClick={() => setDropdownOpen(!dropdownOpen)}
-              aria-label="Profile menu"
             >
-              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-secondary text-primary-foreground flex items-center justify-center font-bold text-sm shadow-sm">
+              <div className="profile-avatar">
                 {getInitials(user?.name)}
               </div>
-              <ChevronDown
-                className={`w-4 h-4 text-muted-foreground transition-transform ${dropdownOpen ? 'rotate-180' : ''}`}
-              />
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginLeft: '4px', color: 'var(--text-light)' }}>
+                <polyline points="6 9 12 15 18 9"></polyline>
+              </svg>
             </button>
 
-            <AnimatePresence>
-              {dropdownOpen && (
-                <motion.div
-                  initial={{ opacity: 0, y: -8, scale: 0.96 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: -8, scale: 0.96 }}
-                  transition={{ duration: 0.15, ease: 'easeOut' }}
-                  className="absolute right-0 mt-2 w-64 bg-card border border-border rounded-xl shadow-xl overflow-hidden z-50 origin-top-right"
+            {dropdownOpen && (
+              <div className="profile-dropdown">
+                <div className="dropdown-header">
+                  <p className="dropdown-name">{user?.name || 'Student'}</p>
+                  <p className="dropdown-email">{user?.email || 'student@campus.edu'}</p>
+                </div>
+                
+                <div className="dropdown-divider"></div>
+
+                <button 
+                  className="dropdown-item" 
+                  onClick={() => {
+                    setDropdownOpen(false);
+                    navigate('/student/profile');
+                  }}
                 >
-                  <div className="px-4 py-3 border-b border-border bg-muted/30">
-                    <p className="font-semibold text-foreground text-sm truncate">{user?.name || 'Student'}</p>
-                    <p className="text-muted-foreground text-xs truncate">{user?.email || ''}</p>
-                  </div>
-                  <div className="py-1">
-                    <button
-                      className="w-full text-left px-4 py-2 text-sm text-foreground hover:bg-muted transition-colors flex items-center gap-2.5"
-                      onClick={() => {
-                        setDropdownOpen(false);
-                        navigate('/student/orders');
-                      }}
-                    >
-                      <User className="w-4 h-4 text-muted-foreground" />
-                      Your orders
-                    </button>
-                    <button
-                      className="w-full text-left px-4 py-2 text-sm text-destructive hover:bg-destructive/5 transition-colors flex items-center gap-2.5"
-                      onClick={logout}
-                    >
-                      <LogOut className="w-4 h-4" />
-                      Log out
-                    </button>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                    <circle cx="12" cy="7" r="4"></circle>
+                  </svg>
+                  Your profile
+                </button>
+                
+                <button 
+                  className="dropdown-item" 
+                  onClick={() => {
+                    setDropdownOpen(false);
+                    navigate('/student/orders');
+                  }}
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z" />
+                    <line x1="3" y1="6" x2="21" y2="6" />
+                    <path d="M16 10a4 4 0 0 1-8 0" />
+                  </svg>
+                  Your orders
+                </button>
+                
+                <button className="dropdown-item" onClick={logout}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                    <polyline points="16 17 21 12 16 7"></polyline>
+                    <line x1="21" y1="12" x2="9" y2="12"></line>
+                  </svg>
+                  Log out
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>

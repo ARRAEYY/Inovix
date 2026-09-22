@@ -6,3 +6,6 @@ build/
 .next/
 coverage/
 .DS_Store
+*.db
+*.db-journal
+*.zip

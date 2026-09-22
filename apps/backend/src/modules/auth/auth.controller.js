@@ -1,5 +1,5 @@
 const { verifyGoogleCredential } = require('./google.service');
-const { findOrCreateGoogleUser, getCurrentUser: getCurrentUserService } = require('./auth.service');
+const { findOrCreateGoogleUser, getCurrentUser: getCurrentUserService, updateProfile: updateProfileService } = require('./auth.service');
 const jwt = require('jsonwebtoken');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback-secret-for-development';
@@ -95,8 +95,27 @@ async function devLogin(req, res, next) {
     }
 }
 
+async function updateProfile(req, res, next) {
+    try {
+        const userId = req.user.id;
+        const { name, avatar } = req.body;
+        
+        const user = await updateProfileService(userId, { name, avatar });
+
+        return res.status(200).json({
+            success: true,
+            data: {
+                user
+            }
+        });
+    } catch (error) {
+        next(error);
+    }
+}
+
 module.exports = {
     googleLogin,
     getCurrentUser,
-    devLogin
+    devLogin,
+    updateProfile
 };

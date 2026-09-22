@@ -3,109 +3,105 @@ import { useParams, useNavigate } from 'react-router-dom';
 import Header from '../../components/layout/Header';
 import FoodCard from '../../components/food/FoodCard';
 import CartDrawer from '../../components/food/CartDrawer';
+import MobileBottomNav from '../../components/layout/MobileBottomNav';
+import BackButton from '../../components/common/BackButton';
 
-// Mock data
+import { catalogService } from '../../services/api/catalogService';
+
+// Mock data for outlet details until we fetch them dynamically
 const MOCK_OUTLET_DETAILS = {
   '1': { id: '1', name: 'The Courtyard Café', desc: 'Fresh meals, snacks and beverages', status: 'Open', prepTime: '10-15 min', rating: '4.8' },
   '2': { id: '2', name: 'Campus Thali Co.', desc: 'Home-style thalis cooked in small batches', status: 'Open', prepTime: '15-20 min', rating: '4.7' },
   '3': { id: '3', name: 'Dosa District', desc: 'Crisp dosas, idli plates and filter coffee', status: 'Open', prepTime: '12-18 min', rating: '4.9' }
 };
 
-const MOCK_MENU = [
-  {
-    category: 'Popular',
-    image: 'https://via.placeholder.com/60?text=Pop',
-    items: [
-      { id: 'f1', name: 'Masala Dosa', description: 'Crispy rice crepe filled with spiced potatoes.', price: 90, available: true, image: '/images/dosa.jpg' },
-      { id: 'f2', name: 'Veg Cheese Burger', description: 'Classic vegetable patty with melting cheese.', price: 80, available: true, image: null },
-      { id: 'f3', name: 'Cold Coffee', description: 'Classic thick cold coffee.', price: 80, available: true, image: null },
-    ]
-  },
-  {
-    category: 'Burgers',
-    image: 'https://via.placeholder.com/60?text=Brg',
-    items: [
-      { id: 'f4', name: 'Aloo Tikki Burger', description: 'Crispy potato patty with herb mayo.', price: 60, available: true, image: null },
-      { id: 'f5', name: 'Double Cheese Burger', description: 'Extra cheese and double patty.', price: 110, available: true, image: null },
-    ]
-  },
-  {
-    category: 'Fries',
-    image: 'https://via.placeholder.com/60?text=Fry',
-    items: [
-      { id: 'f6', name: 'Classic Salted Fries', description: 'Crispy golden french fries.', price: 70, available: true, image: null },
-      { id: 'f7', name: 'Peri Peri Fries', description: 'Spicy peri peri tossed fries.', price: 90, available: true, image: null },
-    ]
-  },
-  {
-    category: 'Sandwiches',
-    image: 'https://via.placeholder.com/60?text=Snd',
-    items: [
-      { id: 'f8', name: 'Veg Grilled Sandwich', description: 'Fresh veggies grilled to perfection.', price: 80, available: true, image: null },
-      { id: 'f9', name: 'Mumbai Masala Sandwich', description: 'Spicy potato filling with green chutney.', price: 90, available: true, image: null },
-    ]
-  },
-  {
-    category: 'Wraps',
-    image: 'https://via.placeholder.com/60?text=Wrp',
-    items: [
-      { id: 'f10', name: 'Paneer Tikka Wrap', description: 'Smoky paneer wrapped in a paratha.', price: 130, available: true, image: null },
-      { id: 'f11', name: 'Veg Falafel Wrap', description: 'Crispy falafel with garlic sauce.', price: 110, available: false, image: null },
-    ]
-  },
-  {
-    category: 'Maggi',
-    image: 'https://via.placeholder.com/60?text=Mag',
-    items: [
-      { id: 'f12', name: 'Classic Masala Maggi', description: 'Everyone\'s favorite instant noodles.', price: 50, available: true, image: null },
-      { id: 'f13', name: 'Cheese Burst Maggi', description: 'Maggi loaded with melted cheese.', price: 80, available: true, image: null },
-    ]
-  },
-  {
-    category: 'Shakes',
-    image: 'https://via.placeholder.com/60?text=Shk',
-    items: [
-      { id: 'f14', name: 'Oreo Shake', description: 'Thick shake blended with Oreo cookies.', price: 100, available: true, image: null },
-      { id: 'f15', name: 'KitKat Shake', description: 'Chocolaty shake with KitKat crunch.', price: 110, available: true, image: null },
-    ]
-  },
-  {
-    category: 'Tea & Coffee',
-    image: 'https://via.placeholder.com/60?text=Tea',
-    items: [
-      { id: 'f16', name: 'Masala Chai', description: 'Spiced Indian tea.', price: 20, available: true, image: null },
-      { id: 'f17', name: 'Hot Cappuccino', description: 'Freshly brewed espresso with steamed milk.', price: 70, available: true, image: null },
-    ]
-  },
-  {
-    category: 'Beverages',
-    image: 'https://via.placeholder.com/60?text=Bev',
-    items: [
-      { id: 'f18', name: 'Lemon Iced Tea', description: 'Refreshing sweet and tangy tea.', price: 60, available: true, image: null },
-      { id: 'f19', name: 'Fresh Lime Soda', description: 'Sweet and salted lime soda.', price: 50, available: true, image: null },
-    ]
-  }
-];
+// Helper to get category placeholder image
+const getCategoryImage = (categoryName) => {
+  const images = {
+    'Popular': 'https://via.placeholder.com/60?text=Pop',
+    'Burgers': 'https://via.placeholder.com/60?text=Brg',
+    'Fries': 'https://via.placeholder.com/60?text=Fry',
+    'Sandwiches': 'https://via.placeholder.com/60?text=Snd',
+    'Wraps': 'https://via.placeholder.com/60?text=Wrp',
+    'Maggi': 'https://via.placeholder.com/60?text=Mag',
+    'Shakes': 'https://via.placeholder.com/60?text=Shk',
+    'Beverages': 'https://via.placeholder.com/60?text=Bev',
+    'Meals': 'https://via.placeholder.com/60?text=Meal',
+    'Desserts': 'https://via.placeholder.com/60?text=Des'
+  };
+  return images[categoryName] || 'https://via.placeholder.com/60?text=Food';
+};
 
 const OutletMenu = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const outlet = MOCK_OUTLET_DETAILS[id] || MOCK_OUTLET_DETAILS['1'];
-  
+
+  const [menuSections, setMenuSections] = useState([]);
+  const [flatMenuItems, setFlatMenuItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+
   const [cart, setCart] = useState({});
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeCategory, setActiveCategory] = useState(MOCK_MENU[0].category);
-  
+  const [activeCategory, setActiveCategory] = useState('');
+
   // Refs for scroll spy
   const sectionRefs = useRef({});
+  const menuContentRef = useRef(null);
+
+  useEffect(() => {
+    const fetchMenu = async () => {
+      try {
+        setLoading(true);
+        // Using 'outlet-1' as hardcoded ID mapping if it's '1' for mock compatibility
+        const actualOutletId = id === '1' ? 'outlet-1' : (id === '2' ? 'outlet-2' : id);
+        
+        const res = await catalogService.getOutletMenu(actualOutletId);
+        const items = res.data || [];
+        setFlatMenuItems(items);
+
+        // Group by category
+        const grouped = items.reduce((acc, item) => {
+          if (!acc[item.category]) {
+            acc[item.category] = {
+              category: item.category,
+              image: getCategoryImage(item.category),
+              items: []
+            };
+          }
+          acc[item.category].items.push(item);
+          return acc;
+        }, {});
+
+        const sectionsArray = Object.values(grouped);
+        
+        // Sort sections logically, putting 'Popular' first
+        sectionsArray.sort((a, b) => {
+          if (a.category === 'Popular') return -1;
+          if (b.category === 'Popular') return 1;
+          return a.category.localeCompare(b.category);
+        });
+
+        setMenuSections(sectionsArray);
+        if (sectionsArray.length > 0) {
+          setActiveCategory(sectionsArray[0].category);
+        }
+      } catch (error) {
+        console.error('Failed to fetch menu:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchMenu();
+  }, [id]);
 
   // Setup scroll spy
   useEffect(() => {
     const handleScroll = () => {
-      const scrollPosition = window.scrollY + 200; // Offset for header
+      const scrollPosition = window.scrollY + 100; // Offset for header/padding
 
-      for (const section of MOCK_MENU) {
+      for (const section of menuSections) {
         const element = sectionRefs.current[section.category];
         if (element) {
           const { offsetTop, offsetHeight } = element;
@@ -119,21 +115,18 @@ const OutletMenu = () => {
 
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
+  }, [menuSections]);
 
   const scrollToCategory = (category) => {
     setActiveCategory(category);
     const element = sectionRefs.current[category];
     if (element) {
-      // Smooth scroll with offset for the sticky headers
-      const offset = 140; 
-      const bodyRect = document.body.getBoundingClientRect().top;
-      const elementRect = element.getBoundingClientRect().top;
-      const elementPosition = elementRect - bodyRect;
-      const offsetPosition = elementPosition - offset;
-
+      // Calculate position relative to window
+      const offset = 80;
+      const elementTop = element.getBoundingClientRect().top + window.scrollY;
+      
       window.scrollTo({
-        top: offsetPosition,
+        top: elementTop - offset,
         behavior: 'smooth'
       });
     }
@@ -154,45 +147,47 @@ const OutletMenu = () => {
   // Calculate cart summary
   const cartItemsCount = Object.values(cart).reduce((a, b) => a + b, 0);
   const cartTotal = Object.entries(cart).reduce((total, [itemId, qty]) => {
-    const item = MOCK_MENU.flatMap(cat => cat.items).find(i => i.id === itemId);
+    const item = flatMenuItems.find(i => i.id === itemId);
     return total + (item ? item.price * qty : 0);
   }, 0);
 
-  // Filter sections by search query
-  const filteredMenu = MOCK_MENU.map(section => ({
+  const isSearching = searchQuery.trim().length > 0;
+
+  // Flattened search results
+  const searchResults = isSearching
+    ? flatMenuItems.filter(item =>
+        item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (item.description && item.description.toLowerCase().includes(searchQuery.toLowerCase()))
+      )
+    : [];
+
+  // Filter sections by search query (for normal render)
+  const filteredMenu = menuSections.map(section => ({
     ...section,
-    items: section.items.filter(item => 
-      item.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+    items: section.items.filter(item =>
+      item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (item.description && item.description.toLowerCase().includes(searchQuery.toLowerCase()))
     )
   })).filter(section => section.items.length > 0);
 
-  // Flatten all menu items for the CartDrawer to look up prices/names
-  const flatMenuItems = MOCK_MENU.flatMap(cat => cat.items);
-
   return (
     <div className="page-wrapper bg-white">
       <Header cartCount={cartItemsCount} onCartClick={() => setIsCartOpen(true)} />
-      
+
       {/* Outlet Banner */}
       <div className="outlet-banner">
         <div className="banner-content">
           <div className="banner-left">
-            <button className="icon-btn back-btn" onClick={() => navigate('/student')} style={{ border: 'none', background: '#f3f4f6', marginBottom: '1rem' }}>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="19" y1="12" x2="5" y2="12"></line>
-                <polyline points="12 19 5 12 12 5"></polyline>
-              </svg>
-            </button>
-            <div className="banner-details">
-              <h1 className="banner-title">{outlet.name}</h1>
-              <p className="banner-desc">{outlet.desc}</p>
-              <div className="banner-meta">
+            <div className="banner-title-group" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+              <BackButton onClick={() => navigate('/student')} style={{ flexShrink: 0 }} />
+              <h1 className="banner-title" style={{ marginBottom: 0 }}>{outlet.name}</h1>
+            </div>
+            <p className="banner-desc" style={{ paddingLeft: 'calc(24px + 0.5rem)' }}>{outlet.desc}</p>
+            <div className="banner-meta" style={{ paddingLeft: 'calc(24px + 0.5rem)' }}>
                 <span className="status-badge active"><span className="status-dot"></span>{outlet.status}</span>
                 <span className="meta-info">★ {outlet.rating}</span>
                 <span className="meta-info">⏱ {outlet.prepTime}</span>
               </div>
-            </div>
           </div>
           <div className="banner-right">
             <div className="menu-search-wrapper">
@@ -200,9 +195,9 @@ const OutletMenu = () => {
                 <circle cx="11" cy="11" r="8"></circle>
                 <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
               </svg>
-              <input 
-                type="text" 
-                className="search-input" 
+              <input
+                type="text"
+                className="search-input"
                 placeholder="Search this menu..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
@@ -214,59 +209,83 @@ const OutletMenu = () => {
 
       {/* Main Menu Layout */}
       <div className="menu-layout-container">
-        
+
         {/* Sticky Sidebar */}
-        <aside className="category-sidebar">
-          <ul className="category-list">
-            {MOCK_MENU.map(section => (
-              <li key={section.category}>
-                <button 
-                  className={`category-nav-btn ${activeCategory === section.category ? 'active' : ''}`}
-                  onClick={() => scrollToCategory(section.category)}
-                >
-                  <div className="category-img-wrapper">
-                    <img src={section.image} alt={section.category} />
-                  </div>
-                  <span className="category-name">{section.category}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </aside>
+        {!isSearching && (
+          <aside className="category-sidebar">
+            <ul className="category-list">
+              {menuSections.map(section => (
+                <li key={section.category}>
+                  <button
+                    className={`category-nav-btn ${activeCategory === section.category ? 'active' : ''}`}
+                    onClick={() => scrollToCategory(section.category)}
+                  >
+                    <div className="category-img-wrapper">
+                      <img src={section.image} alt={section.category} />
+                    </div>
+                    <span className="category-name">{section.category}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </aside>
+        )}
 
         {/* Menu Content */}
-        <main className="menu-content">
+        <main className="menu-content" style={isSearching ? { width: '100%', flex: '1 1 100%' } : {}}>
           <div className="menu-sections">
-            {filteredMenu.length > 0 ? (
-              filteredMenu.map(section => (
-                <div 
-                  key={section.category} 
-                  className="menu-section"
-                  ref={el => sectionRefs.current[section.category] = el}
-                >
-                  <h2 className="section-title">{section.category}</h2>
+            {isSearching ? (
+              <div className="menu-section">
+                <h2 className="section-title">Search Results</h2>
+                {searchResults.length > 0 ? (
                   <div className="food-grid">
-                    {section.items.map(item => (
-                      <FoodCard 
-                        key={item.id} 
-                        food={item} 
+                    {searchResults.map(item => (
+                      <FoodCard
+                        key={item.id}
+                        food={item}
                         quantity={cart[item.id] || 0}
                         onUpdateQuantity={handleUpdateQuantity}
                       />
                     ))}
                   </div>
-                </div>
-              ))
-            ) : (
-              <div className="empty-search">
-                <p>No items found matching "{searchQuery}"</p>
+                ) : (
+                  <div className="empty-search">
+                    <p>No items found matching "{searchQuery}"</p>
+                  </div>
+                )}
               </div>
+            ) : (
+              filteredMenu.length > 0 ? (
+                filteredMenu.map(section => (
+                  <div
+                    key={section.category}
+                    className="menu-section"
+                    ref={el => sectionRefs.current[section.category] = el}
+                  >
+                    <h2 className="section-title">{section.category}</h2>
+                    <div className="food-grid">
+                      {section.items.map(item => (
+                        <FoodCard
+                          key={item.id}
+                          food={item}
+                          quantity={cart[item.id] || 0}
+                          onUpdateQuantity={handleUpdateQuantity}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="empty-search">
+                  <p>No items found</p>
+                </div>
+              )
             )}
           </div>
         </main>
       </div>
 
-      <CartDrawer 
+      <CartDrawer
         isOpen={isCartOpen}
         onClose={() => setIsCartOpen(false)}
         cart={cart}
@@ -274,6 +293,22 @@ const OutletMenu = () => {
         outletName={outlet.name}
         onUpdateQuantity={handleUpdateQuantity}
       />
+
+      {/* Sticky Mobile Cart Bar */}
+      {cartItemsCount > 0 && (
+        <div className="mobile-sticky-cart">
+          <div className="cart-summary-info">
+            <span className="cart-item-count">{cartItemsCount} item{cartItemsCount !== 1 ? 's' : ''}</span>
+            <span className="cart-divider">|</span>
+            <span className="cart-total">₹{cartTotal}</span>
+          </div>
+          <button className="view-cart-action" onClick={() => setIsCartOpen(true)}>
+            View Cart <span>›</span>
+          </button>
+        </div>
+      )}
+
+      <MobileBottomNav cartItemCount={cartItemsCount} onCartClick={() => setIsCartOpen(true)} />
     </div>
   );
 };

@@ -71,8 +71,25 @@ async function getCurrentUser(userId) {
     return safeUser;
 }
 
+async function updateProfile(userId, { name, avatar }) {
+    const userIndex = mockUsers.findIndex(u => u.id === userId);
+    
+    if (userIndex === -1) {
+        const error = new Error('User not found');
+        error.statusCode = 404;
+        throw error;
+    }
+
+    if (name) mockUsers[userIndex].name = name;
+    if (avatar !== undefined) mockUsers[userIndex].avatar = avatar;
+
+    const { passwordHash: _, ...safeUser } = mockUsers[userIndex];
+    return safeUser;
+}
+
 module.exports = {
     registerUser,
     findOrCreateGoogleUser,
-    getCurrentUser
+    getCurrentUser,
+    updateProfile
 };

@@ -17,5 +17,8 @@ module.exports = {
     updateOutletStatusSchema: dummySchema,
     updateMenuAvailabilitySchema: dummySchema,
     createOrderSchema: dummySchema,
-    devLoginSchema: dummySchema
+    devLoginSchema: dummySchema,
+    staffCreateSchema: dummySchema,
+    staffStatusSchema: dummySchema,
+    createOutletSchema: dummySchema
 };

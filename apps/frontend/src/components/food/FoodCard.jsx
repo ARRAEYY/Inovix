@@ -8,19 +8,27 @@ const FoodCard = ({ food, quantity, onUpdateQuantity }) => {
           <img src={food.image} alt={food.name} className="food-image" />
         ) : (
           <div className="food-image-placeholder">
-            <span>No Image</span>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.5">
+              <path d="M18 8h1a4 4 0 0 1 0 8h-1"></path>
+              <path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"></path>
+              <line x1="6" y1="1" x2="6" y2="4"></line>
+              <line x1="10" y1="1" x2="10" y2="4"></line>
+              <line x1="14" y1="1" x2="14" y2="4"></line>
+            </svg>
           </div>
         )}
       </div>
       
       <div className="food-content">
-        <h4 className="food-name">{food.name}</h4>
-        {food.description && <p className="food-desc">{food.description}</p>}
+        <div className="food-info-group">
+          <h4 className="food-name">{food.name}</h4>
+          {food.description && <p className="food-desc" title={food.description}>{food.description}</p>}
+        </div>
         
         <div className="food-footer">
           <span className="food-price">₹{food.price}</span>
           
-          {!food.available ? (
+          {!(food.isAvailable ?? food.available) ? (
             <span className="food-unavailable">Unavailable</span>
           ) : quantity > 0 ? (
             <div className="quantity-selector">
@@ -43,7 +51,7 @@ const FoodCard = ({ food, quantity, onUpdateQuantity }) => {
               className="add-btn" 
               onClick={() => onUpdateQuantity(food.id, 1)}
             >
-              ADD <span className="plus-icon">+</span>
+              ADD
             </button>
           )}
         </div>

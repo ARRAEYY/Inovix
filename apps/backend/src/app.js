@@ -7,6 +7,7 @@ const onboardingRoutes = require('./modules/onboarding/onboarding.routes');
 const ordersRoutes = require('./modules/orders/orders.routes');
 const outletOrdersRoutes = require('./modules/orders/outlet-orders.routes');
 const outletMenuRoutes = require('./modules/menu/menu.routes');
+const outletAdminRoutes = require('./modules/outlet-admin/outlet-admin.routes');
 const catalogRoutes = require('./modules/catalog/catalog.routes');
 const adminRoutes = require('./modules/admin/admin.routes');
 
@@ -20,10 +21,24 @@ app.use(helmet());
 
 // ── CORS ──────────────────────────────────────────────────────────────────────
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
-app.use(cors({
-    origin: [FRONTEND_URL, 'http://localhost:5173', 'http://localhost:3001'],
-    credentials: true,
-}));
+app.use((req, res, next) => {
+    const allowedOrigins = ['http://localhost:5173', 'http://localhost:3001'];
+    const origin = req.headers.origin;
+    
+    if (allowedOrigins.includes(origin)) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+    }
+    
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+    
+    if (req.method === 'OPTIONS') {
+        return res.status(200).end();
+    }
+    
+    next();
+});
 
 // ── Body Parsing ──────────────────────────────────────────────────────────────
 app.use(express.json({ limit: '10kb' }));
@@ -49,6 +64,7 @@ app.use('/api/v1/catalog', catalogRoutes);
 app.use('/api/v1/orders', ordersRoutes);
 app.use('/api/v1/outlet/orders', outletOrdersRoutes);
 app.use('/api/v1/outlet/menu', outletMenuRoutes);
+app.use('/api/v1/outlet/admin', authRateLimit, outletAdminRoutes);
 app.use('/api/v1/admin', adminRoutes);
 
 // ── 404 Handler ───────────────────────────────────────────────────────────────

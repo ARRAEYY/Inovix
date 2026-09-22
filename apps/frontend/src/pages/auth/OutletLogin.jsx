@@ -14,8 +14,12 @@ const OutletLogin = () => {
     e.preventDefault();
     setError('');
     try {
-      await login(email, password);
-      navigate('/outlet');
+      const user = await login(email, password);
+      if (user && user.role === 'OUTLET_ADMIN') {
+        navigate('/outlet/admin');
+      } else {
+        navigate('/outlet');
+      }
     } catch (err) {
       setError(err.message || 'Login failed. Please check your credentials.');
     }
@@ -24,7 +28,7 @@ const OutletLogin = () => {
     <div className="login-container">
       <div className="login-left">
         <div className="brand">
-          <span className="brand-name">nosh</span>
+          <img src="/logo.png" alt="Nosh" style={{ height: '72px' }} />
         </div>
 
         <div className="hero-content">

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Header from '../../components/layout/Header';
+import MobileBottomNav from '../../components/layout/MobileBottomNav';
 
 // Mock data for previous orders
 const MOCK_ORDERS = [
@@ -14,11 +15,11 @@ const MOCK_ORDERS = [
       { name: 'Grilled Sandwich', quantity: 1, price: 150 }
     ],
     total: 270,
-    status: 'Delivered'
+    status: 'Completed'
   },
   {
     id: 'ORD-1235',
-    outletName: 'Dosa District',
+    outletName: 'inosa District',
     date: 'Yesterday, 8:15 PM',
     timeframe: 'yesterday',
     items: [
@@ -26,7 +27,7 @@ const MOCK_ORDERS = [
       { name: 'Filter Coffee', quantity: 2, price: 80 }
     ],
     total: 260,
-    status: 'Delivered'
+    status: 'Completed'
   },
   {
     id: 'ORD-1236',
@@ -37,7 +38,7 @@ const MOCK_ORDERS = [
       { name: 'Special North Thali', quantity: 1, price: 200 }
     ],
     total: 200,
-    status: 'Delivered'
+    status: 'Completed'
   },
   {
     id: 'ORD-1237',
@@ -49,7 +50,7 @@ const MOCK_ORDERS = [
       { name: 'Blueberry Muffin', quantity: 1, price: 90 }
     ],
     total: 200,
-    status: 'Delivered'
+    status: 'Completed'
   }
 ];
 
@@ -72,11 +73,11 @@ const Orders = () => {
   const clearOrders = () => setOrders([]);
 
   return (
-    <div className="page-wrapper">
-      <Header />
+    <div className="page-wrapper bg-white">
+      <Header title="Orders" showBack={false} />
       
-      <main className="explore-container">
-        <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+      <main className="explore-container orders-container">
+        <div className="page-header desktop-only" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <div>
             <button 
               onClick={() => navigate('/student')}
@@ -170,6 +171,8 @@ const Orders = () => {
           </div>
         )}
       </main>
+      
+      <MobileBottomNav />
     </div>
   );
 };

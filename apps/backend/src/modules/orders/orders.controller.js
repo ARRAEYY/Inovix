@@ -68,13 +68,21 @@ async function updateOrderStatus(req, res, next) {
     }
 
     const { orderId } = req.params;
-    const { status } = req.body;
+    const { status, rejectionReason, rejectionNote } = req.body;
 
     if (!status) {
       throw { status: 400, message: 'status is required' };
     }
 
-    const order = await ordersService.updateOrderStatus(outletId, orderId, status);
+    const additionalData = {};
+    if (status === 'DECLINED') {
+      additionalData.rejectionReason = rejectionReason;
+      if (rejectionNote) additionalData.rejectionNote = rejectionNote;
+      additionalData.rejectedAt = new Date().toISOString();
+      additionalData.rejectedBy = req.user.id;
+    }
+
+    const order = await ordersService.updateOrderStatus(outletId, orderId, status, additionalData);
     res.status(200).json({ success: true, data: order });
   } catch (error) {
     next(error);

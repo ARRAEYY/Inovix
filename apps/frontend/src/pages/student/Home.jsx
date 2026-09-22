@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import Header from '../../components/layout/Header';
 import OutletCard from '../../components/food/OutletCard';
+import MobileBottomNav from '../../components/layout/MobileBottomNav';
 import { useAuth } from '../../hooks/useAuth';
 
 const MOCK_OUTLETS = [
@@ -54,7 +55,7 @@ const Home = () => {
   });
 
   return (
-    <div className="page-wrapper">
+    <div className="page-wrapper home-wrapper">
       <Header />
       
       <main className="explore-container">
@@ -105,6 +106,8 @@ const Home = () => {
           </div>
         )}
       </main>
+      
+      <MobileBottomNav />
     </div>
   );
 };

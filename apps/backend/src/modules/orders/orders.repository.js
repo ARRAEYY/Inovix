@@ -31,12 +31,13 @@ const findByOutletId = async (outletId) => {
   return currentOrders.filter(order => order.outletId === outletId);
 };
 
-const updateStatus = async (orderId, status) => {
+const updateStatus = async (orderId, status, additionalData = {}) => {
   const orderIndex = currentOrders.findIndex(o => o.id === orderId);
   if (orderIndex === -1) return null;
 
   currentOrders[orderIndex] = {
     ...currentOrders[orderIndex],
+    ...additionalData,
     status,
     updatedAt: new Date().toISOString()
   };

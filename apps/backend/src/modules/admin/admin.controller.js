@@ -45,6 +45,15 @@ const getOutlets = async (req, res, next) => {
   }
 };
 
+const createOutlet = async (req, res, next) => {
+  try {
+    const outlet = await adminService.createOutlet(req.body);
+    res.status(201).json({ success: true, data: outlet });
+  } catch (error) {
+    next(error);
+  }
+};
+
 const getOutlet = async (req, res, next) => {
   try {
     const outlet = await adminService.getOutlet(req.params.outletId);
@@ -114,6 +123,7 @@ module.exports = {
   getUser,
   updateUserStatus,
   getOutlets,
+  createOutlet,
   getOutlet,
   updateOutletStatus,
   getOrders,

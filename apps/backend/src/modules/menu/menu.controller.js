@@ -58,6 +58,27 @@ async function updateMenuItem(req, res, next) {
   }
 }
 
+async function updateAvailability(req, res, next) {
+  try {
+    const outletId = req.user.outletId;
+    if (!outletId) {
+      throw { status: 403, message: 'User is not assigned to an outlet' };
+    }
+
+    const { itemId } = req.params;
+    const { available } = req.body;
+    
+    if (available === undefined) {
+      throw { status: 400, message: 'available status is required' };
+    }
+
+    const updatedItem = await menuService.updateAvailability(outletId, itemId, available);
+    res.status(200).json({ success: true, data: updatedItem });
+  } catch (error) {
+    next(error);
+  }
+}
+
 async function deleteMenuItem(req, res, next) {
   try {
     const outletId = req.user.outletId;
@@ -78,5 +99,6 @@ module.exports = {
   getMenuItem,
   createMenuItem,
   updateMenuItem,
+  updateAvailability,
   deleteMenuItem
 };

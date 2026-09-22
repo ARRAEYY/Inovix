@@ -94,6 +94,16 @@ const updateMenuItem = async (outletId, itemId, data) => {
   return await menuRepo.update(itemId, updates);
 };
 
+const updateAvailability = async (outletId, itemId, available) => {
+  // Implicitly checks existence and ownership
+  const existingItem = await getMenuItem(outletId, itemId);
+  
+  // Map 'available' payload to 'isAvailable' schema key
+  const isAvailable = Boolean(available);
+  
+  return await menuRepo.update(itemId, { isAvailable });
+};
+
 const deleteMenuItem = async (outletId, itemId) => {
   // Implicitly checks existence and ownership
   await getMenuItem(outletId, itemId);
@@ -111,5 +121,6 @@ module.exports = {
   getMenuItem,
   createMenuItem,
   updateMenuItem,
+  updateAvailability,
   deleteMenuItem
 };

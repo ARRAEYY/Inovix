@@ -43,11 +43,23 @@ export const AuthProvider = ({ children }) => {
     authService.logout();
   };
 
+  const updateProfile = async (data) => {
+    const response = await authService.updateProfile(data);
+    if (response.success && response.data) {
+      const updatedUser = response.data.user;
+      setUser(updatedUser);
+      localStorage.setItem('user', JSON.stringify(updatedUser));
+      return updatedUser;
+    }
+    return null;
+  };
+
   const value = {
     user,
     token,
     login,
     logout,
+    updateProfile,
     isAuthenticated: !!user,
     loading
   };

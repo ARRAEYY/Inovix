@@ -6,35 +6,86 @@ const ordersRepo = require('../orders/orders.repository');
 
 const getOverview = async () => {
   const allMenu = await menuRepo.findAll();
-  const allOrders = await ordersRepo.findAll ? await ordersRepo.findAll() : []; // I will add findAll to ordersRepo
+  const allOrders = await ordersRepo.findAll ? await ordersRepo.findAll() : [];
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const startOfWeek = new Date(today);
+  startOfWeek.setDate(today.getDate() - today.getDay());
+
+  const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+
+  const ordersToday = allOrders.filter(o => new Date(o.createdAt) >= today);
+  const ordersThisWeek = allOrders.filter(o => new Date(o.createdAt) >= startOfWeek);
+  const ordersThisMonth = allOrders.filter(o => new Date(o.createdAt) >= startOfMonth);
+  
+  const revenueToday = ordersToday
+    .filter(o => o.status === 'COMPLETED')
+    .reduce((sum, o) => sum + o.total, 0);
+
+  const revenueThisMonth = ordersThisMonth
+    .filter(o => o.status === 'COMPLETED')
+    .reduce((sum, o) => sum + o.total, 0);
+
+  const revenueTotal = allOrders
+    .filter(o => o.status === 'COMPLETED')
+    .reduce((sum, o) => sum + o.total, 0);
+
+  // Build the detailed outlet overview
+  const outletOverview = outlets.map(outlet => {
+    const outletOrders = ordersToday.filter(o => o.outletId === outlet.id);
+    const outletStaff = mockUsers.filter(u => u.outletId === outlet.id && u.role === ROLES.OUTLET_STAFF).length;
+    return {
+      ...outlet,
+      ordersToday: outletOrders.length,
+      staffCount: outletStaff
+    };
+  });
+
+  // Recent orders with populated user/outlet data
+  const recentOrders = allOrders
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+    .slice(0, 5)
+    .map(order => {
+      const user = mockUsers.find(u => u.id === order.userId);
+      const outlet = outlets.find(o => o.id === order.outletId);
+      return {
+        ...order,
+        studentName: user ? user.name : 'Unknown',
+        outletName: outlet ? outlet.name : 'Unknown Outlet'
+      };
+    });
+
+  // Mocked pending actions
+  const attentionNeeded = [
+    { id: 1, type: 'warning', message: '3 outlet approval requests', action: 'Review', path: '/admin/outlets' },
+    { id: 2, type: 'error', message: '2 suspended outlets', action: 'Manage', path: '/admin/outlets' },
+    { id: 3, type: 'info', message: '5 staff access requests', action: 'View', path: '/admin/staff' }
+  ];
 
   return {
+    metrics: {
+      totalOutlets: outlets.length,
+      activeOutlets: outlets.filter(o => ['OPEN', 'BUSY'].includes(o.status)).length,
+      totalUsers: mockUsers.length,
+      ordersToday: ordersToday.length,
+      ordersThisWeek: ordersThisWeek.length,
+      revenueToday,
+      revenueThisMonth,
+      revenueTotal,
+      activeStaff: mockUsers.filter(u => u.role === ROLES.OUTLET_STAFF && u.status === USER_STATUS.ACTIVE).length,
+      pendingRequests: 3
+    },
     users: {
       students: mockUsers.filter(u => u.role === ROLES.STUDENT).length,
       outletAdmins: mockUsers.filter(u => u.role === ROLES.OUTLET_ADMIN).length,
       outletStaff: mockUsers.filter(u => u.role === ROLES.OUTLET_STAFF).length,
       superAdmins: mockUsers.filter(u => u.role === ROLES.SUPER_ADMIN).length,
-      total: mockUsers.length
     },
-    outlets: {
-      total: outlets.length,
-      open: outlets.filter(o => o.status === 'OPEN').length,
-      busy: outlets.filter(o => o.status === 'BUSY').length,
-      closed: outlets.filter(o => o.status === 'CLOSED').length
-    },
-    menu: {
-      total: allMenu.length,
-      available: allMenu.filter(m => m.isAvailable).length,
-      unavailable: allMenu.filter(m => !m.isAvailable).length
-    },
-    orders: {
-      total: allOrders.length,
-      placed: allOrders.filter(o => o.status === 'PLACED').length,
-      preparing: allOrders.filter(o => o.status === 'PREPARING').length,
-      ready: allOrders.filter(o => o.status === 'READY').length,
-      completed: allOrders.filter(o => o.status === 'COMPLETED').length,
-      cancelled: allOrders.filter(o => o.status === 'CANCELLED').length
-    }
+    outletOverview,
+    recentOrders,
+    attentionNeeded
   };
 };
 
@@ -67,7 +118,31 @@ const updateUserStatus = async (userId, status, reqUserId) => {
 };
 
 const getOutlets = async () => {
-  return outlets;
+  const allOrders = await ordersRepo.findAll ? await ordersRepo.findAll() : [];
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const ordersToday = allOrders.filter(o => new Date(o.createdAt) >= today);
+
+  return outlets.map(outlet => {
+    const outletOrders = ordersToday.filter(o => o.outletId === outlet.id);
+    const outletStaff = mockUsers.filter(u => u.outletId === outlet.id && u.role === ROLES.OUTLET_STAFF).length;
+    return {
+      ...outlet,
+      ordersToday: outletOrders.length,
+      staffCount: outletStaff
+    };
+  });
+};
+
+const createOutlet = async (outletData) => {
+  const newOutlet = {
+    id: `outlet-${Date.now()}`,
+    ...outletData,
+    status: outletData.status || 'OPEN',
+    createdAt: new Date().toISOString()
+  };
+  outlets.push(newOutlet);
+  return newOutlet;
 };
 
 const getOutlet = async (outletId) => {
@@ -126,6 +201,7 @@ module.exports = {
   getUser,
   updateUserStatus,
   getOutlets,
+  createOutlet,
   getOutlet,
   updateOutletStatus,
   getOrders,

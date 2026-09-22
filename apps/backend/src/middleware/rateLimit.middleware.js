@@ -15,7 +15,7 @@ const authRateLimit = rateLimit({
         code: 'RATE_LIMIT_EXCEEDED',
         errors: [],
     },
-    skip: () => process.env.NODE_ENV === 'test',
+    skip: () => process.env.NODE_ENV !== 'production',
 });
 
 /**
@@ -32,7 +32,7 @@ const apiRateLimit = rateLimit({
         code: 'RATE_LIMIT_EXCEEDED',
         errors: [],
     },
-    skip: () => process.env.NODE_ENV === 'test',
+    skip: () => process.env.NODE_ENV !== 'production',
 });
 
 module.exports = { authRateLimit, apiRateLimit };

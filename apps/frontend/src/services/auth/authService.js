@@ -21,5 +21,18 @@ export const authService = {
   logout() {
     localStorage.removeItem('accessToken');
     localStorage.removeItem('user');
+  },
+
+  /**
+   * Updates the user profile
+   * @param {Object} data - Profile data (name, avatar)
+   */
+  async updateProfile(data) {
+    try {
+      const response = await client.put('/auth/me', data);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Network Error' };
+    }
   }
 };

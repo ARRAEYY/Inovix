@@ -7,7 +7,8 @@ const ORDER_STATUS = {
   PREPARING: "PREPARING",
   READY: "READY",
   COMPLETED: "COMPLETED",
-  CANCELLED: "CANCELLED"
+  CANCELLED: "CANCELLED",
+  DECLINED: "DECLINED"
 };
 
 const generateOrderNumber = () => {
@@ -119,14 +120,15 @@ const getOutletOrder = async (outletId, orderId) => {
 };
 
 const ALLOWED_TRANSITIONS = {
-  PLACED: ['PREPARING', 'CANCELLED'],
+  PLACED: ['PREPARING', 'CANCELLED', 'DECLINED'],
   PREPARING: ['READY', 'CANCELLED'],
   READY: ['COMPLETED'],
   COMPLETED: [],
-  CANCELLED: []
+  CANCELLED: [],
+  DECLINED: []
 };
 
-const updateOrderStatus = async (outletId, orderId, status) => {
+const updateOrderStatus = async (outletId, orderId, status, additionalData = {}) => {
   const order = await ordersRepo.findById(orderId);
   if (!order) {
     throw { status: 404, message: 'Order not found' };
@@ -145,7 +147,13 @@ const updateOrderStatus = async (outletId, orderId, status) => {
     throw { status: 400, message: `Cannot transition from ${order.status} to ${status}` };
   }
 
-  return await ordersRepo.updateStatus(orderId, status);
+  if (status === ORDER_STATUS.DECLINED) {
+    if (!additionalData.rejectionReason) {
+      throw { status: 400, message: 'rejectionReason is required when declining an order' };
+    }
+  }
+
+  return await ordersRepo.updateStatus(orderId, status, additionalData);
 };
 
 module.exports = {

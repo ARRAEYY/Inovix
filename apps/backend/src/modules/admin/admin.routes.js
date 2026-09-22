@@ -6,7 +6,8 @@ const { validateBody } = require('../../middleware/validation.middleware');
 const { 
   updateUserStatusSchema, 
   updateOutletStatusSchema, 
-  updateMenuAvailabilitySchema 
+  updateMenuAvailabilitySchema,
+  createOutletSchema
 } = require('../../../../../packages/validation/src/index');
 
 const router = express.Router();
@@ -21,6 +22,7 @@ router.get('/users/:userId', adminController.getUser);
 router.patch('/users/:userId/status', validateBody(updateUserStatusSchema), adminController.updateUserStatus);
 
 router.get('/outlets', adminController.getOutlets);
+router.post('/outlets', validateBody(createOutletSchema), adminController.createOutlet);
 router.get('/outlets/:outletId', adminController.getOutlet);
 router.patch('/outlets/:outletId/status', validateBody(updateOutletStatusSchema), adminController.updateOutletStatus);
 

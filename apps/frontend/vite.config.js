@@ -1,9 +1,8 @@
 import react from '@vitejs/plugin-react'
-import tailwindcss from '@tailwindcss/vite'
 import { defineConfig } from 'vite'
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [react()],
   server: {
     // Proxy /api/* and /socket.io/* to the backend so a single URL covers
     // everything (works for cloudflared tunneling too).
@@ -13,3 +12,4 @@ export default defineConfig({
     },
   },
 })
+

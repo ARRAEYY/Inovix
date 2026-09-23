@@ -9,3 +9,8 @@ coverage/
 *.db
 *.db-journal
 *.zip
+backups/
+.env.*
+kent_portal/
+*.tsbuildinfo
+.vercel/

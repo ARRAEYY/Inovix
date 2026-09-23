@@ -1,6 +1,7 @@
 const express = require('express');
 const authController = require('./auth.controller');
 const {
+  login,
   googleLogin,
   devLogin,
   getCurrentUser,
@@ -21,6 +22,14 @@ const {
 } = require('../../middleware/rateLimit.middleware');
 
 const router = express.Router();
+
+const loginSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(1),
+}).strict();
+
+// Standard production email+password authentication
+router.post('/login', devLoginRateLimit, validateBody(loginSchema), login);
 
 // ─── INO-007 fix: dev-login is explicitly opt-in ──────────────────────────
 // The previous check `process.env.NODE_ENV !== 'production'` left dev-login

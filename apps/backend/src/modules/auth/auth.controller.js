@@ -22,6 +22,7 @@ const {
   findOrCreateGoogleUser,
   getCurrentUser: getCurrentUserService,
   devLogin: devLoginService,
+  passwordLogin: passwordLoginService,
 } = require('./auth.service');
 const {
   signAccessToken,
@@ -216,7 +217,36 @@ async function logout(req, res, next) {
   }
 }
 
+async function login(req, res, next) {
+  try {
+    const user = await passwordLoginService(req.body);
+    const accessToken = signAccessToken(user);
+    const refreshToken = await issueRefreshToken(user, { req });
+
+    await audit({
+      actorId: user.id,
+      action: 'USER_LOGIN',
+      targetType: 'User',
+      targetId: user.id,
+      req,
+    });
+
+    setRefreshCookie(res, refreshToken);
+    return res.status(200).json({
+      success: true,
+      message: 'Login successful',
+      data: {
+        user: stripSensitive(user),
+        accessToken,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
 module.exports = {
+  login,
   googleLogin,
   devLogin,
   getCurrentUser,

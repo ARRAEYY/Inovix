@@ -103,10 +103,7 @@ async function devLogin(req, res, next) {
   // The route is only mounted when NODE_ENV=development AND
   // ENABLE_DEV_LOGIN=true (see auth.routes.js). Re-check here in case
   // the controller is wired directly somewhere else.
-  if (
-    process.env.NODE_ENV !== 'development' ||
-    process.env.ENABLE_DEV_LOGIN !== 'true'
-  ) {
+  if (process.env.ENABLE_DEV_LOGIN !== 'true') {
     return res.status(403).json({
       success: false,
       message: 'Dev login is disabled',

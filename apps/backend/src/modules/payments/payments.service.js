@@ -28,6 +28,7 @@ const prisma = require('../../lib/prisma');
 const { encrypt, decrypt, safeEqual } = require('../../lib/crypto');
 const { PAYMENT_STATUS, REFUND_TRIGGER, REFUND_TRIGGERS, REFUND_STATUS } = require('../../lib/constants');
 const { audit } = require('../../lib/audit');
+const { toPaise, isFullyRefunded } = require('../../lib/money');
 
 // ─── Razorpay client cache (one per outlet, keyed by outletId) ──────────────
 const clientCache = new Map();
@@ -42,6 +43,12 @@ const clientCache = new Map();
 //   sum(COMPLETED refunds) == payment.amount → REFUNDED (full refund)
 //   sum(COMPLETED refunds) <  payment.amount → PAID (partial refund or none)
 //   PENDING refunds are in-flight money, NOT counted toward "fully refunded"
+//
+// INO-AUDIT5-D28 fix: use integer paise (toPaise from lib/money.js) instead
+// of Number() + epsilon. The previous implementation used floating-point
+// arithmetic + a 0.01 epsilon for safety, which defeated the purpose of
+// the centralized money helpers. Now both sides convert to paise (integer)
+// and compare exactly — no epsilon required.
 async function markPaymentRefundedIfFullyRefunded(paymentId) {
   const payment = await prisma.payment.findUnique({
     where: { id: paymentId },
@@ -49,17 +56,11 @@ async function markPaymentRefundedIfFullyRefunded(paymentId) {
   });
   if (!payment) return null;
 
-  const completedRefundSum = payment.refunds
-    .filter(r => r.status === REFUND_STATUS.COMPLETED)
-    .reduce((sum, r) => sum + Number(r.amount), 0);
+  // INO-AUDIT5-D28: use the centralized isFullyRefunded helper from
+  // lib/money.js — integer paise comparison, no floating-point, no epsilon.
+  const fullyRefunded = isFullyRefunded(payment.amount, payment.refunds);
 
-  // Use a small epsilon for floating-point safety (Decimal → Number can
-  // introduce tiny errors). 0.01 paise = 0.0001 rupees, well below any
-  // real refund amount.
-  const paymentAmount = Number(payment.amount);
-  const isFullyRefunded = completedRefundSum >= paymentAmount - 0.01;
-
-  if (isFullyRefunded && payment.status !== PAYMENT_STATUS.REFUNDED) {
+  if (fullyRefunded && payment.status !== PAYMENT_STATUS.REFUNDED) {
     return prisma.payment.update({
       where: { id: paymentId },
       data: { status: PAYMENT_STATUS.REFUNDED },
@@ -69,7 +70,7 @@ async function markPaymentRefundedIfFullyRefunded(paymentId) {
   // (Defensive — shouldn't happen given the new logic, but if an old
   // row was incorrectly marked REFUNDED, this corrects it on the next
   // refund event.)
-  if (!isFullyRefunded && payment.status === PAYMENT_STATUS.REFUNDED) {
+  if (!fullyRefunded && payment.status === PAYMENT_STATUS.REFUNDED) {
     return prisma.payment.update({
       where: { id: paymentId },
       data: { status: PAYMENT_STATUS.PAID },
@@ -123,12 +124,17 @@ async function setOutletRazorpayCredentials(outletId, { keyId, keySecret, webhoo
  *
  * INO-P0-6 fix: idempotent — if the Payment row already has a
  * `razorpayOrderId` and is still PENDING, return the existing gateway
- * order info instead of creating a new one. The previous implementation
- * unconditionally called `client.orders.create(...)`, so a double-click,
- * network retry, or duplicate frontend request would mint N gateway orders
- * for one internal order and overwrite `payment.razorpayOrderId` each time,
- * making earlier gateway orders impossible to associate with the internal
- * payment during reconciliation.
+ * order info instead of creating a new one.
+ *
+ * INO-AUDIT6-#2 fix: atomic claim — the previous implementation had a
+ * TOCTOU race: two concurrent requests both read razorpayOrderId=NULL,
+ * both call client.orders.create(), both update. The second update
+ * overwrites the first's gateway order, leaving the first orphaned at
+ * the gateway. Fix: atomically claim the Payment row with a sentinel
+ * ("in-progress-...") before calling the gateway. Only the request
+ * whose updateMany count === 1 proceeds; the other re-reads + returns
+ * 409 GATEWAY_ORDER_IN_FLIGHT. On gateway failure, the sentinel is
+ * reset to NULL so the next request can retry.
  */
 async function createRazorpayOrder(orderId, actorId) {
   const order = await prisma.order.findUnique({
@@ -146,14 +152,15 @@ async function createRazorpayOrder(orderId, actorId) {
     throw { statusCode: 409, message: 'Order is already paid' };
   }
 
-  const amountPaise = Math.round(Number(order.totalAmount) * 100);
+  // INO-AUDIT6-#4: use the centralized money helper, not Math.round(Number(x)*100)
+  const amountPaise = toPaise(order.totalAmount);
   const keyId = decrypt(order.outlet.razorpayKeyIdEnc);
 
-  // Idempotent: if we already have a gateway order id and the payment is
-  // still PENDING (not yet verified), reuse it. The frontend can re-enter
-  // checkout with the same gateway order id.
+  // Idempotent: if we already have a REAL gateway order id and the payment
+  // is still PENDING (not yet verified), reuse it.
   if (
     order.payment?.razorpayOrderId &&
+    !order.payment.razorpayOrderId.startsWith('in-progress-') &&
     order.payment?.status === PAYMENT_STATUS.PENDING
   ) {
     return {
@@ -164,44 +171,91 @@ async function createRazorpayOrder(orderId, actorId) {
     };
   }
 
-  const client = await getOutletRazorpayClient(order.outletId);
-
-  // Razorpay expects amount in paise (1 INR = 100 paise)
-  const gatewayOrder = await client.orders.create({
-    amount: amountPaise,
-    currency: 'INR',
-    receipt: order.orderNumber,
-    notes: {
-      orderId: order.id,
-      outletId: order.outletId,
-      studentId: order.studentId,
+  // INO-AUDIT6-#2: atomic claim — set a sentinel so concurrent requests
+  // can't both create gateway orders. The sentinel "in-progress-..." is
+  // recognizable in the DB + reconciliation worker.
+  const claimSentinel = `in-progress-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const claimed = await prisma.payment.updateMany({
+    where: {
+      id: order.payment.id,
+      razorpayOrderId: null,
     },
+    data: { razorpayOrderId: claimSentinel },
   });
 
-  // Persist gateway ref on the Payment row
-  const updated = await prisma.payment.update({
-    where: { orderId: order.id },
-    data: {
-      gatewayRef: gatewayOrder.id,
+  if (claimed.count !== 1) {
+    // Another request already set razorpayOrderId — either a real one
+    // (just finished) or another sentinel (in-flight). Re-read to decide.
+    const current = await prisma.payment.findUnique({ where: { id: order.payment.id } });
+    if (current?.razorpayOrderId && !current.razorpayOrderId.startsWith('in-progress-')) {
+      // A real gateway order ID was set by another request — return it.
+      return {
+        razorpayOrderId: current.razorpayOrderId,
+        amount: amountPaise,
+        currency: 'INR',
+        keyId,
+      };
+    }
+    // Another request is in-flight (sentinel set) — return 409.
+    throw {
+      statusCode: 409,
+      code: 'GATEWAY_ORDER_IN_FLIGHT',
+      message: 'Another gateway order creation is in progress. Please retry.',
+    };
+  }
+
+  // We've claimed the row — now call the gateway.
+  // INO-AUDIT8-#2 fix: client acquisition is INSIDE the try block so
+  // that a getOutletRazorpayClient() failure also resets the sentinel.
+  // The previous implementation had it outside — if the client-acquisition
+  // threw, the function exited and the sentinel stayed forever.
+  try {
+    const client = await getOutletRazorpayClient(order.outletId);
+
+    // Razorpay expects amount in paise (1 INR = 100 paise)
+    const gatewayOrder = await client.orders.create({
+      amount: amountPaise,
+      currency: 'INR',
+      receipt: order.orderNumber,
+      notes: {
+        orderId: order.id,
+        outletId: order.outletId,
+        studentId: order.studentId,
+      },
+    });
+
+    // Persist the real gateway order ID (replacing the sentinel).
+    await prisma.payment.update({
+      where: { orderId: order.id },
+      data: {
+        gatewayRef: gatewayOrder.id,
+        razorpayOrderId: gatewayOrder.id,
+        method: 'ONLINE',
+      },
+    });
+
+    await audit({
+      actorId,
+      action: 'RAZORPAY_ORDER_CREATED',
+      targetType: 'Payment',
+      targetId: order.payment.id,
+      after: { gatewayRef: gatewayOrder.id, amount: order.totalAmount },
+    });
+
+    return {
       razorpayOrderId: gatewayOrder.id,
-      method: 'ONLINE',
-    },
-  });
-
-  await audit({
-    actorId,
-    action: 'RAZORPAY_ORDER_CREATED',
-    targetType: 'Payment',
-    targetId: updated.id,
-    after: { gatewayRef: gatewayOrder.id, amount: order.totalAmount },
-  });
-
-  return {
-    razorpayOrderId: gatewayOrder.id,
-    amount: amountPaise,
-    currency: 'INR',
-    keyId,
-  };
+      amount: amountPaise,
+      currency: 'INR',
+      keyId,
+    };
+  } catch (err) {
+    // Gateway call failed — reset the sentinel so the next request can retry.
+    await prisma.payment.update({
+      where: { id: order.payment.id },
+      data: { razorpayOrderId: null },
+    }).catch(() => null);
+    throw err;
+  }
 }
 
 /**
@@ -282,16 +336,21 @@ async function verifyRazorpayPayment({ razorpayOrderId, razorpayPaymentId, razor
     throw { statusCode: 400, code: 'PAYMENT_FAILED', message: 'Invalid payment signature' };
   }
 
-  // ─── INO-AUDIT4-D5 fix: revalidate payment amount against the gateway ──
+  // ─── INO-AUDIT4-D5 + D25 fix: revalidate payment amount + status ─────
   // The signature proves the payment_id is associated with the order_id,
-  // but the AMOUNT isn't part of the signature. Fetch the payment from
-  // Razorpay to verify the captured amount matches what we expect
-  // (Payment.amount × 100 paise). Defense-in-depth — Razorpay enforces
-  // the amount at checkout time, but a backend bug or tampering attempt
-  // could otherwise let a mismatched payment slip through.
+  // but the AMOUNT isn't part of the signature, and the signature says
+  // nothing about whether the payment was actually captured. Fetch the
+  // payment from Razorpay to verify:
+  //   1. gatewayPayment.amount === Payment.amount × 100 (amount matches)
+  //   2. gatewayPayment.status === 'captured' (the payment is actually
+  //      captured, not just authorized/created — only captured payments
+  //      represent money that moved)
+  // Defense-in-depth — Razorpay enforces the amount at checkout time,
+  // but a backend bug or tampering attempt could otherwise let a
+  // mismatched or non-captured payment slip through.
   try {
     const gatewayPayment = await client.payments.fetch(razorpayPaymentId);
-    const expectedAmountPaise = Math.round(Number(payment.amount) * 100);
+    const expectedAmountPaise = toPaise(payment.amount);
     if (gatewayPayment.amount !== expectedAmountPaise) {
       await audit({
         actorId,
@@ -307,13 +366,45 @@ async function verifyRazorpayPayment({ razorpayOrderId, razorpayPaymentId, razor
         message: `Gateway payment amount ${gatewayPayment.amount}p does not match expected ${expectedAmountPaise}p`,
       };
     }
+    // INO-AUDIT4-D25: verify the gateway payment is actually 'captured'.
+    // A payment that's only 'authorized' or 'created' hasn't moved money
+    // yet — marking it PAID would let the student's order proceed without
+    // actual payment. Accept only 'captured' (and the Razorpay alias
+    // 'processed' if it ever appears).
+    const gatewayStatus = String(gatewayPayment.status || '').toLowerCase();
+    if (gatewayStatus !== 'captured' && gatewayStatus !== 'processed') {
+      await audit({
+        actorId,
+        action: 'RAZORPAY_NOT_CAPTURED',
+        targetType: 'Payment',
+        targetId: payment.id,
+        after: { gatewayStatus, expectedStatus: 'captured' },
+        req: null,
+      });
+      throw {
+        statusCode: 400,
+        code: 'PAYMENT_NOT_CAPTURED',
+        message: `Gateway payment status is '${gatewayStatus}', expected 'captured'. The payment has not been captured yet.`,
+      };
+    }
   } catch (err) {
-    if (err.statusCode && err.code) throw err; // re-throw our structured errors
-    // If the fetch itself fails (network / 5xx), log but DON'T block —
-    // the signature already proved authenticity; the amount-fetch is
-    // defense-in-depth. The webhook path will reconcile on the next
-    // payment.captured event.
-    console.error('[payments] gateway amount fetch failed:', err.message);
+    if (err.statusCode && err.code) throw err; // re-throw our structured errors (AMOUNT_MISMATCH, NOT_CAPTURED)
+    // INO-AUDIT7: fail-CLOSED, not fail-open. The previous implementation
+    // logged the gateway-fetch error and continued to mark PAID — meaning
+    // a valid signature + unreachable Razorpay API = PAID without amount
+    // or capture-status confirmation. That's a fail-open security gap.
+    //
+    // Fix: if the gateway fetch fails (network / 5xx), DON'T mark PAID.
+    // Return 503 so the frontend knows to retry. The payment stays PENDING.
+    // The payment.captured webhook (if the gateway eventually sends it) or
+    // the reconciliation worker (which polls for stale PENDING payments)
+    // will confirm the payment independently.
+    console.error('[payments] gateway fetch (amount+status) failed — NOT marking PAID:', err.message);
+    throw {
+      statusCode: 503,
+      code: 'GATEWAY_VERIFICATION_UNAVAILABLE',
+      message: 'Could not verify payment amount and capture status with Razorpay. The payment signature is valid, but the gateway is temporarily unreachable. Please retry — the payment will also be confirmed automatically via webhook or reconciliation if it was captured.',
+    };
   }
 
   const claimed = await prisma.payment.updateMany({
@@ -422,6 +513,33 @@ async function handlePaymentEvent(event, eventType) {
     // Idempotent: if already PAID, just ack
     if (payment.status === PAYMENT_STATUS.PAID) return { alreadyPaid: true };
 
+    // ─── INO-AUDIT4-D24 fix: verify the webhook payment amount ──────────
+    // The webhook signature proves the payload is authentic from Razorpay,
+    // but we additionally verify the captured amount matches what we expect
+    // (Payment.amount × 100 paise). A mismatch indicates a serious state
+    // inconsistency (or a Razorpay bug). Log + audit + reject; don't mark
+    // PAID. (The /verify path already does this via client.payments.fetch;
+    // the webhook path uses the payload's amount field directly since the
+    // signature already proved authenticity.)
+    const expectedAmountPaise = toPaise(payment.amount);
+    if (paymentEntity.amount !== undefined
+        && paymentEntity.amount !== null
+        && paymentEntity.amount !== expectedAmountPaise) {
+      console.error(
+        `[razorpay webhook] payment.captured: amount mismatch — ` +
+        `DB=${expectedAmountPaise}p gateway=${paymentEntity.amount}p (payment ${payment.id})`
+      );
+      await audit({
+        actorId: null,
+        action: 'PAYMENT_WEBHOOK_AMOUNT_MISMATCH',
+        targetType: 'Payment',
+        targetId: payment.id,
+        after: { dbAmountPaise: expectedAmountPaise, gatewayAmountPaise: paymentEntity.amount },
+        req: null,
+      });
+      return { ignored: true, reason: 'amount_mismatch' };
+    }
+
     const claimed = await prisma.payment.updateMany({
       where: { id: payment.id, status: PAYMENT_STATUS.PENDING },
       data: {
@@ -487,10 +605,58 @@ async function handleRefundEvent(event, eventType) {
   // Look up our Refund row by gatewayRef (set when we initiated the refund).
   // If we can't find it, this is a refund initiated outside our system
   // (e.g. directly in the Razorpay dashboard) — log + ack.
-  const refund = await prisma.refund.findFirst({
+  let refund = await prisma.refund.findFirst({
     where: { gatewayRef: gatewayRefundId },
     include: { payment: true },
   });
+
+  // ─── INO-AUDIT4-D26 fix: fallback reconciliation ───────────────────────
+  // If the gatewayRef lookup failed, the most likely cause is: the gateway
+  // accepted the refund but the HTTP response was lost (network timeout
+  // between Razorpay → our server). Our Refund row has gatewayRef = NULL
+  // because processRefundAfterCommit never got the gateway refund ID.
+  //
+  // Fallback: look up by (payment.razorpayPaymentId, amount, PENDING, gatewayRef=null).
+  // This matches a PENDING refund whose amount (× 100 paise) equals the
+  // gateway's amount field. There should be at most one such row per
+  // payment (the in-flight refund). If we find it, update the gatewayRef
+  // so future webhook deliveries match directly.
+  if (!refund && refundEntityPaymentId && refundEntityAmountPaise !== undefined) {
+    const candidates = await prisma.refund.findMany({
+      where: {
+        payment: { razorpayPaymentId: refundEntityPaymentId },
+        status: REFUND_STATUS.PENDING,
+        gatewayRef: null,
+      },
+      include: { payment: true },
+    });
+    // Filter by amount in JS (Prisma can't easily express "amount × 100 == X").
+    const match = candidates.find(r =>
+      toPaise(r.amount) === refundEntityAmountPaise
+    );
+    if (match) {
+      // Update the gatewayRef now that we know it — future webhook
+      // deliveries will match directly via the primary lookup above.
+      refund = await prisma.refund.update({
+        where: { id: match.id },
+        data: { gatewayRef: gatewayRefundId },
+        include: { payment: true },
+      });
+      console.log(
+        `[razorpay webhook] refund ${refund.id} matched via fallback ` +
+        `(payment_id + amount + PENDING); gatewayRef updated to ${gatewayRefundId}`
+      );
+      await audit({
+        actorId: null,
+        action: 'REFUND_GATEWAYREF_RECONCILED',
+        targetType: 'Refund',
+        targetId: refund.id,
+        after: { gatewayRef: gatewayRefundId, reason: 'fallback_lookup_after_lost_response' },
+        req: null,
+      });
+    }
+  }
+
   if (!refund) {
     console.log(`[razorpay webhook] refund ${gatewayRefundId} not found in DB — external refund?`);
     return { ignored: true };
@@ -520,7 +686,7 @@ async function handleRefundEvent(event, eventType) {
     });
     return { ignored: true, reason: 'payment_id_mismatch' };
   }
-  const expectedAmountPaise = Math.round(Number(refund.amount) * 100);
+  const expectedAmountPaise = toPaise(refund.amount);
   if (refundEntityAmountPaise !== undefined && refundEntityAmountPaise !== null
       && Math.abs(refundEntityAmountPaise - expectedAmountPaise) > 1) {
     // Allow 1 paise tolerance for rounding differences. Anything beyond
@@ -622,92 +788,24 @@ async function handleRefundEvent(event, eventType) {
   return { ignored: true };
 }
 
-/**
- * Auto-refund on REJECTED or CANCELLED transitions (pre-READY).
- *
- * Called from orders.controller after a status change to REJECTED or
- * CANCELLED. Computes the refund trigger from the transition and:
- *   - If trigger is null (READY → CANCELLED, no-show): no refund.
- *   - Else: issues a full refund via Razorpay, records a Refund row.
- */
-async function processAutoRefundOnTransition(orderId, fromStatus, toStatus, actorId, triggerOverride = null) {
-  const triggerKey = `${fromStatus}_TO_${toStatus}`;
-  const trigger = triggerOverride || REFUND_TRIGGERS[triggerKey];
-  if (!trigger) return null; // no refund for this transition
-
-  const order = await prisma.order.findUnique({
-    where: { id: orderId },
-    include: { payment: true, outlet: true },
-  });
-  if (!order || !order.payment) return null;
-  if (order.payment.status !== PAYMENT_STATUS.PAID) return null;
-
-  // INO-P0-3 fix: idempotency at the payment layer. Before issuing a new
-  // gateway refund, check whether a Refund row already exists for this
-  // (paymentId, triggeredBy) pair. If it does, return it instead of
-  // calling client.payments.refund again. This makes retry / cron /
-  // double-trigger paths safe — a duplicate webhook delivery or a
-  // controller retry won't double-charge the gateway.
-  //
-  // The cleanest invariant is a DB unique constraint on
-  // (paymentId, triggeredBy) — that requires a migration and is on the
-  // follow-up list. The service-level check here is the P0 minimum.
-  const existing = await prisma.refund.findFirst({
-    where: { paymentId: order.payment.id, triggeredBy: trigger },
-  });
-  if (existing) return existing;
-
-  // Issue refund at gateway
-  let gatewayRef = null;
-  let refundStatus = 'PENDING';
-  try {
-    const client = await getOutletRazorpayClient(order.outletId);
-    const gatewayRefund = await client.payments.refund(order.payment.razorpayPaymentId, {
-      amount: Math.round(Number(order.totalAmount) * 100),
-      notes: {
-        orderId: order.id,
-        trigger,
-        reason: `Auto refund on ${fromStatus} → ${toStatus}`,
-      },
-    });
-    gatewayRef = gatewayRefund.id;
-    refundStatus = gatewayRefund.status || 'PENDING';
-  } catch (err) {
-    console.error('[payments] auto-refund failed at gateway:', err.message);
-    // Mark refund as PENDING — super admin can retry via /api/v1/admin/refunds.
-  }
-
-  // Record the Refund row
-  const refund = await prisma.refund.create({
-    data: {
-      paymentId: order.payment.id,
-      amount: order.totalAmount,
-      reason: `Auto refund: ${fromStatus} → ${toStatus}`,
-      gatewayRef,
-      status: refundStatus,
-      triggeredBy: trigger,
-      initiatedBy: actorId,
-    },
-  });
-
-  // ─── INO-AUDIT4-D2 fix: only mark Payment=REFUNDED if fully refunded ──
-  // The helper checks sum(COMPLETED refunds) against payment.amount.
-  // A partial refund leaves Payment = PAID with the remainder still
-  // refundable.
-  if (refundStatus === 'COMPLETED' || refundStatus === 'processed') {
-    await markPaymentRefundedIfFullyRefunded(order.payment.id);
-  }
-
-  await audit({
-    actorId,
-    action: 'REFUND_ISSUED',
-    targetType: 'Refund',
-    targetId: refund.id,
-    after: { amount: refund.amount, trigger, gatewayRef },
-  });
-
-  return refund;
-}
+// ─── INO-AUDIT5-D27 fix: processAutoRefundOnTransition is DELETED. ──────
+// This function was the OLD refund engine — superseded by the
+// transition.service.js + processRefundAfterCommit path in commit
+// 1447845. It was kept for "backward compat" but nothing in the
+// codebase called it anymore (the controller was refactored). Having
+// two refund engines with different status-casing behavior (this one
+// used `gatewayRefund.status || 'PENDING'` without `.toUpperCase()`,
+// so it could store lowercase 'processed' instead of 'COMPLETED')
+// was exactly the kind of state drift that causes bugs later.
+//
+// The new path is:
+//   1. performTransition() creates the Refund row (status=PENDING) inside
+//      the order-transition transaction.
+//   2. processRefundAfterCommit(refundId, actorId) is the post-commit
+//      gateway call + status update — it normalizes status to uppercase.
+//
+// If you need to retry a PENDING refund, use POST /api/v1/admin/refunds
+// (adminService.issueManualRefund handles the retry path).
 
 /**
  * Post-commit gateway refund processor — architectural refactor.
@@ -747,12 +845,42 @@ async function processRefundAfterCommit(refundId, actorId) {
     return refund; // can't process — needs the gateway payment id
   }
 
-  let gatewayRef = refund.gatewayRef;
+  // INO-AUDIT5-OUTBOX: if the refund already has a REAL gatewayRef (not a
+  // sentinel), the gateway call was already made. Don't create a duplicate.
+  // The reconciliation worker (reconcilePendingRefunds) will poll the
+  // existing refund's status.
+  //
+  // INO-AUDIT8-#4 fix: atomic claim via sentinel. The previous check
+  // `if (refund.gatewayRef) return refund` had a TOCTOU race — two workers
+  // could both read gatewayRef=NULL and both call client.payments.refund().
+  // Fix: atomically claim via updateMany WHERE gatewayRef IS NULL. Only
+  // the worker whose count === 1 calls the gateway. On failure, the sentinel
+  // is reset to NULL so the next worker can retry. The stale-sentinel
+  // cleanup in reconciliation.js handles crashes between the claim and
+  // the gateway call.
+  if (refund.gatewayRef && !refund.gatewayRef.startsWith('refund-in-progress-')) {
+    // A REAL gateway refund ID is set — the gateway call already succeeded.
+    return refund;
+  }
+
+  // Atomic claim: set a sentinel so concurrent workers can't both call the gateway.
+  const refundSentinel = `refund-in-progress-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const claimed = await prisma.refund.updateMany({
+    where: { id: refundId, gatewayRef: null },
+    data: { gatewayRef: refundSentinel },
+  });
+  if (claimed.count !== 1) {
+    // Another worker already claimed it (sentinel set) OR a real gatewayRef
+    // was set between our read and our claim. Either way, don't call the gateway.
+    return prisma.refund.findUnique({ where: { id: refundId } });
+  }
+
+  let gatewayRef = refundSentinel; // start with the sentinel
   let newStatus = REFUND_STATUS.PENDING;
   try {
     const client = await getOutletRazorpayClient(refund.payment.order.outletId);
     const gatewayRefund = await client.payments.refund(refund.payment.razorpayPaymentId, {
-      amount: Math.round(Number(refund.amount) * 100),
+      amount: toPaise(refund.amount),
       notes: {
         orderId: refund.payment.order.id,
         trigger: refund.triggeredBy,
@@ -763,7 +891,14 @@ async function processRefundAfterCommit(refundId, actorId) {
     newStatus = (gatewayRefund.status || 'PENDING').toUpperCase();
   } catch (err) {
     console.error('[payments] post-commit gateway refund failed:', err.message);
-    // Leave as PENDING — admin can retry via /api/v1/admin/refunds.
+    // INO-AUDIT8-#4: reset the sentinel back to NULL so the next worker
+    // (outbox / admin retry) can retry the gateway call.
+    await prisma.refund.update({
+      where: { id: refundId },
+      data: { gatewayRef: null, status: REFUND_STATUS.PENDING },
+    }).catch(() => null);
+    // Return the refund in its PENDING state — the outbox worker will retry.
+    return prisma.refund.findUnique({ where: { id: refundId } });
   }
 
   const updated = await prisma.refund.update({
@@ -797,11 +932,8 @@ module.exports = {
   createRazorpayOrder,
   verifyRazorpayPayment,
   handleRazorpayWebhook,
-  // Kept for backward compat — the new transition.service.js +
-  // processRefundAfterCommit path replaces this for order transitions.
-  // Old callers (if any) still work; new callers should use the
-  // transition service + post-commit processor.
-  processAutoRefundOnTransition,
+  // INO-AUDIT5-D27: processAutoRefundOnTransition is DELETED (was dead
+  // code — superseded by transition.service.js + processRefundAfterCommit).
   processRefundAfterCommit,
   // Exported for reuse by admin.service.js (manual refund paths need the
   // same partial-refund guard — INO-AUDIT4-D2).

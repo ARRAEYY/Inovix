@@ -303,21 +303,21 @@ test.skip('Integration: handleRazorpayWebhook ignores non-payment.captured event
   // Assert: returns { ignored: true }. No DB write.
 });
 
-test.skip('Integration: processAutoRefundOnTransition is idempotent — returns existing Refund row', async () => {
-  // Setup: seed a PAID payment with an existing Refund row (triggeredBy=
-  //         OUTLET_CANCEL, status=PENDING).
-  // Action: call processAutoRefundOnTransition(orderId, 'PENDING', 'CANCELLED',
-  //         actorId).
+test.skip('Integration: processRefundAfterCommit is idempotent — returns existing COMPLETED Refund as-is', async () => {
+  // INO-AUDIT5-D27: processAutoRefundOnTransition was deleted (dead code).
+  // The new path is transition.service.js performTransition() (creates the
+  // Refund row in the tx) + processRefundAfterCommit (post-commit gateway call).
+  // Setup: seed a Refund row with status=COMPLETED.
+  // Action: call processRefundAfterCommit(refundId, actorId).
   // Assert: returns the existing Refund row WITHOUT calling client.payments.refund.
-  //         (INO-P0-3 fix.)
 });
 
-test.skip('Integration: processAutoRefundOnTransition records PENDING refund when gateway fails', async () => {
+test.skip('Integration: processRefundAfterCommit records PENDING refund when gateway fails', async () => {
   // Setup: mock client.payments.refund to throw (simulating gateway failure).
-  // Action: call processAutoRefundOnTransition on a PAID payment.
-  // Assert: Refund row created with status='PENDING'. Payment stays PAID
-  //         (not REFUNDED — refund didn't complete at gateway).
-  //         (Recovery path for finding #8.)
+  // Action: call processRefundAfterCommit on a PENDING Refund.
+  // Assert: Refund row stays PENDING (gateway call failed). Payment stays
+  //         PAID (not REFUNDED — refund didn't complete at gateway).
+  //         Recovery path: admin can retry via POST /api/v1/admin/refunds.
 });
 
 test.skip('Integration: admin manual refund endpoint retries a PENDING refund', async () => {

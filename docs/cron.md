@@ -1,120 +1,133 @@
 # Nosh — Cron Jobs
 
-> Spec ref: §4 entity #19 (AuditLog), §3.2 Layer 1 (RefreshToken), §4 entity #13 (`pickupTimeoutMins`)
-> Status: Implemented (`apps/backend/src/lib/cron.js`)
+> Spec ref: §4 entity #19 (AuditLog), §3.2 Layer 1 (RefreshToken), §4 entity #13 (`pickupTimeoutMins`), §8.6 (no-show)
+> Status: Implemented (`apps/backend/src/lib/cron.js` + `apps/backend/src/lib/reconciliation.js`)
 
 ## 1. Jobs
 
-| Name             | Schedule              | Purpose                                                |
-|------------------|-----------------------|--------------------------------------------------------|
-| `audit-purge`     | Daily at 03:00        | Delete `AuditLog` rows older than `AUDIT_LOG_RETENTION_DAYS` (default 90) |
-| `refresh-purge`   | Daily at 03:00        | Delete `RefreshToken` rows where `expiresAt < now - 30 days`; mark tokens past expiry as revoked |
-| `pickup-timeout`  | Every 5 minutes       | Auto-transition `READY` orders to `COMPLETED` after the outlet's `pickupTimeoutMins` (default 30 min) |
+| Name               | Schedule              | Purpose                                                                 |
+|--------------------|-----------------------|-------------------------------------------------------------------------|
+| `audit-purge`       | Daily at 03:00        | Delete `AuditLog` rows older than `AUDIT_LOG_RETENTION_DAYS` (default 90) |
+| `refresh-purge`     | Daily at 03:00        | Delete `RefreshToken` rows where `expiresAt < now - 30 days`; mark tokens past expiry as revoked |
+| `cart-purge`        | Daily at 03:00        | Delete `Cart` rows past their `expiresAt` (CartItem rows cascade-delete) |
+| `pickup-timeout`    | Every 5 minutes       | Auto-transition `READY` → `CANCELLED` after `pickupTimeoutMins` (no refund, no-show per §8.6). Calls `performTransition()` (atomic with audit + notification). |
+| `refund-outbox`     | Every 2 minutes       | Process PENDING refunds with `gatewayRef=NULL` (never sent to gateway). Calls `processRefundAfterCommit()`. |
+| `sentinel-cleanup`  | Every 10 minutes      | Reset stuck `in-progress-*` + `refund-in-progress-*` sentinels. For order sentinels, tries to recover the real gateway order by receipt. |
+| `reconcile-refunds` | Every 10 minutes      | Poll Razorpay for the status of PENDING refunds that HAVE a `gatewayRef`. Updates COMPLETED/FAILED. Also handles `gatewayRef=NULL` via fallback (payment_id + amount match). |
+| `reconcile-payments`| Every 10 minutes      | Poll Razorpay for stale PENDING payments (missed `payment.captured`/`payment.failed` webhooks). Fetches the order's actual captured payment (not the order ID). |
 
-All jobs log to stdout on completion (only if they actually did work) and write `AuditLog` rows for state-changing operations.
+All jobs are wrapped in `runCronJob()` which:
+1. Acquires a Postgres advisory lock (`pg_try_advisory_xact_lock`) — multi-instance safe. SQLite dev = no-op.
+2. Catches + logs errors — never crashes the scheduler.
+3. Logs "skipped" if another instance holds the lock.
 
-## 2. Why these three
+All state-changing actions write `AuditLog` rows.
+
+## 2. Job details
 
 ### 2.1 Audit log retention (spec §14 decision 8)
 
 > "90 days rolling (DB cleanup cron). Sufficient for incident investigation, keeps DB small."
 
-Without this, the AuditLog table grows unbounded — every state-changing outlet/admin op writes a row. At 50 ops/day across 4 outlets, that's ~18,000 rows/year — manageable, but a 90-day window keeps it tight.
-
 ### 2.2 Refresh token purge (spec §3.2 Layer 1)
 
-Refresh tokens are 7-day TTL. After rotation, the old row stays around for theft detection (the `replacedBy` chain). After 30 days, those chains are stale and safe to delete. Also marks tokens that hit their 7-day expiry without logout as `revokedAt = now` — keeps the DB clean and prevents weird edge cases in the rotation logic.
+Refresh tokens are 7-day TTL. After rotation, the old row stays for theft detection (`replacedBy` chain). After 30 days, those chains are safe to delete.
 
-### 2.3 Pickup timeout (spec §4 entity #13 + §8.6)
+### 2.3 Expired cart cleanup
 
-> "`pickupTimeoutMins` controls the READY → CANCELLED no-show window per §8.6."
+Cart rows past their `expiresAt` are dead (the cart service already filters them out). This job deletes the rows so the DB stays clean.
 
-When an outlet marks an order `READY`, the student has `pickupTimeoutMins` (default 30) to collect it. After that window elapses, the cron:
+### 2.4 Pickup timeout (spec §4 entity #13 + §8.6)
 
-1. Finds all `Order` rows with `status === 'READY'`
-2. Checks each one's `outlet.pickupTimeoutMins` against `order.readyAt`
-3. Auto-transitions past-due orders to `COMPLETED` (the food was made and either picked up or wasted — the outlet doesn't need to babysit the dashboard)
-4. Appends an entry to `Order.timeline` with `by: 'cron:pickup-timeout'`
-5. Creates a `Notification` (`ORDER_COMPLETED` with reason `pickup_timeout`) for the student
-6. Writes an `AuditLog` (`ORDER_PICKUP_TIMEOUT`)
-7. Emits `order:status:changed` to both `outlet:<id>` and `student:<id>` Socket.IO rooms
+> `pickupTimeoutMins` controls the READY → CANCELLED no-show window per §8.6.
 
-> Note: the current implementation uses `COMPLETED` as the auto-terminal state, not `CANCELLED`. The spec §8.6 says `READY → CANCELLED` is the no-show case (no refund). If you prefer the spec-literal behavior, change the `processPickupTimeouts()` function to set `CANCELLED` instead of `COMPLETED`. The reason for our choice: at pickup-timeout, we don't know if the student picked up (food gone) or no-showed (food wasted). `COMPLETED` is the conservative default; if the outlet wants to record a no-show refund-exempt case, they can manually mark `CANCELLED` before the timeout fires.
+When an outlet marks an order `READY`, the student has `pickupTimeoutMins` (default 30) to collect it. After that window:
+
+1. Finds READY orders via DB-level pre-filter (`readyAt < now - min(per-outlet pickupTimeoutMins)`)
+2. Calls `performTransition()` — atomic with audit log + notification
+3. No refund (no-show per spec §8.6; `REFUND_TRIGGERS.READY_TO_CANCELLED = null`)
+4. Emits `order:status:changed` socket events
+
+### 2.5 Refund outbox worker
+
+The "outbox pattern" creates a Refund row with `status=PENDING` inside the order-transition transaction. The controller calls `processRefundAfterCommit()` post-commit. If the server crashes between the tx commit and the post-commit call, the Refund stays PENDING with `gatewayRef=NULL`.
+
+This worker picks up orphaned refunds (`PENDING + gatewayRef=NULL + age > OUTBOX_MIN_AGE_MINS`) and retries the gateway call automatically. The `gatewayRef` guard in `processRefundAfterCommit` prevents duplicate gateway calls if the controller already succeeded.
+
+### 2.6 Stale sentinel cleanup
+
+When `createRazorpayOrder()` or `processRefundAfterCommit()` sets a sentinel (`in-progress-*` or `refund-in-progress-*`) to claim a row, the sentinel must be cleared on success or failure. If the process crashes between the claim and the cleanup, the sentinel stays forever.
+
+This cleanup finds stale sentinels (older than `SENTINEL_STALE_MINS`):
+- **Order sentinels** (`in-progress-*`): tries to recover by fetching the Razorpay order by receipt (`orderNumber`). If found → the gateway call succeeded but the DB update failed → store the real ID. If not found → reset to NULL.
+- **Refund sentinels** (`refund-in-progress-*`): reset to NULL so the outbox worker can retry.
+
+### 2.7 Refund reconciliation
+
+Polls Razorpay for the STATUS of PENDING refunds that HAVE a `gatewayRef` (the gateway call succeeded, but the webhook was missed or the refund is still processing). Also handles `gatewayRef=NULL` via fallback (match by `payment_id + amount + PENDING`).
+
+Maps gateway status: `processed` → `COMPLETED`, `failed` → `FAILED`, `created`/`pending` → stays `PENDING`. Calls `markPaymentRefundedIfFullyRefunded` when a refund reaches COMPLETED.
+
+### 2.8 Payment reconciliation
+
+Polls Razorpay for stale PENDING payments (missed `payment.captured`/`payment.failed` webhooks). Fetches the gateway order → if `amount_paid >= expected`, fetches the order's actual captured payment (NOT the order ID) and stores the real `pay_xxx` as `razorpayPaymentId`. If the gateway order has had too many failed attempts (`>= PAYMENT_MAX_ATTEMPTS`), marks the payment FAILED.
 
 ## 3. Configuration
 
 ### Env vars (in `.env`)
 
 ```
-RUN_CRON=true                              # set to "false" to disable all jobs (e.g. in tests)
-AUDIT_LOG_RETENTION_DAYS=90                # spec default
-PICKUP_TIMEOUT_MINS=30                     # fallback if outlet.pickupTimeoutMins is null
+RUN_CRON=true                              # set to "false" to disable all jobs
+AUDIT_LOG_RETENTION_DAYS=90
+PICKUP_TIMEOUT_MINS=30
+
+# Reconciliation + outbox worker
+OUTBOX_INTERVAL_MINS=2                     # outbox worker cron interval
+OUTBOX_MIN_AGE_MINS=2                      # grace period before a PENDING refund is eligible for outbox
+SENTINEL_STALE_MINS=5                      # stale sentinel cleanup threshold
+RECONCILIATION_INTERVAL_MINS=10            # reconciliation worker cron interval
+RECONCILIATION_MIN_AGE_MINS=5              # min age before a PENDING refund is eligible for reconciliation
+PAYMENT_RECONCILIATION_MIN_AGE_MINS=30     # min age before a PENDING payment is considered stale
+PAYMENT_MAX_ATTEMPTS=5                     # max failed gateway attempts before marking payment FAILED
 ```
 
-### Per-outlet config
+## 4. Multi-instance deployment
 
-Each `Outlet` row has its own `pickupTimeoutMins` column (default 30). The super admin can change this via the planned `PATCH /api/v1/admin/outlets/:id` endpoint (outlet profile update — schema is ready, controller route is M2 stretch).
+All cron jobs are wrapped in `runCronJob()` which acquires a Postgres advisory lock (`pg_try_advisory_xact_lock`) before running. On SQLite (dev), the lock is a no-op (single-instance assumption). On Postgres (production), only one instance runs each job per interval — the others log "skipped" and exit.
 
-## 4. Multi-instance deployment warning
-
-In a multi-instance deployment (Kubernetes with replicas > 1), **only one instance should run the cron jobs**. Otherwise:
-
-- Audit rows may be deleted multiple times (idempotent — `deleteMany` is safe)
-- Refresh tokens may be marked revoked multiple times (idempotent — `updateMany` is safe)
-- **Pickup timeouts may transition the same order twice** → the second attempt will hit the `ALLOWED_TRANSITIONS[COMPLETED] = []` rule and throw `INVALID_TRANSITION`. The current code catches and logs this, but it's noisy.
-
-For production multi-instance, use a distributed lock:
-
-- **Redis SET NX EX**: acquire a 60-second lock before each job run; release on completion
-- **Postgres advisory lock**: `SELECT pg_try_advisory_lock(<job-id>)` — works without Redis
-
-For V1 single-instance (default deployment), the cron as-written is correct.
+No Redis required — the advisory lock is built into Postgres.
 
 ## 5. Manual triggers (for debugging)
 
-The cron functions are exported so you can call them manually:
-
 ```js
-// In a one-off script:
-const { purgeAuditLogs, purgeExpiredRefreshTokens, processPickupTimeouts } = require('./src/lib/cron');
+const {
+  purgeAuditLogs,
+  purgeExpiredRefreshTokens,
+  purgeExpiredCarts,
+  processPickupTimeouts,
+  processPendingRefundOutbox,
+  cleanupStaleSentinels,
+  reconcilePendingRefunds,
+  reconcileStalePendingPayments,
+} = require('./src/lib/cron');
 
 (async () => {
   await purgeAuditLogs();
-  await purgeExpiredRefreshTokens();
   await processPickupTimeouts();
+  await processPendingRefundOutbox();
+  await reconcilePendingRefunds();
   process.exit(0);
 })();
 ```
 
-Or hit the (planned) admin endpoint:
-
-```
-POST /api/v1/admin/cron/run
-  { job: "audit-purge" | "refresh-purge" | "pickup-timeout" }
-```
-
-(Endpoint not yet implemented — manual script for now.)
-
-## 6. Graceful shutdown
-
-The `server.js` registers SIGTERM + SIGINT handlers that call `stopCron()` — this stops the in-flight schedule and lets any currently-running job finish before the process exits. If a job is mid-DB-write when the process exits, the next run will pick it up idempotently.
-
-## 7. Logs
-
-When a job runs and does work, it logs to stdout:
+## 6. Logs
 
 ```
 [cron:audit-purge] deleted 47 audit log rows older than 90 days
-[cron:refresh-purge] deleted 12 old refresh tokens, marked 3 expired-as-revoked
-[cron:pickup-timeout] auto-completed 2 READY orders past their pickup window
+[cron:pickup-timeout] cancelled 2 READY orders past their pickup window (scanned 3 candidates)
+[cron:refund-outbox] processed 1 orphaned PENDING refunds, 0 failed (scanned 1)
+[cron:sentinel-cleanup] recovered 0, reset 1 stale sentinels
+[cron:reconcile-refunds] reconciled 1 PENDING refunds, 0 still pending at gateway (scanned 1)
+[cron:reconcile-payments] reconciled 1 stale PENDING payments, 0 still legitimately pending (scanned 2)
+[cron:reconcile-refunds] skipped — another instance holds the advisory lock
 ```
-
-When a job runs and does nothing, it logs nothing (quiet).
-
-When a job throws, it logs to stderr:
-
-```
-[cron:pickup-timeout] failed: <error message>
-```
-
-The job is NOT taken out of rotation — the next scheduled run will try again.

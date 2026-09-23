@@ -98,8 +98,49 @@ async function devLogin({ email, password }) {
   return user;
 }
 
+async function passwordLogin({ email, password }) {
+  const user = await prisma.user.findUnique({
+    where: { email: email.toLowerCase() },
+    include: { outletStaff: true, studentProfile: true },
+  });
+
+  if (!user) {
+    const error = new Error('Invalid email or password');
+    error.statusCode = 401;
+    throw error;
+  }
+
+  if (user.status === USER_STATUS.SUSPENDED) {
+    const error = new Error('Your account has been suspended');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  if (!user.passwordHash) {
+    const error = new Error('This account signs in with Google OAuth. Please click "Continue with Google".');
+    error.statusCode = 401;
+    throw error;
+  }
+
+  const isMatch = await comparePassword(password, user.passwordHash);
+  if (!isMatch) {
+    const error = new Error('Invalid email or password');
+    error.statusCode = 401;
+    throw error;
+  }
+
+  // Update lastLoginAt
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { lastLoginAt: new Date() },
+  });
+
+  return user;
+}
+
 module.exports = {
   findOrCreateGoogleUser,
   getCurrentUser,
   devLogin,
+  passwordLogin,
 };

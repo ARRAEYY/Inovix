@@ -249,6 +249,7 @@ module.exports = {
   revokeAllForUser,
   revokeRefreshToken,
   purgeExpired,
+  hashToken,
   // For tests:
   _hashToken: hashToken,
 };

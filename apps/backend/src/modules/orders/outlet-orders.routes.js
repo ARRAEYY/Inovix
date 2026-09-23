@@ -1,7 +1,7 @@
 const express = require('express');
 const { protect, authorizeRole, requireOutletScope } = require('../../middleware/auth.middleware');
 const { validateBody, validateQuery } = require('../../middleware/validation.middleware');
-const { getOutletOrders, getOutletOrder, getOutletKPIs, updateOrderStatus, verifyPickupCode } = require('./orders.controller');
+const { getOutletOrders, getOutletOrder, getOutletKPIs, getOutletAnalytics, updateOrderStatus, verifyPickupCode } = require('./orders.controller');
 const { OUTLET_ROLES } = require('../../lib/constants');
 const { updateOrderStatusSchema } = require('@nosh/validation');
 const { z } = require('zod');
@@ -17,9 +17,9 @@ router.get('/', validateQuery(z.object({
   status: z.string().optional(),
 })), getOutletOrders);
 
-// INO-P1-32: dedicated KPIs endpoint — mounted BEFORE /:orderId so the
-// path doesn't get captured as an orderId param.
+// INO-P1-32: dedicated KPIs and Analytics endpoints — mounted BEFORE /:orderId
 router.get('/kpis', getOutletKPIs);
+router.get('/analytics', getOutletAnalytics);
 
 router.get('/:orderId', getOutletOrder);
 router.patch('/:orderId/status', validateBody(updateOrderStatusSchema), updateOrderStatus);

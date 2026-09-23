@@ -54,6 +54,24 @@ const getOutlet = wrap(async (req, res) => {
   res.status(200).json({ success: true, data: outlet });
 });
 
+const createOutlet = wrap(async (req, res) => {
+  const outlet = await adminService.createOutlet(req.body);
+  await audit({
+    actorId: req.user.id,
+    action: 'OUTLET_CREATED',
+    targetType: 'Outlet',
+    targetId: outlet.id,
+    after: { name: outlet.name, status: outlet.status },
+    req,
+  });
+  res.status(201).json({ success: true, data: outlet });
+});
+
+const getAllStaff = wrap(async (req, res) => {
+  const staff = await adminService.getAllStaff();
+  res.status(200).json({ success: true, data: staff });
+});
+
 const updateOutletStatus = wrap(async (req, res) => {
   const { outlet, before } = await adminService.updateOutletStatus(req.params.outletId, req.body.status);
   await audit({
@@ -127,7 +145,7 @@ const issueManualRefund = wrap(async (req, res) => {
 
 module.exports = {
   getOverview, getUsers, getUser, updateUserStatus,
-  getOutlets, getOutlet, updateOutletStatus,
+  getOutlets, getOutlet, createOutlet, getAllStaff, updateOutletStatus,
   getOrders, getOrder, getMenu, getMenuItem, updateMenuItemStatus,
   issueManualRefund,
 };

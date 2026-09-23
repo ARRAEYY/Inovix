@@ -26,8 +26,11 @@ router.get('/users/:userId', adminController.getUser);
 router.patch('/users/:userId/status', validateBody(updateUserStatusSchema), adminController.updateUserStatus);
 
 router.get('/outlets', adminController.getOutlets);
+router.post('/outlets', adminController.createOutlet);
 router.get('/outlets/:outletId', adminController.getOutlet);
 router.patch('/outlets/:outletId/status', validateBody(updateOutletStatusSchema), adminController.updateOutletStatus);
+
+router.get('/staff', adminController.getAllStaff);
 
 router.get('/orders', validateQuery(z.object({
   page: z.coerce.number().int().min(1).optional(),

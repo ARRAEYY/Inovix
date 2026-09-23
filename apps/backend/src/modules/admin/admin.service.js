@@ -159,6 +159,49 @@ async function getOutlet(outletId) {
   return outlet;
 }
 
+async function createOutlet(data) {
+  const { name, description, location, contactNumber, contactEmail, openingTime, closingTime, status = 'OPEN' } = data;
+  if (!name) throw { statusCode: 400, message: 'Outlet name is required' };
+  return prisma.outlet.create({
+    data: {
+      name,
+      description: description || null,
+      location: location || null,
+      contactNumber: contactNumber || null,
+      contactEmail: contactEmail || null,
+      openingTime: openingTime || '09:00',
+      closingTime: closingTime || '22:00',
+      status: status || 'OPEN',
+    },
+  });
+}
+
+async function getAllStaff() {
+  const staff = await prisma.outletStaff.findMany({
+    include: {
+      user: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          role: true,
+          status: true,
+          createdAt: true,
+        },
+      },
+      outlet: {
+        select: {
+          id: true,
+          name: true,
+          location: true,
+          status: true,
+        },
+      },
+    },
+  });
+  return staff;
+}
+
 async function updateOutletStatus(outletId, status) {
   if (!Object.values(OUTLET_STATUS).includes(status)) {
     throw { statusCode: 400, message: `Invalid status. Must be one of: ${Object.values(OUTLET_STATUS).join(', ')}` };
@@ -444,6 +487,8 @@ module.exports = {
   updateUserStatus,
   getOutlets,
   getOutlet,
+  createOutlet,
+  getAllStaff,
   updateOutletStatus,
   getOrders,
   getOrder,

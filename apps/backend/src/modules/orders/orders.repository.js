@@ -14,44 +14,70 @@ const ORDER_INCLUDE = {
 };
 
 async function createOrder(orderData) {
-  // createOrder + createOrderItems + createPayment in a transaction
-  return prisma.$transaction(async (tx) => {
-    const order = await tx.order.create({
-      data: {
-        orderNumber: orderData.orderNumber,
-        studentId: orderData.studentId,
-        outletId: orderData.outletId,
-        outletSnapshot: orderData.outletSnapshot,
-        status: orderData.status,
-        subtotal: orderData.subtotal,
-        discount: orderData.discount,
-        platformFee: orderData.platformFee,
-        totalAmount: orderData.totalAmount,
-        notes: orderData.notes || '',
-        pickupCode: orderData.pickupCode,
-        scheduledFor: orderData.scheduledFor || null,
-        timeline: JSON.stringify([
-          { status: orderData.status, at: new Date().toISOString(), by: orderData.studentId },
-        ]),
-        items: { create: orderData.items.map((i) => ({
-          menuItemId: i.menuItemId,
-          name: i.name,
-          price: i.price,
-          quantity: i.quantity,
-          imageUrl: i.image || null,
-          optionsSnapshot: JSON.stringify(i.selectedOptions || []),
-          itemTotal: i.itemTotal,
-        })) },
-        payment: { create: {
-          amount: orderData.totalAmount,
-          status: orderData.paymentStatus || 'PENDING',
-          method: orderData.paymentMethod,
-        } },
-      },
-      include: ORDER_INCLUDE,
-    });
-    return order;
-  });
+  // INO-AUDIT8-#9: wrap in P2002 retry. The orderNumber is generated
+  // with a timestamp + random suffix — collisions are extremely unlikely
+  // but possible. If a P2002 (unique constraint violation on orderNumber
+  // or pickupCode) occurs, regenerate + retry once.
+  const MAX_RETRIES = 3;
+  let lastError;
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    try {
+      return await prisma.$transaction(async (tx) => {
+        const order = await tx.order.create({
+          data: {
+            orderNumber: orderData.orderNumber,
+            studentId: orderData.studentId,
+            outletId: orderData.outletId,
+            outletSnapshot: orderData.outletSnapshot,
+            status: orderData.status,
+            subtotal: orderData.subtotal,
+            discount: orderData.discount,
+            platformFee: orderData.platformFee,
+            totalAmount: orderData.totalAmount,
+            notes: orderData.notes || '',
+            pickupCode: orderData.pickupCode,
+            scheduledFor: orderData.scheduledFor || null,
+            timeline: JSON.stringify([
+              { status: orderData.status, at: new Date().toISOString(), by: orderData.studentId },
+            ]),
+            items: { create: orderData.items.map((i) => ({
+              menuItemId: i.menuItemId,
+              name: i.name,
+              price: i.price,
+              quantity: i.quantity,
+              imageUrl: i.image || null,
+              optionsSnapshot: JSON.stringify(i.selectedOptions || []),
+              itemTotal: i.itemTotal,
+            })) },
+            payment: { create: {
+              amount: orderData.totalAmount,
+              status: orderData.paymentStatus || 'PENDING',
+              method: orderData.paymentMethod,
+            } },
+          },
+          include: ORDER_INCLUDE,
+        });
+        return order;
+      });
+    } catch (err) {
+      if (err.code === 'P2002' && attempt < MAX_RETRIES - 1) {
+        // Unique constraint violation on orderNumber or pickupCode —
+        // regenerate + retry. The caller's generateOrderNumber() +
+        // generatePickupCode() functions are called before createOrder,
+        // so we need the service to re-call them. For now, re-throw and
+        // let the service handle the retry (it's the service's job to
+        // generate the IDs). This catch just prevents an unhandled crash.
+        lastError = err;
+        // Re-generate IDs for the next attempt
+        const { generateOrderNumber, generatePickupCode } = require('./orders.service');
+        orderData.orderNumber = generateOrderNumber();
+        orderData.pickupCode = generatePickupCode();
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastError;
 }
 
 async function findByUserId(studentId, { page = 1, pageSize = 20, status } = {}) {

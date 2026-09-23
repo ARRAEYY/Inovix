@@ -44,6 +44,7 @@ model User {
   orders              Order[]
   auditLogs           AuditLog[]
   notifications       Notification[]
+  passwordResets      PasswordReset[]
 
   @@index([email])
 }
@@ -353,13 +354,24 @@ model Refund {
   payment       Payment   @relation(fields: [paymentId], references: [id])
 
   @@index([paymentId])
-  // INO-AUDIT3-2 fix: enforce (paymentId, triggeredBy) uniqueness at the DB
-  // level. The application-level check in transition.service.js +
-  // admin.service.js guards against the common case, but two concurrent
-  // requests could both pass the check before either INSERT runs. This
-  // unique constraint makes the guarantee airtight — the second INSERT
-  // fails with a unique-violation, which the caller translates to a 409.
-  @@unique([paymentId, triggeredBy])
+  // INO-AUDIT4-D23 fix: the previous @@unique([paymentId, triggeredBy])
+  // prevented multiple SUPER_ADMIN_MANUAL refunds on the same payment —
+  // making partial refunds impossible to complete. A ₹1000 payment with
+  // a ₹300 COMPLETED manual refund would reject a second ₹700 manual
+  // refund because the (paymentId, SUPER_ADMIN_MANUAL) pair already
+  // existed.
+  //
+  // The uniqueness is now a PARTIAL index (created via raw SQL in
+  // migration 20260922210000_refund_partial_unique) that only applies
+  // to automatic triggers (OUTLET_REJECT, OUTLET_CANCEL, CUSTOMER_CANCEL).
+  // SUPER_ADMIN_MANUAL refunds are excluded — multiple are allowed per
+  // payment, subject to the remaining-refundable check in admin.service.js.
+  //
+  // Prisma's DSL doesn't support partial unique indexes, so this is NOT
+  // expressed in the schema — the migration creates it via raw SQL. The
+  // application-level checks in transition.service.js +
+  // admin.service.js guard the automatic triggers; the partial index is
+  // the DB-level airtight guarantee.
 }
 
 // ─── 17. Notification ──────────────────────────────────────────────────────
@@ -414,4 +426,21 @@ model AuditLog {
   @@index([targetType, targetId])
   @@index([actorUserId])
   @@index([createdAt])
+}
+
+// ─── 20. PasswordReset ─────────────────────────────────────────────────────
+// Stores 6-digit OTP codes for password reset. Hashed at rest.
+// Expires after 10 minutes. Single-use (usedAt set on successful reset).
+model PasswordReset {
+  id        String   @id @default(cuid())
+  userId    String
+  otpHash   String   // SHA-256 hash of the 6-digit OTP
+  expiresAt DateTime // now + 10 minutes
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
 }

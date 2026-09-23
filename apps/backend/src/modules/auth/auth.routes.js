@@ -1,14 +1,19 @@
 const express = require('express');
+const authController = require('./auth.controller');
 const {
+  login,
   googleLogin,
   devLogin,
   getCurrentUser,
   refresh,
   logout,
-} = require('./auth.controller');
+  forgotPassword,
+  resetPassword,
+} = authController;
 const { protect } = require('../../middleware/auth.middleware');
 const { validateBody } = require('../../middleware/validation.middleware');
 const { googleLoginSchema, devLoginSchema } = require('@nosh/validation');
+const { z } = require('zod');
 const {
   googleLoginRateLimit,
   devLoginRateLimit,
@@ -17,6 +22,14 @@ const {
 } = require('../../middleware/rateLimit.middleware');
 
 const router = express.Router();
+
+const loginSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(1),
+}).strict();
+
+// Standard production email+password authentication
+router.post('/login', devLoginRateLimit, validateBody(loginSchema), login);
 
 // ─── INO-007 fix: dev-login is explicitly opt-in ──────────────────────────
 // The previous check `process.env.NODE_ENV !== 'production'` left dev-login
@@ -35,6 +48,14 @@ const IS_DEV = process.env.NODE_ENV === 'development';
 // Public routes — each gets its own per-endpoint rate limit (INO-010).
 router.post('/google', googleLoginRateLimit, validateBody(googleLoginSchema), googleLogin);
 router.post('/refresh', refreshRateLimit, refresh);
+
+// Password reset flow — public (no auth required)
+router.post('/forgot-password', devLoginRateLimit, validateBody(z.object({ email: z.string().email() }).strict()), forgotPassword);
+router.post('/reset-password', devLoginRateLimit, validateBody(z.object({
+  email: z.string().email(),
+  otp: z.string().min(6).max(6),
+  newPassword: z.string().min(8),
+}).strict()), resetPassword);
 
 if (IS_DEV && ENABLE_DEV_LOGIN) {
   router.post('/dev-login', devLoginRateLimit, validateBody(devLoginSchema), devLogin);

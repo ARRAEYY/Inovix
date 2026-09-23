@@ -6,3 +6,11 @@ build/
 .next/
 coverage/
 .DS_Store
+*.db
+*.db-journal
+*.zip
+backups/
+.env.*
+kent_portal/
+*.tsbuildinfo
+.vercel/

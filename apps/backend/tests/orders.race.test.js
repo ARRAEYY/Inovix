@@ -237,12 +237,15 @@ maybe('INO-P2-37: sequential transition after a failed concurrent claim', async 
       performTransition({ orderId: order.id, expectedFromStatus: ORDER_STATUS.PENDING, toStatus: ORDER_STATUS.ACCEPTED, actorId: user.id }),
       performTransition({ orderId: order.id, expectedFromStatus: ORDER_STATUS.PENDING, toStatus: ORDER_STATUS.ACCEPTED, actorId: user.id }),
     ]);
-    assert.strictEqual(a.status === 'fulfilled' ? 1 : 0, 1, 'a should be fulfilled or rejected exactly');
-    assert.strictEqual(b.status === 'fulfilled' ? 1 : 0, 0, 'b should be the loser (rejected)');
-    const winner = a.status === 'fulfilled' ? a.value : b.value;
-    const loser = a.status === 'rejected' ? a.reason : b.reason;
+    const successes = [a, b].filter(r => r.status === 'fulfilled');
+    const rejections = [a, b].filter(r => r.status === 'rejected');
+    assert.strictEqual(successes.length, 1, 'exactly one should win');
+    assert.strictEqual(rejections.length, 1, 'exactly one should lose');
+    const winner = successes[0].value;
+    const loser = rejections[0].reason;
 
     assert.ok(loser?.statusCode === 409 || loser?.code === 'CONFLICT');
+
 
     // Now the loser (or any client) should be able to do the NEXT
     // transition: ACCEPTED → PREPARING. This is the recovery path.

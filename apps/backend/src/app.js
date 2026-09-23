@@ -8,6 +8,7 @@ const cartRoutes = require('./modules/cart/cart.routes');
 const ordersRoutes = require('./modules/orders/orders.routes');
 const outletOrdersRoutes = require('./modules/orders/outlet-orders.routes');
 const outletMenuRoutes = require('./modules/menu/menu.routes');
+const outletStaffRoutes = require('./modules/outlet-staff/outlet-staff.routes');
 const catalogRoutes = require('./modules/catalog/catalog.routes');
 const adminRoutes = require('./modules/admin/admin.routes');
 const paymentsRoutes = require('./modules/payments/payments.routes');
@@ -19,6 +20,11 @@ const { errorHandler } = require('./middleware/error.middleware');
 const { authRateLimit, apiRateLimit } = require('./middleware/rateLimit.middleware');
 
 const app = express();
+
+// Trust the first proxy hop (Caddy in dev, the load balancer in prod) so
+// req.ip reflects the real client IP and express-rate-limit doesn't crash
+// with ERR_ERL_UNEXPECTED_X_FORWARDED_FOR on proxied requests.
+app.set('trust proxy', 1);
 
 // ── Security ──────────────────────────────────────────────────────────────────
 app.use(helmet());
@@ -105,6 +111,7 @@ app.use('/api/v1/catalog', catalogRoutes);
 app.use('/api/v1/orders', ordersRoutes);
 app.use('/api/v1/outlet/orders', outletOrdersRoutes);
 app.use('/api/v1/outlet/menu', outletMenuRoutes);
+app.use('/api/v1/outlet/staff', outletStaffRoutes);
 app.use('/api/v1/admin', adminRoutes);
 app.use('/api/v1/notifications', notificationsRoutes);
 app.use('/api/v1/audit', auditRoutes);

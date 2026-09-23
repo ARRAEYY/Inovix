@@ -87,34 +87,49 @@ function check(name, cond, detail = '') {
 async function main() {
   console.log('--- E2E: Real student order flow + status transitions + RBAC ---\n');
 
-  // 1. Login as outlet admin (acts as both student + outlet staff — see HACKS).
-  const outletToken = await devLogin('adilreyaz.outlet@nosh.local', 'NoshOutlet@123');
-  if (!outletToken) {
-    console.error('Failed to log in as outlet admin. Are you running `npm run dev:backend`?');
+  // 1. Login as both the student AND the outlet admin (separate tokens).
+  //    INO-AUDIT5: the previous version used the outlet admin token for
+  //    both roles (HACK). After the D3 fix (STUDENT-only authorization on
+  //    POST /orders), the outlet admin token gets 403 on POST /orders.
+  //    Now we use a real student token for the student-side flow + the
+  //    outlet admin token for the outlet-side flow.
+  //    The student `adil@rishihood.edu.in` is Google-only (no password
+  //    hash) — dev-login lets it through without a password in dev mode.
+  const studentToken = await devLogin('adil@rishihood.edu.in');
+  if (!studentToken) {
+    console.error('Failed to log in as student. Are you running `npm run dev:backend`?');
     console.error('Also check: ENABLE_DEV_LOGIN=true + NODE_ENV=development in .env');
     process.exit(1);
   }
-  console.log('✓ Logged in as outlet admin (acts as student + outlet staff)');
-  console.log('  ℹ HACK: using outlet admin token for both roles (Google-only student can\'t dev-login)');
+  console.log('✓ Logged in as student (adil@rishihood.edu.in)');
 
-  // Get user info to know the studentId (outlet admin's user.id)
-  const meRes = await fetchJson(`${BASE_URL}/auth/me`, { headers: authHeaders(outletToken) });
-  const studentId = meRes.data?.data?.user?.id;
-  const outletId = meRes.data?.data?.user?.outletId;
-  check('GET /auth/me returns user', !!studentId, 'no user.id in response');
+  const outletToken = await devLogin('adilreyaz.outlet@nosh.local', 'NoshOutlet@123');
+  if (!outletToken) {
+    console.error('Failed to log in as outlet admin.');
+    process.exit(1);
+  }
+  console.log('✓ Logged in as outlet admin (adilreyaz.outlet@nosh.local)');
+
+  // Get user info for both
+  const studentMeRes = await fetchJson(`${BASE_URL}/auth/me`, { headers: authHeaders(studentToken) });
+  const studentId = studentMeRes.data?.data?.user?.id;
+  check('GET /auth/me returns student user', !!studentId, 'no user.id in response');
+
+  const outletMeRes = await fetchJson(`${BASE_URL}/auth/me`, { headers: authHeaders(outletToken) });
+  const outletId = outletMeRes.data?.data?.user?.outletId;
   check('Outlet admin has outletId', !!outletId, 'no outletId — user is not outlet-scoped');
   if (!studentId || !outletId) {
     console.error('Cannot proceed without studentId + outletId');
     process.exit(1);
   }
 
-  // 2. Browse catalog → find the outlet's menu → find an available item
-  const catalogRes = await fetchJson(`${BASE_URL}/catalog/outlets`, { headers: authHeaders(outletToken) });
+  // 2. Browse catalog as student → find the outlet's menu → find an available item
+  const catalogRes = await fetchJson(`${BASE_URL}/catalog/outlets`, { headers: authHeaders(studentToken) });
   check('GET /catalog/outlets returns list', catalogRes.status === 200 && Array.isArray(catalogRes.data?.data));
   const myOutlet = catalogRes.data?.data?.find(o => o.id === outletId);
-  check('My outlet is in catalog (OPEN/BUSY)', !!myOutlet, `outlet ${outletId} not in catalog`);
+  check('Outlet is in catalog (OPEN/BUSY)', !!myOutlet, `outlet ${outletId} not in catalog`);
 
-  const menuRes = await fetchJson(`${BASE_URL}/catalog/outlets/${outletId}/menu`, { headers: authHeaders(outletToken) });
+  const menuRes = await fetchJson(`${BASE_URL}/catalog/outlets/${outletId}/menu`, { headers: authHeaders(studentToken) });
   check('GET /catalog/outlets/:id/menu returns menu', menuRes.status === 200 && Array.isArray(menuRes.data?.data));
   const availableItem = menuRes.data?.data?.find(m => m.isAvailable);
   check('Found an available menu item', !!availableItem, 'no isAvailable=true item in menu');
@@ -124,10 +139,11 @@ async function main() {
   }
   console.log(`  ℹ Using menu item: ${availableItem.name} (₹${availableItem.price})`);
 
-  // 3. Create order
+  // 3. Create order AS THE STUDENT (the new STUDENT-only authorization
+  //    on POST /orders means the outlet admin token would get 403).
   const createOrderRes = await fetchJson(`${BASE_URL}/orders`, {
     method: 'POST',
-    headers: authHeaders(outletToken),
+    headers: authHeaders(studentToken),
     body: JSON.stringify({
       outletId,
       items: [{ menuItemId: availableItem.id, quantity: 2 }],
@@ -135,13 +151,25 @@ async function main() {
       notes: 'E2E test order',
     }),
   });
-  check('POST /orders creates order (201)', createOrderRes.status === 201, `got ${createOrderRes.status}: ${JSON.stringify(createOrderRes.data)}`);
+  check('POST /orders as student creates order (201)', createOrderRes.status === 201, `got ${createOrderRes.status}: ${JSON.stringify(createOrderRes.data)}`);
   const order = createOrderRes.data?.data;
   check('Order has PENDING status', order?.status === 'PENDING', `status was ${order?.status}`);
   check('Order has correct studentId', order?.studentId === studentId, `studentId ${order?.studentId} vs ${studentId}`);
   check('Order has correct outletId', order?.outletId === outletId);
   check('Order total = (price × qty) + platformFee', Number(order?.totalAmount) === Number(availableItem.price) * 2 + 5, `total was ${order?.totalAmount}`);
   check('Order has pickupCode', !!order?.pickupCode);
+
+  // 3b. RBAC test: outlet admin trying to POST /orders → 403 (D3 boundary)
+  const outletOrderRes = await fetchJson(`${BASE_URL}/orders`, {
+    method: 'POST',
+    headers: authHeaders(outletToken),
+    body: JSON.stringify({
+      outletId,
+      items: [{ menuItemId: availableItem.id, quantity: 1 }],
+      paymentMethod: 'ONLINE',
+    }),
+  });
+  check('POST /orders as outlet admin → 403 (role boundary)', outletOrderRes.status === 403, `got ${outletOrderRes.status} (expected 403 — D3 STUDENT-only auth)`);
 
   if (!order) {
     console.error('Cannot proceed without an order');
@@ -222,11 +250,11 @@ async function main() {
   check('Has ORDER_CREATED audit entry', auditActions.has('ORDER_CREATED'));
   check('Has ORDER_STATUS_CHANGED audit entry', auditActions.has('ORDER_STATUS_CHANGED'));
 
-  // 11. Test cancellation flow on a second order
+  // 11. Test cancellation flow on a second order (student cancels)
   console.log('\n  ℹ Testing cancellation flow on a 2nd order...');
   const order2Res = await fetchJson(`${BASE_URL}/orders`, {
     method: 'POST',
-    headers: authHeaders(outletToken),
+    headers: authHeaders(studentToken), // INO-AUDIT5: student creates + cancels
     body: JSON.stringify({
       outletId,
       items: [{ menuItemId: availableItem.id, quantity: 1 }],
@@ -239,7 +267,7 @@ async function main() {
   if (order2) {
     const cancelRes = await fetchJson(`${BASE_URL}/orders/${order2.id}/cancel`, {
       method: 'POST',
-      headers: authHeaders(outletToken),
+      headers: authHeaders(studentToken), // student cancels their own order
     });
     check('POST /orders/:id/cancel → 200', cancelRes.status === 200, `got ${cancelRes.status}: ${JSON.stringify(cancelRes.data)}`);
     check('2nd order is now CANCELLED', cancelRes.data?.data?.status === 'CANCELLED', `status was ${cancelRes.data?.data?.status}`);
@@ -254,7 +282,7 @@ async function main() {
   console.log('  ℹ Testing rejection flow on a 3rd order...');
   const order3Res = await fetchJson(`${BASE_URL}/orders`, {
     method: 'POST',
-    headers: authHeaders(outletToken),
+    headers: authHeaders(studentToken), // INO-AUDIT5: student creates
     body: JSON.stringify({
       outletId,
       items: [{ menuItemId: availableItem.id, quantity: 1 }],

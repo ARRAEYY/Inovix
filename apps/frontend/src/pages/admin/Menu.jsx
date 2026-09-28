@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import AdminLayout from '../../components/layout/AdminLayout';
 import api from '../../services/api/client';
+import { toast } from 'react-hot-toast';
 
 const formatCurrency = (amount) => {
   return new Intl.NumberFormat('en-IN', {
@@ -54,7 +55,7 @@ const Menu = () => {
         await api.patch(`/admin/menu/${itemId}/status`, { isAvailable: !currentAvailability });
         setMenuItems(menuItems.map(m => m.id === itemId ? { ...m, isAvailable: !currentAvailability } : m));
       } catch (err) {
-        alert('Failed to update menu item');
+        toast('Failed to update menu item');
       }
     }
   };
@@ -70,7 +71,7 @@ const Menu = () => {
       setMenuItems(menuItems.map(m => m.id === selectedEditItem.id ? selectedEditItem : m));
       setSelectedEditItem(null);
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to update menu item');
+      toast(err.response?.data?.message || 'Failed to update menu item');
     }
   };
 

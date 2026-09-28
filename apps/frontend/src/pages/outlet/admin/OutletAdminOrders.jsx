@@ -4,6 +4,7 @@ import OrderBoard from '../../../components/outlet/OrderBoard';
 import DeclineOrderModal from '../../../components/outlet/DeclineOrderModal';
 import { getOrders } from '../../../services/outletAdminService';
 import { orderService, OUTLET_DISPLAY_STATUS } from '../../../services/api/orderService';
+import { toast } from 'react-hot-toast';
 
 const OutletAdminOrders = () => {
   const [orders, setOrders] = useState([]);
@@ -54,7 +55,7 @@ const OutletAdminOrders = () => {
       });
     } catch (err) {
       console.error('Failed to update status', err);
-      alert(err.message || 'Failed to update status');
+      toast(err.message || 'Failed to update status');
     }
   };
 
@@ -74,7 +75,7 @@ const OutletAdminOrders = () => {
       updateOrderInState(orderId, { backendStatus: 'READY', status: 'READY' });
     } catch (err) {
       console.error('Failed to mark ready', err);
-      alert(err.message || 'Failed to mark order ready');
+      toast(err.message || 'Failed to mark order ready');
     }
   };
 
@@ -86,7 +87,7 @@ const OutletAdminOrders = () => {
       setDeclineModalOpen(false);
       setOrderToDecline(null);
     } catch (err) {
-      alert(err.message || 'Failed to decline order');
+      toast(err.message || 'Failed to decline order');
       throw err;
     }
   };

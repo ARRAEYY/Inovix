@@ -10,6 +10,7 @@ import { catalogService } from '../../services/api/catalogService';
 import { orderService } from '../../services/api/orderService';
 import { paymentService } from '../../services/api/paymentService';
 import { useAuth } from '../../hooks/useAuth';
+import { toast } from 'react-hot-toast';
 
 // Render a category icon as a self-contained CSS block — no external image
 // service. Uses the first letter (or first two letters for short words) of
@@ -213,7 +214,7 @@ const OutletMenu = () => {
         setCart({});
         try { localStorage.removeItem(CART_STORAGE_KEY); } catch {}
         setIsCartOpen(false);
-        alert(`Order ${order.orderNumber || ''} created but payment was cancelled. You can pay from your orders.`);
+        toast(`Order ${order.orderNumber || ''} created but payment was cancelled. You can pay from your orders.`);
         navigate('/student/orders');
         return;
       }
@@ -230,10 +231,10 @@ const OutletMenu = () => {
       try { localStorage.removeItem(CART_STORAGE_KEY); } catch {}
       setIsCartOpen(false);
       const paid = verifyRes.success ? '✓ Paid' : 'pending verification';
-      alert(`Order ${order.orderNumber || ''} placed! Payment: ${paid}. You'll get a pickup code when the outlet accepts.`);
+      toast(`Order ${order.orderNumber || ''} placed! Payment: ${paid}. You'll get a pickup code when the outlet accepts.`);
       navigate('/student/orders');
     } catch (err) {
-      alert(err.message || 'Could not place the order. Please try again.');
+      toast(err.message || 'Could not place the order. Please try again.');
     } finally {
       setPlacingOrder(false);
     }

@@ -1,20 +1,33 @@
 import { BrowserRouter } from 'react-router-dom';
+import { Toaster } from 'react-hot-toast';
 import { AuthProvider } from './context/AuthContext';
+import { SocketProvider } from './context/SocketContext';
 import AppRoutes from './routes/AppRoutes';
 
-// Derive react-router's basename from Vite's `base` config so the app
-// works whether served at the root (Vite dev server standalone) or
-// behind the Next.js reverse-proxy at /inovix-app/ (preview iframe).
-// `import.meta.env.BASE_URL` is Vite's resolved base — '/' in standalone,
-// '/inovix-app/' under the proxy. Strip the trailing slash for react-router.
 const routerBasename = (import.meta.env.BASE_URL || '/').replace(/\/$/, '') || '/';
 
 function App() {
   return (
     <AuthProvider>
-      <BrowserRouter basename={routerBasename}>
-        <AppRoutes />
-      </BrowserRouter>
+      <SocketProvider>
+        <BrowserRouter basename={routerBasename}>
+          <AppRoutes />
+        </BrowserRouter>
+        <Toaster
+          position="top-center"
+          toastOptions={{
+            duration: 4000,
+            style: {
+              background: '#1f2937',
+              color: '#fff',
+              borderRadius: '10px',
+              fontSize: '0.9rem',
+            },
+            success: { iconTheme: { primary: '#10b981', secondary: '#fff' } },
+            error: { iconTheme: { primary: '#ef4444', secondary: '#fff' } },
+          }}
+        />
+      </SocketProvider>
     </AuthProvider>
   );
 }

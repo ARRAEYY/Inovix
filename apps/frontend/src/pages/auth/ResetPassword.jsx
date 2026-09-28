@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import client from '../../services/api/client';
+import { toast } from 'react-hot-toast';
 
 const ResetPassword = () => {
   const navigate = useNavigate();
@@ -34,7 +35,7 @@ const ResetPassword = () => {
         otp: formData.otp,
         newPassword: formData.newPassword,
       });
-      alert('Password reset successfully! Please login with your new password.');
+      toast('Password reset successfully! Please login with your new password.');
       navigate('/');
     } catch (err) {
       setError(err.response?.data?.message || 'Password reset failed');

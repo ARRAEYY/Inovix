@@ -4,6 +4,7 @@ import OutletCard from '../../components/food/OutletCard';
 import MobileBottomNav from '../../components/layout/MobileBottomNav';
 import { useAuth } from '../../hooks/useAuth';
 import { catalogService } from '../../services/api/catalogService';
+import SkeletonGrid from '../../components/common/Skeleton';
 
 const FILTERS = ['All', 'Open now'];
 
@@ -97,7 +98,7 @@ const Home = () => {
 
         {loading ? (
           <div style={{ textAlign: 'center', padding: '4rem 0', color: 'var(--text-light)' }}>
-            <p>Loading outlets…</p>
+            <SkeletonGrid count={6} cols={3} />
           </div>
         ) : error ? (
           <div style={{ textAlign: 'center', padding: '4rem 0', color: 'var(--text-light)' }}>

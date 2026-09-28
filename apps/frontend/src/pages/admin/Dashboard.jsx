@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import AdminLayout from '../../components/layout/AdminLayout';
 import { useAuth } from '../../hooks/useAuth';
 import api from '../../services/api/client';
+import Skeleton from '../../components/common/Skeleton';
 
 const formatCurrency = (amount) => {
   return new Intl.NumberFormat('en-IN', {
@@ -36,7 +37,7 @@ const AdminDashboard = () => {
     fetchDashboard();
   }, [fetchDashboard]);
 
-  if (loading) return <AdminLayout><p style={{ padding: '24px' }}>Loading platform overview...</p></AdminLayout>;
+  if (loading) return <AdminLayout><div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '1rem' }}><Skeleton height='80px' /><Skeleton height='80px' /><Skeleton height='80px' /></div></AdminLayout>;
   if (error) return <AdminLayout><div className="error-message" style={{ margin: '24px' }}>{error}</div></AdminLayout>;
   if (!data) return <AdminLayout><p style={{ padding: '24px' }}>No data available</p></AdminLayout>;
 

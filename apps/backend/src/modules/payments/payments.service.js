@@ -348,6 +348,13 @@ async function verifyRazorpayPayment({ razorpayOrderId, razorpayPaymentId, razor
   // Defense-in-depth — Razorpay enforces the amount at checkout time,
   // but a backend bug or tampering attempt could otherwise let a
   // mismatched or non-captured payment slip through.
+  // Get the outlet-specific Razorpay client (was MISSING — `client` was
+  // undefined → TypeError → caught by the catch → 503 GATEWAY_VERIFICATION_UNAVAILABLE).
+  // This is why every payment verification failed: the signature check passed
+  // (it uses keySecret directly), but the gateway re-fetch (amount + capture
+  // status) crashed because there was no Razorpay client instance.
+  const client = await getOutletRazorpayClient(payment.order.outletId);
+
   try {
     const gatewayPayment = await client.payments.fetch(razorpayPaymentId);
     const expectedAmountPaise = toPaise(payment.amount);

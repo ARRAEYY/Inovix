@@ -50,25 +50,79 @@ function clearRefreshCookie(res) {
   res.clearCookie(REFRESH_COOKIE, { ...REFRESH_COOKIE_OPTIONS, maxAge: undefined });
 }
 
+// Serialize a user for API responses. Role-aware: only includes the fields
+// relevant to the user's role, so a student doesn't get a response full of
+// `outlet: null` / `outletId: null` / `outletRole: null` / `outletStaff: null`
+// noise. Strips `passwordHash`, `googleId`, `googlePicture` (the picture is
+// exposed as the frontend-facing `avatar` alias), and the raw `outletStaff`
+// Prisma relation (which leaks internal IDs the frontend doesn't need).
+//
+// Shape per role:
+//   STUDENT      → core + studentProfile (if present)
+//   OUTLET_STAFF → core + outletId + outletRole + outlet (the linked outlet)
+//   OUTLET_ADMIN → core + outletId + outletRole + outlet
+//   SUPER_ADMIN  → core only (no outlet, no studentProfile)
 function stripSensitive(user) {
   if (!user) return null;
-  const { passwordHash, googleId, ...safe } = user;
-  return {
-    ...safe,
-    outletId: user.outletStaff?.outletId || null,
-    outletRole: user.outletStaff?.role || null,
-    outlet: user.outletStaff?.outlet
-      ? {
-          id: user.outletStaff.outlet.id,
-          name: user.outletStaff.outlet.name,
-          logoUrl: user.outletStaff.outlet.logoUrl,
-          location: user.outletStaff.outlet.location,
-          status: user.outletStaff.outlet.status,
-        }
-      : null,
-    // `avatar` is the frontend-facing alias of the stored picture.
-    avatar: user.googlePicture || null,
+  // Drop secrets + the raw Prisma relations we re-shape below.
+  const {
+    passwordHash,
+    googleId,
+    googlePicture,
+    outletStaff,
+    studentProfile: rawStudentProfile,
+    ...core
+  } = user;
+
+  // `avatar` is the frontend-facing alias of the stored Google picture.
+  const base = {
+    ...core,
+    avatar: googlePicture || null,
   };
+
+  // Role-specific fields — only present when relevant.
+  if (user.role === 'OUTLET_STAFF' || user.role === 'OUTLET_ADMIN') {
+    if (outletStaff?.outlet) {
+      return {
+        ...base,
+        outletId: outletStaff.outletId,
+        outletRole: outletStaff.role,
+        outlet: {
+          id: outletStaff.outlet.id,
+          name: outletStaff.outlet.name,
+          logoUrl: outletStaff.outlet.logoUrl,
+          location: outletStaff.outlet.location,
+          status: outletStaff.outlet.status,
+        },
+      };
+    }
+    // Outlet staff with no linked outlet (rare edge case) — still surface
+    // the IDs so the frontend can tell them apart from students.
+    return {
+      ...base,
+      outletId: outletStaff?.outletId || null,
+      outletRole: outletStaff?.role || null,
+    };
+  }
+
+  if (user.role === 'STUDENT' && rawStudentProfile) {
+    return {
+      ...base,
+      studentProfile: {
+        id: rawStudentProfile.id,
+        fullName: rawStudentProfile.fullName,
+        phone: rawStudentProfile.phone,
+        course: rawStudentProfile.course,
+        year: rawStudentProfile.year,
+        collegeId: rawStudentProfile.collegeId,
+        submittedAt: rawStudentProfile.submittedAt,
+      },
+    };
+  }
+
+  // SUPER_ADMIN, or STUDENT without a completed profile, or any other role —
+  // just the core fields. No outlet/student noise.
+  return base;
 }
 
 async function googleLogin(req, res, next) {

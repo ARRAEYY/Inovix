@@ -39,10 +39,19 @@ const Staff = () => {
     fetchData();
   }, []);
 
-  const handleEditSubmit = (e) => {
+  const handleEditSubmit = async (e) => {
     e.preventDefault();
-    setUsers(users.map(u => u.id === selectedEditStaff.id ? selectedEditStaff : u));
-    setSelectedEditStaff(null);
+    try {
+      await api.patch(`/admin/users/${selectedEditStaff.id}`, {
+        name: selectedEditStaff.name,
+        email: selectedEditStaff.email,
+        role: selectedEditStaff.role,
+      });
+      setUsers(users.map(u => u.id === selectedEditStaff.id ? { ...u, ...selectedEditStaff } : u));
+      setSelectedEditStaff(null);
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to update staff member');
+    }
   };
 
   const getOutletName = (id) => outlets.find(o => o.id === id)?.name || 'Unknown Outlet';

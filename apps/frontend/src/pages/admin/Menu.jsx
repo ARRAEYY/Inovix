@@ -59,10 +59,19 @@ const Menu = () => {
     }
   };
 
-  const handleEditSubmit = (e) => {
+  const handleEditSubmit = async (e) => {
     e.preventDefault();
-    setMenuItems(menuItems.map(m => m.id === selectedEditItem.id ? selectedEditItem : m));
-    setSelectedEditItem(null);
+    try {
+      await api.patch(`/admin/menu/${selectedEditItem.id}`, {
+        name: selectedEditItem.name,
+        price: selectedEditItem.price,
+        description: selectedEditItem.description,
+      });
+      setMenuItems(menuItems.map(m => m.id === selectedEditItem.id ? selectedEditItem : m));
+      setSelectedEditItem(null);
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to update menu item');
+    }
   };
 
   const getOutletName = (id) => outlets.find(o => o.id === id)?.name || 'Unknown Outlet';

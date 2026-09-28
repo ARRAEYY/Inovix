@@ -61,11 +61,19 @@ const Outlets = () => {
     }
   };
 
-  const handleEditSubmit = (e) => {
+  const handleEditSubmit = async (e) => {
     e.preventDefault();
-    // Simulate updating local state without a real endpoint
-    setOutlets(outlets.map(o => o.id === selectedEditOutlet.id ? selectedEditOutlet : o));
-    setSelectedEditOutlet(null);
+    try {
+      await api.patch(`/admin/outlets/${selectedEditOutlet.id}`, {
+        name: selectedEditOutlet.name,
+        description: selectedEditOutlet.description,
+        location: selectedEditOutlet.location,
+      });
+      setOutlets(outlets.map(o => o.id === selectedEditOutlet.id ? { ...o, ...selectedEditOutlet } : o));
+      setSelectedEditOutlet(null);
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to update outlet');
+    }
   };
 
   const filteredOutlets = outlets.filter(o => {

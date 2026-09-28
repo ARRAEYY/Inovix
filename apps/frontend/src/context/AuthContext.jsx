@@ -26,41 +26,38 @@ export const AuthProvider = ({ children }) => {
     }
 
     // ─── Google OAuth redirect-flow callback ────────────────────────────
-    // When the backend's GET /auth/google/callback finishes, it sets the
-    // nosh_refresh httpOnly cookie and 302-redirects to
-    // /inovix-app/?google_login=success. We land here with no localStorage
-    // (the user just logged in via Google, no email+password flow ran),
-    // but the refresh cookie IS present (same-origin via the Next.js
-    // reverse-proxy). Call /auth/refresh to mint a fresh access token,
-    // then /auth/me to fetch the user, store both, and let the
-    // role-aware PrivateRoute / login-page navigation handle the rest.
+    // The backend's GET /auth/google/callback finishes by 302-redirecting to
+    // https://inovix-iota.vercel.app/?google_login=success#at=<accessToken>
+    //
+    // We land here with no localStorage (the user just signed in via Google).
+    // Two ways to recover the session:
+    //   1. PREFERRED — read the access token from the URL hash fragment
+    //      (#at=<jwt>). Hash fragments aren't sent to servers (no referrer
+    //      leak), and this works even when third-party cookies are blocked
+    //      (Safari ITP, Chrome's phase-out) — the backend set the
+    //      nosh_refresh httpOnly cookie but cross-site cookies may not be
+    //      sent on the /auth/refresh fetch.
+    //   2. FALLBACK — if no hash token, call /auth/refresh and rely on the
+    //      httpOnly cookie (works only if third-party cookies are allowed).
     //
     // On error (?google_login=error&reason=...), leave the user on the
     // login page — the login pages read the same URL params and surface
     // the error message via their own useEffect.
     const params = new URLSearchParams(window.location.search);
     const googleLogin = params.get('google_login');
+    const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+    const hashToken = hashParams.get('at');
 
-    if (googleLogin === 'success') {
-      // Clean the URL first so a refresh doesn't re-trigger this.
+    if (googleLogin === 'success' && hashToken) {
+      // PREFERRED path — token in hash. Clean the URL first (removes the
+      // token from the address bar + history), then fetch the user.
       window.history.replaceState({}, '', window.location.pathname);
       (async () => {
         try {
-          // The refresh cookie is httpOnly + path=/api/v1/auth. The
-          // axios client has withCredentials=true, so the browser sends
-          // it on this same-origin request through the Next.js proxy.
-          const refreshRes = await client.post('/auth/refresh', {});
-          const accessToken = refreshRes.data?.data?.accessToken;
-          if (!accessToken) {
-            setLoading(false);
-            return;
-          }
-          // Set the token on the axios client immediately so the
-          // /auth/me call below is authenticated.
-          localStorage.setItem('accessToken', accessToken);
-          client.defaults.headers.common.Authorization = `Bearer ${accessToken}`;
-          setToken(accessToken);
-          // Fetch the user.
+          localStorage.setItem('accessToken', hashToken);
+          client.defaults.headers.common.Authorization = `Bearer ${hashToken}`;
+          setToken(hashToken);
+          // Fetch the user with the token we just got.
           const meRes = await client.get('/auth/me');
           const meUser = meRes.data?.data?.user;
           if (meUser) {
@@ -68,11 +65,43 @@ export const AuthProvider = ({ children }) => {
             setUser(meUser);
           }
         } catch (e) {
-          // Refresh failed — the cookie may not have been set (e.g.
-          // third-party cookie blocking) or the session expired. Leave
-          // the user on the login page; the PrivateRoute will redirect
-          // to `/` which renders StudentLogin.
-          console.error('Google login refresh failed:', e);
+          console.error('Google login: /auth/me failed:', e);
+          // Token was bad — clean up so the user can re-login.
+          localStorage.removeItem('accessToken');
+          delete client.defaults.headers.common.Authorization;
+        } finally {
+          setLoading(false);
+        }
+      })();
+      return;
+    }
+
+    if (googleLogin === 'success') {
+      // FALLBACK path — no hash token, try the cookie-based refresh
+      // (works only if third-party cookies are allowed by the browser).
+      window.history.replaceState({}, '', window.location.pathname);
+      (async () => {
+        try {
+          const refreshRes = await client.post('/auth/refresh', {});
+          const accessToken = refreshRes.data?.data?.accessToken;
+          if (!accessToken) {
+            setLoading(false);
+            return;
+          }
+          localStorage.setItem('accessToken', accessToken);
+          client.defaults.headers.common.Authorization = `Bearer ${accessToken}`;
+          setToken(accessToken);
+          const meRes = await client.get('/auth/me');
+          const meUser = meRes.data?.data?.user;
+          if (meUser) {
+            localStorage.setItem('user', JSON.stringify(meUser));
+            setUser(meUser);
+          }
+        } catch (e) {
+          // Refresh failed — third-party cookie was blocked. The user
+          // needs to re-login (the access token wasn't passed in the hash
+          // for some reason). Leave them on the login page.
+          console.error('Google login: cookie refresh failed (third-party cookie blocked?):', e);
         } finally {
           setLoading(false);
         }

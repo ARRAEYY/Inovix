@@ -10,7 +10,17 @@ export const OUTLET_DISPLAY_STATUS = {
   COMPLETED: 'COMPLETED',
   REJECTED: 'REJECTED',
   CANCELLED: 'CANCELLED',
-};
+
+  // ─── Cancel order (student, while PENDING — triggers auto-refund) ───
+  cancelOrder: async (orderId) => {
+    try {
+      const response = await client.post(`/orders/${orderId}/cancel`);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Network Error' };
+    }
+  },
+}
 
 export const orderService = {
   // ─── Student ────────────────────────────────────────────────────────────
@@ -61,4 +71,15 @@ export const orderService = {
       throw error.response?.data || { message: 'Network Error' };
     }
   }
-};
+
+
+  // ─── Cancel order (student, while PENDING — triggers auto-refund) ───
+  cancelOrder: async (orderId) => {
+    try {
+      const response = await client.post(`/orders/${orderId}/cancel`);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Network Error' };
+    }
+  },
+}

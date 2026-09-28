@@ -13,6 +13,19 @@ const { audit } = require('../../lib/audit');
 
 const router = express.Router();
 
+// The payments router is mounted in app.js BEFORE the global express.json()
+// (so the webhook route gets the raw body for HMAC signature verification).
+// But that means the NON-webhook routes (e.g. /razorpay/order, /razorpay/verify,
+// /admin/outlets/:id/razorpay-credentials) also miss JSON parsing → req.body
+// is undefined → validation fails with "expected object, received undefined".
+//
+// Fix: apply express.json() to all routes EXCEPT the webhook. The webhook
+// route below has its own express.raw() route-level middleware.
+router.use((req, res, next) => {
+  if (req.path === '/razorpay/webhook') return next();
+  return express.json({ limit: '10kb' })(req, res, next);
+});
+
 // Authenticated routes
 router.post('/razorpay/order', protect, validateBody(razorpayOrderCreateSchema), paymentsController.createRazorpayOrder);
 router.post('/razorpay/verify', protect, validateBody(razorpayPaymentVerifySchema), paymentsController.verifyPayment);

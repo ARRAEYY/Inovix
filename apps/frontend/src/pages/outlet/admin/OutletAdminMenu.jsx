@@ -6,6 +6,7 @@ import MenuItemCard from '../../../components/outlet/MenuItemCard';
 import MenuItemForm from '../../../components/outlet/MenuItemForm';
 import { getMenu, createMenuItem, updateMenuItem, deleteMenuItem, updateMenuAvailability } from '../../../services/outletAdminService';
 import '../../../styles/outlet-menu.css';
+import { toast } from 'react-hot-toast';
 
 const CATEGORIES = [
   'Popular', 'Burgers', 'Fries', 'Sandwiches', 'Wraps', 'Maggi', 'Beverages', 'Shakes', 'Meals', 'Snacks', 'Desserts', 'Healthy'
@@ -92,7 +93,7 @@ const OutletAdminMenu = () => {
       
     } catch (err) {
       console.error("Failed to toggle availability", err);
-      alert(`Failed to mark ${item.name} as ${!item.isAvailable ? 'available' : 'unavailable'}. Reverting.`);
+      toast(`Failed to mark ${item.name} as ${!item.isAvailable ? 'available' : 'unavailable'}. Reverting.`);
       fetchMenu();
     }
   };
@@ -109,7 +110,7 @@ const OutletAdminMenu = () => {
       handleCloseForm();
     } catch (err) {
       console.error("Failed to save item", err);
-      alert(err.response?.data?.message || err.message || 'Failed to save item');
+      toast(err.response?.data?.message || err.message || 'Failed to save item');
     } finally {
       setIsSaving(false);
     }
@@ -124,7 +125,7 @@ const OutletAdminMenu = () => {
       handleCloseForm();
     } catch (err) {
       console.error("Failed to delete item", err);
-      alert(err.response?.data?.message || err.message || 'Failed to delete item');
+      toast(err.response?.data?.message || err.message || 'Failed to delete item');
     } finally {
       setIsSaving(false);
     }

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import Header from '../../components/layout/Header';
 import { useAuth } from '../../hooks/useAuth';
 import client from '../../services/api/client';
+import { toast } from 'react-hot-toast';
 
 // Student onboarding — shown after the first Google login (when
 // onboardingCompleted === false). The student fills in their profile

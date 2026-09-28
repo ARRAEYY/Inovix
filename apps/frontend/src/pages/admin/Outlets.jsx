@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import AdminLayout from '../../components/layout/AdminLayout';
 import api from '../../services/api/client';
+import { toast } from 'react-hot-toast';
 
 const Outlets = () => {
   const [outlets, setOutlets] = useState([]);
@@ -45,7 +46,7 @@ const Outlets = () => {
       setShowAddModal(false);
       setNewOutlet({ name: '', description: '', location: '', contactEmail: '', contactNumber: '', status: 'OPEN' });
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to add outlet');
+      toast(err.response?.data?.message || 'Failed to add outlet');
     }
   };
 
@@ -56,7 +57,7 @@ const Outlets = () => {
         // Update local state
         setOutlets(outlets.map(o => o.id === outletId ? { ...o, status: 'CLOSED' } : o));
       } catch (err) {
-        alert('Failed to suspend outlet');
+        toast('Failed to suspend outlet');
       }
     }
   };
@@ -72,7 +73,7 @@ const Outlets = () => {
       setOutlets(outlets.map(o => o.id === selectedEditOutlet.id ? { ...o, ...selectedEditOutlet } : o));
       setSelectedEditOutlet(null);
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to update outlet');
+      toast(err.response?.data?.message || 'Failed to update outlet');
     }
   };
 

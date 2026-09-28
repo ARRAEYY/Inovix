@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import AdminLayout from '../../components/layout/AdminLayout';
 import api from '../../services/api/client';
+import { toast } from 'react-hot-toast';
 
 const Users = () => {
   const [users, setUsers] = useState([]);
@@ -39,7 +40,7 @@ const Users = () => {
         await api.patch(`/admin/users/${userId}/status`, { status: newStatus });
         setUsers(users.map(u => u.id === userId ? { ...u, status: newStatus } : u));
       } catch (err) {
-        alert(err.response?.data?.message || 'Failed to update user status');
+        toast(err.response?.data?.message || 'Failed to update user status');
       }
     }
   };
@@ -55,7 +56,7 @@ const Users = () => {
       setUsers(users.map(u => u.id === selectedEditUser.id ? { ...u, ...selectedEditUser } : u));
       setSelectedEditUser(null);
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to update user');
+      toast(err.response?.data?.message || 'Failed to update user');
     }
   };
 

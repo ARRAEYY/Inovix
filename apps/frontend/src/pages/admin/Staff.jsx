@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import AdminLayout from '../../components/layout/AdminLayout';
 import api from '../../services/api/client';
+import { toast } from 'react-hot-toast';
 
 const Staff = () => {
   const [users, setUsers] = useState([]);
@@ -50,7 +51,7 @@ const Staff = () => {
       setUsers(users.map(u => u.id === selectedEditStaff.id ? { ...u, ...selectedEditStaff } : u));
       setSelectedEditStaff(null);
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to update staff member');
+      toast(err.response?.data?.message || 'Failed to update staff member');
     }
   };
 

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import OutletLayout from '../../components/layout/OutletLayout';
 import EditProfileModal from '../../components/outlet/EditProfileModal';
+import { toast } from 'react-hot-toast';
 
 const OutletProfile = () => {
   const { user, logout, updateProfile } = useAuth();

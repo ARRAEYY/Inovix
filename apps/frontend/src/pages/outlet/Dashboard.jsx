@@ -4,6 +4,7 @@ import StatsGrid from '../../components/outlet/StatsGrid';
 import OrderBoard from '../../components/outlet/OrderBoard';
 import DeclineOrderModal from '../../components/outlet/DeclineOrderModal';
 import { orderService, OUTLET_DISPLAY_STATUS } from '../../services/api/orderService';
+import { toast } from 'react-hot-toast';
 
 const Dashboard = () => {
   const [stats, setStats] = useState({ new: 0, preparing: 0, ready: 0 });
@@ -68,7 +69,7 @@ const Dashboard = () => {
         status: OUTLET_DISPLAY_STATUS[newStatus] || newStatus,
       });
     } catch (err) {
-      alert(err.message || 'Failed to update order status');
+      toast(err.message || 'Failed to update order status');
       console.error('Failed to update status', err);
     }
   };
@@ -88,7 +89,7 @@ const Dashboard = () => {
       await orderService.updateOrderStatus(orderId, 'READY');
       updateOrderInState(orderId, { backendStatus: 'READY', status: 'READY' });
     } catch (err) {
-      alert(err.message || 'Failed to mark order ready');
+      toast(err.message || 'Failed to mark order ready');
       console.error('Failed to mark ready', err);
     }
   };

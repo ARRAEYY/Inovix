@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import Header from '../../components/layout/Header';
 import MobileBottomNav from '../../components/layout/MobileBottomNav';
 import { orderService } from '../../services/api/orderService';
+import { toast } from 'react-hot-toast';
+import Skeleton from '../../components/common/Skeleton';
 
 const FILTERS = ['All time', 'Today', 'Yesterday', 'Past Week'];
 
@@ -120,10 +122,10 @@ const Orders = () => {
     try {
       setCancellingId(orderId);
       await orderService.cancelOrder(orderId);
-      alert('Order cancelled. Refund will be processed automatically.');
+      toast('Order cancelled. Refund will be processed automatically.');
       fetchOrders();
     } catch (err) {
-      alert(err.message || 'Could not cancel the order');
+      toast(err.message || 'Could not cancel the order');
     } finally {
       setCancellingId(null);
     }
@@ -131,7 +133,7 @@ const Orders = () => {
 
   const handleReorder = (order) => {
     if (!order.outletId) {
-      alert('Cannot reorder — outlet not found.');
+      toast('Cannot reorder — outlet not found.');
       return;
     }
     // Rebuild the cart from the order's items + store in localStorage
@@ -164,7 +166,7 @@ const Orders = () => {
       <main className="explore-container orders-container">
         {loading ? (
           <div style={{ textAlign: 'center', padding: '4rem 0', color: 'var(--text-light)' }}>
-            <p>Loading your orders…</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>{[1,2,3].map(i => <div key={i} style={{ background: 'white', borderRadius: '12px', border: '1px solid #e5e7eb', padding: '1rem' }}><Skeleton height='20px' width='60%' /><Skeleton height='14px' width='40%' style={{ marginTop: '0.5rem' }} /></div>)}</div>
           </div>
         ) : error ? (
           <div style={{ textAlign: 'center', padding: '4rem 0', color: 'var(--text-light)' }}>

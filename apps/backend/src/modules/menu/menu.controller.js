@@ -88,10 +88,36 @@ async function deleteMenuItem(req, res, next) {
   }
 }
 
+// Availability toggle — allowed for OUTLET_STAFF + OUTLET_ADMIN (the
+// kitchen 86's an item without full menu-edit rights).
+async function updateAvailability(req, res, next) {
+  try {
+    const outletId = req.user.outletId;
+    if (!outletId) throw { statusCode: 403, message: 'User is not assigned to an outlet' };
+    const { itemId } = req.params;
+    const { isAvailable } = req.body;
+    const updated = await menuService.updateAvailability(outletId, itemId, isAvailable);
+
+    await audit({
+      actorId: req.user.id,
+      action: 'MENU_AVAILABILITY_CHANGED',
+      targetType: 'MenuItem',
+      targetId: itemId,
+      after: { isAvailable: updated.isAvailable },
+      req,
+    });
+
+    res.status(200).json({ success: true, data: updated });
+  } catch (error) {
+    next(error);
+  }
+}
+
 module.exports = {
   getOutletMenu,
   getMenuItem,
   createMenuItem,
   updateMenuItem,
   deleteMenuItem,
+  updateAvailability,
 };

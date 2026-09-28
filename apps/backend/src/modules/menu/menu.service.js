@@ -92,10 +92,25 @@ async function deleteMenuItem(outletId, itemId) {
   return menuRepo.delete(itemId);
 }
 
+// Availability toggle — OUTLET_STAFF + OUTLET_ADMIN (spec §3.1: staff can
+// 86 an item without full menu-edit rights). Ownership-checked like the
+// other mutations; updates ONLY isAvailable.
+async function updateAvailability(outletId, itemId, isAvailable) {
+  const existing = await getMenuItem(outletId, itemId); // ownership-checked
+  if (typeof isAvailable !== 'boolean') {
+    throw { statusCode: 400, message: 'isAvailable must be a boolean' };
+  }
+  if (existing.isAvailable === isAvailable) {
+    return existing; // idempotent no-op
+  }
+  return menuRepo.update(itemId, { isAvailable });
+}
+
 module.exports = {
   getOutletMenu,
   getMenuItem,
   createMenuItem,
   updateMenuItem,
   deleteMenuItem,
+  updateAvailability,
 };

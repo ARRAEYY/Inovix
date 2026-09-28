@@ -29,6 +29,12 @@ const {
 // aggregation queries. The response shape is unchanged so the admin
 // frontend doesn't need updating.
 async function getOverview() {
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const startOfWeek = new Date(startOfToday);
+  startOfWeek.setDate(startOfWeek.getDate() - 6);
+
   const [
     userRoleGroups,
     outletStatusGroups,
@@ -39,6 +45,17 @@ async function getOverview() {
     outletTotal,
     orderTotal,
     menuTotal,
+    // Admin-dashboard aggregates (additive — the original users/outlets/
+    // menu/orders counts above are preserved for existing consumers).
+    revenueTodayGroups,
+    revenueMonthGroups,
+    revenueTotalGroups,
+    activeOutletCount,
+    ordersTodayCount,
+    ordersThisWeekCount,
+    suspendedUserCount,
+    outletsForOverview,
+    recentOrders,
   ] = await Promise.all([
     prisma.user.groupBy({ by: ['role'], _count: true }),
     prisma.outlet.groupBy({ by: ['status'], _count: true }),
@@ -49,7 +66,39 @@ async function getOverview() {
     prisma.outlet.count(),
     prisma.order.count(),
     prisma.menuItem.count(),
+    prisma.payment.groupBy({ by: ['status'], _count: true, _sum: { amount: true }, where: { status: PAYMENT_STATUS.PAID, createdAt: { gte: startOfToday } } }),
+    prisma.payment.groupBy({ by: ['status'], _count: true, _sum: { amount: true }, where: { status: PAYMENT_STATUS.PAID, createdAt: { gte: startOfMonth } } }),
+    prisma.payment.groupBy({ by: ['status'], _count: true, _sum: { amount: true }, where: { status: PAYMENT_STATUS.PAID } }),
+    prisma.outlet.count({ where: { status: { in: [OUTLET_STATUS.OPEN, OUTLET_STATUS.BUSY] } } }),
+    prisma.order.count({ where: { createdAt: { gte: startOfToday } } }),
+    prisma.order.count({ where: { createdAt: { gte: startOfWeek } } }),
+    prisma.user.count({ where: { status: USER_STATUS.SUSPENDED } }),
+    prisma.outlet.findMany({
+      select: {
+        id: true,
+        name: true,
+        status: true,
+        _count: { select: { staff: true } },
+      },
+      orderBy: { createdAt: 'asc' },
+    }),
+    prisma.order.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: 5,
+      select: {
+        id: true,
+        orderNumber: true,
+        status: true,
+        totalAmount: true,
+        createdAt: true,
+        outletSnapshot: true,
+        student: { select: { name: true } },
+      },
+    }),
   ]);
+
+  const sumRevenue = (groups) =>
+    groups.reduce((sum, g) => sum + Number(g._sum.amount || 0), 0);
 
   // Reassemble the groupBy results into the same response shape as before.
   const usersByRole = {};
@@ -58,6 +107,50 @@ async function getOverview() {
   for (const g of outletStatusGroups) outletsByStatus[g.status] = g._count;
   const ordersByStatus = {};
   for (const g of orderStatusGroups) ordersByStatus[g.status] = g._count;
+
+  // Per-outlet orders-today counts for the outletOverview table.
+  const ordersTodayByOutlet = await prisma.order.groupBy({
+    by: ['outletId'],
+    _count: true,
+    where: { createdAt: { gte: startOfToday } },
+  });
+  const ordersTodayMap = {};
+  for (const g of ordersTodayByOutlet) ordersTodayMap[g.outletId] = g._count;
+
+  const parseSnapshotName = (snapshot) => {
+    try { return JSON.parse(snapshot || '{}').name || 'Unknown outlet'; }
+    catch { return 'Unknown outlet'; }
+  };
+
+  const attentionNeeded = [];
+  if (suspendedUserCount > 0) {
+    attentionNeeded.push({
+      id: 'suspended-users',
+      message: `${suspendedUserCount} suspended ${suspendedUserCount === 1 ? 'user needs' : 'users need'} review`,
+      path: '/admin/users',
+    });
+  }
+  if ((outletsByStatus[OUTLET_STATUS.CLOSED] || 0) > 0) {
+    attentionNeeded.push({
+      id: 'closed-outlets',
+      message: `${outletsByStatus[OUTLET_STATUS.CLOSED]} closed ${outletsByStatus[OUTLET_STATUS.CLOSED] === 1 ? 'outlet' : 'outlets'} — reopen if unintended`,
+      path: '/admin/outlets',
+    });
+  }
+  if ((outletsByStatus[OUTLET_STATUS.PENDING] || 0) > 0) {
+    attentionNeeded.push({
+      id: 'pending-outlets',
+      message: `${outletsByStatus[OUTLET_STATUS.PENDING]} outlet${outletsByStatus[OUTLET_STATUS.PENDING] === 1 ? '' : 's'} awaiting approval`,
+      path: '/admin/outlets',
+    });
+  }
+  if (attentionNeeded.length === 0) {
+    attentionNeeded.push({
+      id: 'all-clear',
+      message: 'No issues — everything looks healthy',
+      path: '/admin',
+    });
+  }
 
   return {
     users: {
@@ -90,6 +183,33 @@ async function getOverview() {
       rejected: ordersByStatus[ORDER_STATUS.REJECTED] || 0,
       cancelled: ordersByStatus[ORDER_STATUS.CANCELLED] || 0,
     },
+    // ─── Admin dashboard aggregates (frontend contract) ───────────────────
+    metrics: {
+      revenueToday: sumRevenue(revenueTodayGroups),
+      revenueThisMonth: sumRevenue(revenueMonthGroups),
+      revenueTotal: sumRevenue(revenueTotalGroups),
+      activeOutlets: activeOutletCount,
+      ordersToday: ordersTodayCount,
+      ordersThisWeek: ordersThisWeekCount,
+      totalUsers: userTotal,
+    },
+    outletOverview: outletsForOverview.map((o) => ({
+      id: o.id,
+      name: o.name,
+      status: o.status,
+      staffCount: o._count.staff,
+      ordersToday: ordersTodayMap[o.id] || 0,
+    })),
+    recentOrders: recentOrders.map((o) => ({
+      id: o.id,
+      orderNumber: o.orderNumber,
+      status: o.status,
+      total: Number(o.totalAmount),
+      createdAt: o.createdAt,
+      studentName: o.student?.name || 'Student',
+      outletName: parseSnapshotName(o.outletSnapshot),
+    })),
+    attentionNeeded,
   };
 }
 
@@ -150,7 +270,25 @@ async function updateUserStatus(userId, status, reqUserId) {
 }
 
 async function getOutlets() {
-  return prisma.outlet.findMany({ include: { staff: true } });
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+
+  const [outlets, ordersTodayGroups] = await Promise.all([
+    prisma.outlet.findMany({ include: { staff: true } }),
+    prisma.order.groupBy({
+      by: ['outletId'],
+      _count: true,
+      where: { createdAt: { gte: startOfToday } },
+    }),
+  ]);
+  const ordersTodayMap = {};
+  for (const g of ordersTodayGroups) ordersTodayMap[g.outletId] = g._count;
+
+  return outlets.map((o) => ({
+    ...o,
+    staffCount: o.staff?.length || 0,
+    ordersToday: ordersTodayMap[o.id] || 0,
+  }));
 }
 
 async function getOutlet(outletId) {
@@ -160,18 +298,29 @@ async function getOutlet(outletId) {
 }
 
 async function createOutlet(data) {
-  const { name, description, location, contactNumber, contactEmail, openingTime, closingTime, status = 'OPEN' } = data;
+  const { name, description, location, status = 'OPEN' } = data;
   if (!name) throw { statusCode: 400, message: 'Outlet name is required' };
+
+  // slug is a required unique column — derive it from the name and
+  // guarantee uniqueness with a numeric suffix on collision.
+  const baseSlug = name.toLowerCase().trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'outlet';
+  let slug = baseSlug;
+  for (let i = 2; await prisma.outlet.findUnique({ where: { slug } }); i += 1) {
+    slug = `${baseSlug}-${i}`;
+  }
+
+  // NOTE: the Outlet model has no contactNumber/contactEmail/openingTime/
+  // closingTime columns — those fields from the add-outlet form are
+  // accepted but not persisted (schema change deliberately avoided).
   return prisma.outlet.create({
     data: {
       name,
+      slug,
       description: description || null,
       location: location || null,
-      contactNumber: contactNumber || null,
-      contactEmail: contactEmail || null,
-      openingTime: openingTime || '09:00',
-      closingTime: closingTime || '22:00',
-      status: status || 'OPEN',
+      status: Object.values(OUTLET_STATUS).includes(status) ? status : OUTLET_STATUS.OPEN,
     },
   });
 }

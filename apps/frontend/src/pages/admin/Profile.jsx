@@ -112,7 +112,7 @@ const Profile = () => {
 
             <div style={{ display: 'grid', gridTemplateColumns: '200px 1fr', alignItems: 'center' }}>
               <span style={{ fontWeight: '600', color: '#374151' }}>Change Password</span>
-              <button onClick={() => alert('Password reset link sent to your email!')} style={{ justifySelf: 'flex-start', padding: '8px 16px', background: 'white', border: '1px solid #d1d5db', borderRadius: '8px', fontWeight: '600', cursor: 'pointer' }}>
+              <button onClick={async () => { try { await require('../../services/api/client').default.post('/auth/forgot-password', { email: user?.email }); alert('Reset code sent to your email'); } catch (e) { alert('Failed to send reset code'); } }} style={{ justifySelf: 'flex-start', padding: '8px 16px', background: 'white', border: '1px solid #d1d5db', borderRadius: '8px', fontWeight: '600', cursor: 'pointer' }}>
                 Send Reset Link
               </button>
             </div>

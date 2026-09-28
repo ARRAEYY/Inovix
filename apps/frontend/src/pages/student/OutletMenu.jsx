@@ -209,13 +209,21 @@ const OutletMenu = () => {
           outletName: outlet?.name,
         });
       } catch (dismissError) {
-        // User closed the checkout without paying. The order is created but
-        // unpaid (status=PENDING). Navigate to orders so they can retry.
-        setCart({});
-        try { localStorage.removeItem(CART_STORAGE_KEY); } catch {}
+        // Payment failed or user dismissed the checkout. The order was
+        // created (step 1) but NOT paid. Auto-cancel it so it doesn't
+        // show as "successfully placed" — the user shouldn't have a
+        // dangling unpaid order in their list.
+        try {
+          await orderService.cancelOrder(order.id);
+        } catch (cancelErr) {
+          // If cancel fails (e.g. outlet already accepted — rare for a
+          // sub-second turnaround), the order stays PENDING. The
+          // reconciliation worker or a manual cancel will handle it.
+          console.error('Auto-cancel failed:', cancelErr);
+        }
         setIsCartOpen(false);
-        toast(`Order ${order.orderNumber || ''} created but payment was cancelled. You can pay from your orders.`);
-        navigate('/student/orders');
+        // Keep the cart intact so the user can try again immediately.
+        toast('Payment cancelled. Order was not placed — your cart is saved so you can try again.');
         return;
       }
 

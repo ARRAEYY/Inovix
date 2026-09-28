@@ -50,7 +50,7 @@ export const AuthProvider = ({ children }) => {
 
     if (googleLogin === 'success' && hashToken) {
       // PREFERRED path — token in hash. Clean the URL first (removes the
-      // token from the address bar + history), then fetch the user.
+      // token from the address bar + history), then fetch the user + navigate.
       window.history.replaceState({}, '', window.location.pathname);
       (async () => {
         try {
@@ -63,6 +63,18 @@ export const AuthProvider = ({ children }) => {
           if (meUser) {
             localStorage.setItem('user', JSON.stringify(meUser));
             setUser(meUser);
+            // ─── Navigate to the role-appropriate dashboard ────────────
+            // Without this, the user lands on `/` (StudentLogin) even
+            // though they're authenticated — the login page doesn't know
+            // to navigate away. A full-page navigation (window.location)
+            // is safe here: localStorage already has the token + user, so
+            // the next load's PrivateRoute will let them through.
+            const role = meUser.role;
+            if (role === 'SUPER_ADMIN') window.location.href = '/admin';
+            else if (role === 'OUTLET_ADMIN') window.location.href = '/outlet/admin';
+            else if (role === 'OUTLET_STAFF') window.location.href = '/outlet';
+            else window.location.href = '/student';
+            return; // navigation is happening — don't setLoading(false)
           }
         } catch (e) {
           console.error('Google login: /auth/me failed:', e);
@@ -96,6 +108,13 @@ export const AuthProvider = ({ children }) => {
           if (meUser) {
             localStorage.setItem('user', JSON.stringify(meUser));
             setUser(meUser);
+            // Navigate to the role-appropriate dashboard (same as above).
+            const role = meUser.role;
+            if (role === 'SUPER_ADMIN') window.location.href = '/admin';
+            else if (role === 'OUTLET_ADMIN') window.location.href = '/outlet/admin';
+            else if (role === 'OUTLET_STAFF') window.location.href = '/outlet';
+            else window.location.href = '/student';
+            return;
           }
         } catch (e) {
           // Refresh failed — third-party cookie was blocked. The user

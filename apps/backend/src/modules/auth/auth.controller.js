@@ -472,6 +472,40 @@ async function login(req, res, next) {
   }
 }
 
+// ─── Change password (while logged in) ──────────────────────────────────
+// Body: { oldPassword, newPassword }
+// Verifies the old password (if the user has one — Google-only users have
+// passwordHash=null, so they can't use this; they should use forgot-password
+// or set a password via onboarding).
+async function changePassword(req, res, next) {
+  try {
+    const { oldPassword, newPassword } = req.body;
+    if (!oldPassword || !newPassword) {
+      return res.status(400).json({ success: false, message: 'Old password and new password are required' });
+    }
+    if (newPassword.length < 8) {
+      return res.status(400).json({ success: false, message: 'New password must be at least 8 characters' });
+    }
+    const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+    if (!user.passwordHash) {
+      return res.status(400).json({ success: false, message: 'This account uses Google OAuth. Use "Forgot Password" to set a password.' });
+    }
+    const { comparePassword } = require('../../utils/password');
+    const isMatch = await comparePassword(oldPassword, user.passwordHash);
+    if (!isMatch) {
+      return res.status(401).json({ success: false, message: 'Current password is incorrect' });
+    }
+    const { hashPassword } = require('../../utils/password');
+    const newHash = await hashPassword(newPassword);
+    await prisma.user.update({ where: { id: user.id }, data: { passwordHash: newHash } });
+    await audit({ actorId: user.id, action: 'USER_PASSWORD_CHANGED', targetType: 'User', targetId: user.id, req });
+    return res.status(200).json({ success: true, message: 'Password changed successfully' });
+  } catch (error) {
+    next(error);
+  }
+}
+
+
 module.exports = {
   login,
   googleLogin,
@@ -484,6 +518,7 @@ module.exports = {
   logout,
   forgotPassword,
   resetPassword,
+  changePassword,
 };
 
 /**

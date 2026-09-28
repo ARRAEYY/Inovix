@@ -6,6 +6,9 @@ import { useAuth } from '../hooks/useAuth';
 import StudentLogin from '../pages/auth/StudentLogin';
 import OutletLogin from '../pages/auth/OutletLogin';
 import AdminLogin from '../pages/auth/AdminLogin';
+import ForgotPassword from '../pages/auth/ForgotPassword';
+import ResetPassword from '../pages/auth/ResetPassword';
+import Onboarding from '../pages/student/Onboarding';
 
 // Dashboards (Dummy)
 import StudentHome from '../pages/student/Home';
@@ -51,6 +54,8 @@ const AppRoutes = () => {
       <Route path="/" element={<StudentLogin />} />
       <Route path="/login" element={<Navigate to="/" replace />} />
       <Route path="/outlet/login" element={<OutletLogin />} />
+      <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
       <Route path="/admin/login" element={<AdminLogin />} />
 
       {/* Protected Routes - Student */}
@@ -62,6 +67,7 @@ const AppRoutes = () => {
               <Route path="/" element={<StudentHome />} />
               <Route path="/orders" element={<StudentOrders />} />
               <Route path="/profile" element={<Profile />} />
+              <Route path="/onboarding" element={<Onboarding />} />
               <Route path="/outlet/:id" element={<OutletMenu />} />
             </Routes>
           </PrivateRoute>

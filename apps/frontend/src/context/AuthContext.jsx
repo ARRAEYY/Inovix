@@ -70,11 +70,15 @@ export const AuthProvider = ({ children }) => {
             // is safe here: localStorage already has the token + user, so
             // the next load's PrivateRoute will let them through.
             const role = meUser.role;
-            if (role === 'SUPER_ADMIN') window.location.href = '/admin';
+            // Students who haven't completed onboarding → redirect to the
+            // onboarding page (they need to fill in their profile).
+            if (role === 'STUDENT' && !meUser.onboardingCompleted) {
+              window.location.href = '/student/onboarding';
+            } else if (role === 'SUPER_ADMIN') window.location.href = '/admin';
             else if (role === 'OUTLET_ADMIN') window.location.href = '/outlet/admin';
             else if (role === 'OUTLET_STAFF') window.location.href = '/outlet';
             else window.location.href = '/student';
-            return; // navigation is happening — don't setLoading(false)
+            return;
           }
         } catch (e) {
           console.error('Google login: /auth/me failed:', e);

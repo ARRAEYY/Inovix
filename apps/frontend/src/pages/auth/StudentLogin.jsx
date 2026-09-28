@@ -115,7 +115,7 @@ const StudentLogin = () => {
                 required
               />
               <div className="forgot-password-container">
-                <a href="#" className="forgot-password">Forgot password?</a>
+                <a href="/forgot-password" className="forgot-password">Forgot password?</a>
               </div>
             </div>
 

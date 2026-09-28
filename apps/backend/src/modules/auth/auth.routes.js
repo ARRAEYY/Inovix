@@ -12,6 +12,7 @@ const {
   logout,
   forgotPassword,
   resetPassword,
+  changePassword,
 } = authController;
 const { protect } = require('../../middleware/auth.middleware');
 const { validateBody } = require('../../middleware/validation.middleware');
@@ -75,6 +76,7 @@ if (IS_DEV && ENABLE_DEV_LOGIN) {
 // Authenticated routes — moderate limiter.
 router.get('/me', authEndpointsRateLimit, protect, getCurrentUser);
 router.put('/me', authEndpointsRateLimit, protect, updateCurrentUser);
+router.patch('/me/password', authEndpointsRateLimit, protect, changePassword);
 router.post('/logout', authEndpointsRateLimit, protect, logout);
 
 module.exports = router;

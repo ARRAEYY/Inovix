@@ -193,6 +193,16 @@ const Outlets = () => {
                         {outlet.status !== 'CLOSED' && (
                           <button onClick={() => handleSuspend(outlet.id)} style={{ background: 'none', border: 'none', color: '#b10035', fontWeight: '500', cursor: 'pointer', fontSize: '0.85rem' }}>Suspend</button>
                         )}
+                        <button onClick={async () => {
+                          if (!window.confirm(`Delete "${outlet.name}"? This permanently removes the outlet, its menu, staff, and orders.`)) return;
+                          try {
+                            await api.delete(`/admin/outlets/${outlet.id}`);
+                            setOutlets(outlets.filter(o => o.id !== outlet.id));
+                            toast('Outlet deleted');
+                          } catch (err) {
+                            toast(err.response?.data?.message || 'Failed to delete outlet');
+                          }
+                        }} style={{ background: 'none', border: 'none', color: '#dc2626', fontWeight: '500', cursor: 'pointer', fontSize: '0.85rem' }}>Delete</button>
                       </div>
                     </td>
                   </tr>

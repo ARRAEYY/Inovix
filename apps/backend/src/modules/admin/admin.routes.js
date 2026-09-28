@@ -34,6 +34,7 @@ router.post('/outlets', adminController.createOutlet);
 router.get('/outlets/:outletId', adminController.getOutlet);
 router.patch('/outlets/:outletId/status', validateBody(updateOutletStatusSchema), adminController.updateOutletStatus);
 router.patch('/outlets/:outletId', validateBody(updateOutletSchema), adminController.updateOutlet);
+router.delete('/outlets/:outletId', adminController.deleteOutlet);
 
 router.get('/staff', adminController.getAllStaff);
 

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import AdminLayout from '../../components/layout/AdminLayout';
 import api from '../../services/api/client';
+import { toast } from 'react-hot-toast';
 
 const formatCurrency = (amount) => {
   return new Intl.NumberFormat('en-IN', {
@@ -177,6 +178,21 @@ const Orders = () => {
                       <td style={{ padding: '16px 24px', color: '#6b7280', fontSize: '0.9rem' }}>{timeStr}</td>
                       <td style={{ padding: '16px 24px' }}>
                         <button onClick={() => setSelectedOrder(order)} style={{ background: 'none', border: 'none', color: '#b10035', fontWeight: '500', cursor: 'pointer', fontSize: '0.85rem' }}>View Details</button>
+                        {order.payment?.status === 'PAID' && order.status !== 'CANCELLED' && (
+                          <button onClick={async () => {
+                            const amt = prompt('Refund amount (₹):', String(Math.round(Number(order.totalAmount))));
+                            if (!amt) return;
+                            const reason = prompt('Reason for refund:', 'Customer request');
+                            if (!reason) return;
+                            try {
+                              await api.post('/admin/refunds', { orderId: order.id, amount: Number(amt), reason });
+                              toast('Refund initiated successfully');
+                              fetchData();
+                            } catch (err) {
+                              toast(err.response?.data?.message || 'Refund failed');
+                            }
+                          }} style={{ background: 'none', border: 'none', color: '#dc2626', fontWeight: '500', cursor: 'pointer', fontSize: '0.85rem' }}>Refund</button>
+                        )}
                       </td>
                     </tr>
                   );

@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { toast } from 'react-hot-toast';
+import client from '../../services/api/client';
 
 const CATEGORIES = [
   'Popular', 'Meals', 'Snacks', 'Beverages', 'Desserts', 'Healthy',
@@ -16,8 +18,8 @@ const MenuItemForm = ({ item, onSubmit, onCancel, isSaving, onDelete }) => {
     image: '',
     isAvailable: true
   });
-
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
     if (item) {
@@ -34,41 +36,63 @@ const MenuItemForm = ({ item, onSubmit, onCancel, isSaving, onDelete }) => {
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: type === 'checkbox' ? checked : value
-    }));
+    setFormData(prev => ({ ...prev, [name]: type === 'checkbox' ? checked : value }));
+  };
+
+  // Cloudinary signed upload flow:
+  // 1. POST /uploads/sign { folder: 'menu-items' } → get signed payload
+  // 2. Upload the file to Cloudinary via the signed URL (FormData)
+  // 3. Store the resulting secure_url in formData.image
+  const handleImageUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      toast('Image must be under 5MB');
+      return;
+    }
+    try {
+      setUploading(true);
+      // Step 1: get the signed upload payload from the backend
+      const signRes = await client.post('/uploads/sign', { folder: 'menu-items' });
+      const sign = signRes.data?.data || {};
+      if (!sign.uploadUrl || !sign.signature) {
+        throw new Error('Failed to get upload signature');
+      }
+      // Step 2: upload to Cloudinary via the signed URL
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('api_key', sign.apiKey);
+      fd.append('timestamp', sign.timestamp);
+      fd.append('signature', sign.signature);
+      if (sign.publicId) fd.append('public_id', sign.publicId);
+      if (sign.folder) fd.append('folder', sign.folder);
+      const uploadRes = await fetch(sign.uploadUrl, { method: 'POST', body: fd });
+      if (!uploadRes.ok) throw new Error('Cloudinary upload failed');
+      const uploadData = await uploadRes.json();
+      // Step 3: store the secure_url in the form
+      setFormData(prev => ({ ...prev, image: uploadData.secure_url }));
+      toast('Image uploaded successfully');
+    } catch (err) {
+      toast(err.message || 'Image upload failed');
+    } finally {
+      setUploading(false);
+    }
   };
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    onSubmit({
-      ...formData,
-      price: Number(formData.price)
-    });
+    onSubmit({ ...formData, price: Number(formData.price) });
   };
 
   if (showDeleteConfirm) {
     return (
-      <div className="modal-overlay">
-        <div className="delete-confirm-modal">
+      <div className="modal-overlay" onClick={onCancel}>
+        <div className="delete-confirm-modal" onClick={e => e.stopPropagation()}>
           <h3>Delete "{item?.name}"?</h3>
           <p>This item will be permanently removed from your menu.</p>
           <div className="modal-actions">
-            <button 
-              className="btn-cancel" 
-              onClick={() => setShowDeleteConfirm(false)}
-              disabled={isSaving}
-            >
-              Cancel
-            </button>
-            <button 
-              className="btn-danger" 
-              onClick={() => onDelete(item.id)}
-              disabled={isSaving}
-            >
-              {isSaving ? 'Deleting...' : 'Delete'}
-            </button>
+            <button className="btn-cancel" onClick={() => setShowDeleteConfirm(false)}>Cancel</button>
+            <button className="btn-delete" onClick={() => onDelete()}>Delete</button>
           </div>
         </div>
       </div>
@@ -76,104 +100,55 @@ const MenuItemForm = ({ item, onSubmit, onCancel, isSaving, onDelete }) => {
   }
 
   return (
-    <div className="modal-overlay">
-      <div className="menu-form-modal">
-        <div className="modal-header">
-          <h2>{isEditMode ? 'Edit Menu Item' : 'Add Menu Item'}</h2>
-          <button className="close-btn" onClick={onCancel}>×</button>
+    <div className="menu-item-form">
+      <div className="form-group">
+        <label>Item Name</label>
+        <input type="text" name="name" value={formData.name} onChange={handleChange} required />
+      </div>
+      <div className="form-group">
+        <label>Description</label>
+        <textarea name="description" value={formData.description} onChange={handleChange} rows={2} />
+      </div>
+      <div className="form-row">
+        <div className="form-group">
+          <label>Price (₹)</label>
+          <input type="number" name="price" value={formData.price} onChange={handleChange} required min="0" step="0.01" />
         </div>
-        
-        <form onSubmit={handleSubmit} className="menu-form">
-          <div className="form-group">
-            <label>Name</label>
-            <input 
-              type="text" 
-              name="name" 
-              value={formData.name} 
-              onChange={handleChange} 
-              required 
-              placeholder="e.g. Masala Dosa"
-            />
+        <div className="form-group">
+          <label>Category</label>
+          <select name="category" value={formData.category} onChange={handleChange}>
+            {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </div>
+      </div>
+      {/* Cloudinary image upload */}
+      <div className="form-group">
+        <label>Item Image</label>
+        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+          {formData.image && (
+            <img src={formData.image} alt="Preview" style={{ width: 60, height: 60, borderRadius: 8, objectFit: 'cover', border: '1px solid #e5e7eb' }} />
+          )}
+          <div>
+            <input type="file" accept="image/*" onChange={handleImageUpload} disabled={uploading}
+              style={{ fontSize: '0.85rem' }} />
+            {uploading && <span style={{ fontSize: '0.8rem', color: '#6b7280', marginLeft: '0.5rem' }}>Uploading…</span>}
           </div>
-          
-          <div className="form-group">
-            <label>Description</label>
-            <textarea 
-              name="description" 
-              value={formData.description} 
-              onChange={handleChange} 
-              rows="2"
-              placeholder="e.g. Crispy rice crepe filled with spiced potatoes."
-            />
-          </div>
-          
-          <div className="form-row">
-            <div className="form-group">
-              <label>Price (₹)</label>
-              <input 
-                type="number" 
-                name="price" 
-                value={formData.price} 
-                onChange={handleChange} 
-                required 
-                min="1"
-              />
-            </div>
-            
-            <div className="form-group">
-              <label>Category</label>
-              <select name="category" value={formData.category} onChange={handleChange}>
-                {CATEGORIES.map(cat => (
-                  <option key={cat} value={cat}>{cat}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-          
-          <div className="form-group">
-            <label>Image URL</label>
-            <input 
-              type="url" 
-              name="image" 
-              value={formData.image} 
-              onChange={handleChange} 
-              placeholder="https://..."
-            />
-          </div>
-          
-          <div className="form-group checkbox-group">
-            <label className="checkbox-label">
-              <input 
-                type="checkbox" 
-                name="isAvailable" 
-                checked={formData.isAvailable} 
-                onChange={handleChange} 
-              />
-              Available for order
-            </label>
-          </div>
-          
-          <div className="modal-actions form-actions">
-            {isEditMode && (
-              <button 
-                type="button" 
-                className="btn-danger-outline" 
-                onClick={() => setShowDeleteConfirm(true)}
-              >
-                Delete Item
-              </button>
-            )}
-            
-            <div className="right-actions">
-              <button type="button" className="btn-cancel" onClick={onCancel} disabled={isSaving}>
-                Cancel
-              </button>
-              <button type="submit" className="btn-save" disabled={isSaving}>
-                {isSaving ? 'Saving...' : (isEditMode ? 'Save Changes' : 'Add Item')}
-              </button>
-            </div>
-          </div>
-        </form>
+        </div>
+      </div>
+      <div className="form-group">
+        <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+          <input type="checkbox" name="isAvailable" checked={formData.isAvailable} onChange={handleChange} />
+          Available for ordering
+        </label>
+      </div>
+      <div className="form-actions">
+        {isEditMode && (
+          <button type="button" className="btn-delete" onClick={() => setShowDeleteConfirm(true)}>Delete</button>
+        )}
+        <button type="button" className="btn-cancel" onClick={onCancel}>Cancel</button>
+        <button type="submit" className="btn-primary" onClick={handleSubmit} disabled={isSaving || uploading}>
+          {isSaving ? 'Saving…' : isEditMode ? 'Save Changes' : 'Add Item'}
+        </button>
       </div>
     </div>
   );

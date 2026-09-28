@@ -163,6 +163,13 @@ const updateMenuItem = wrap(async (req, res) => {
 });
 
 
+const deleteOutlet = wrap(async (req, res) => {
+  const result = await adminService.deleteOutlet(req.params.outletId);
+  await audit({ actorId: req.user.id, action: 'OUTLET_DELETED', targetType: 'Outlet', targetId: req.params.outletId, after: { name: result.name }, req });
+  res.status(200).json({ success: true, data: result });
+});
+
+
 module.exports = {
   getOverview, getUsers, getUser, updateUserStatus,
   getOutlets, getOutlet, createOutlet, getAllStaff, updateOutletStatus,
@@ -171,4 +178,5 @@ module.exports = {
   updateUser,
   updateOutlet,
   updateMenuItem,
+  deleteOutlet,
 };

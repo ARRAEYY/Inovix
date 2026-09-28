@@ -147,17 +147,11 @@ async function verifyGoogleCredential(credential) {
 
         const email = payload.email?.toLowerCase();
 
-        // Dev/test affordance: when ALLOW_ANY_GOOGLE_EMAIL=true, skip the
-        // campus-domain gate so testers can log in with a regular Gmail
-        // account. Production must keep this unset (or 'false') so only
-        // @rishihood.edu.in accounts are accepted.
-        if (process.env.ALLOW_ANY_GOOGLE_EMAIL !== 'true') {
-            if (!isCollegeEmail(email)) {
-                const error = new Error(`Only @${COLLEGE_EMAIL_DOMAIN} accounts are allowed`);
-                error.statusCode = 403;
-                throw error;
-            }
-        }
+        // The campus-domain gate (@rishihood.edu.in) is now ENFORCED IN
+        // auth.service.js findOrCreateGoogleUser() — it's role-aware there
+        // (only students are gated; outlet staff/admins + super admins can
+        // use any email). This function just verifies the Google ID token +
+        // returns the user info; it does NOT make domain decisions.
 
         if (!payload.email_verified) {
             const error = new Error('Google email is not verified');
@@ -187,6 +181,9 @@ module.exports = {
     verifyGoogleCredential,
     getAuthUrl,
     exchangeCodeForUser,
+    // Exported for the role-aware domain gate in auth.service.js:
+    isCollegeEmail,
+    COLLEGE_EMAIL_DOMAIN,
     // Exported for tests:
     _isCollegeEmail: isCollegeEmail,
     _COLLEGE_EMAIL_DOMAIN: COLLEGE_EMAIL_DOMAIN,

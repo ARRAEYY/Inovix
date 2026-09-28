@@ -40,7 +40,7 @@ const AdminDashboard = () => {
   if (error) return <AdminLayout><div className="error-message" style={{ margin: '24px' }}>{error}</div></AdminLayout>;
   if (!data) return <AdminLayout><p style={{ padding: '24px' }}>No data available</p></AdminLayout>;
 
-  const { metrics, users, outletOverview, recentOrders, attentionNeeded } = data;
+  const { metrics = {}, users = {}, outletOverview = [], recentOrders = [], attentionNeeded = [] } = data || {};
 
   return (
     <AdminLayout>
@@ -348,12 +348,5 @@ const thStyle = {
   textTransform: 'uppercase',
   letterSpacing: '0.5px'
 };
-
-// Global animation for refresh icon
-const styleSheet = document.createElement("style");
-styleSheet.innerText = `
-  @keyframes spin { 100% { transform: rotate(360deg); } }
-`;
-document.head.appendChild(styleSheet);
 
 export default AdminDashboard;

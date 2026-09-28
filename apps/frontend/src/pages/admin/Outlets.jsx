@@ -69,7 +69,7 @@ const Outlets = () => {
   };
 
   const filteredOutlets = outlets.filter(o => {
-    const matchesSearch = o.name.toLowerCase().includes(search.toLowerCase());
+    const matchesSearch = (o.name || "").toLowerCase().includes(search.toLowerCase());
     if (filter === 'All') return matchesSearch;
     if (filter === 'Active') return matchesSearch && (o.status === 'OPEN' || o.status === 'BUSY');
     if (filter === 'Inactive') return matchesSearch && o.status === 'CLOSED';

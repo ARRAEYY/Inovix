@@ -1875,3 +1875,5 @@ img {
   padding: 0.5rem 1.25rem;
   border-radius: 6px;
 }
+/* Refresh icon spin animation (was injected via document.head at module load — moved here to avoid leaking <style> tags on HMR) */
+@keyframes spin { 100% { transform: rotate(360deg); } }

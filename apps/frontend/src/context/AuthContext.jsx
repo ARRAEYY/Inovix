@@ -138,6 +138,21 @@ export const AuthProvider = ({ children }) => {
     setLoading(false);
   }, []);
 
+  // Listen for session-expired events from the axios client (when the
+  // refresh-token rotation fails). Without this, the user stays on a
+  // protected page seeing error toasts on every API call — React state
+  // still says isAuthenticated: true. Clearing the state here lets the
+  // PrivateRoute redirect to the login page immediately.
+  useEffect(() => {
+    const onSessionExpired = () => {
+      setUser(null);
+      setToken(null);
+      // The axios client already cleared localStorage; we just sync React.
+    };
+    window.addEventListener('nosh:session-expired', onSessionExpired);
+    return () => window.removeEventListener('nosh:session-expired', onSessionExpired);
+  }, []);
+
   const login = async (email, password) => {
     const response = await authService.login(email, password);
     if (response.success && response.data) {

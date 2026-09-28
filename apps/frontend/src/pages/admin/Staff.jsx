@@ -51,8 +51,8 @@ const Staff = () => {
   const staffMembers = users.filter(u => u.role === 'OUTLET_STAFF' || u.role === 'OUTLET_ADMIN');
 
   const filteredStaff = staffMembers.filter(m => {
-    const matchesSearch = m.name.toLowerCase().includes(search.toLowerCase()) || 
-                          m.email.toLowerCase().includes(search.toLowerCase());
+    const matchesSearch = (m.name || "").toLowerCase().includes(search.toLowerCase()) || 
+                          (m.email || "").toLowerCase().includes(search.toLowerCase());
     
     if (!matchesSearch) return false;
     

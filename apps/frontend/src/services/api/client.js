@@ -70,6 +70,10 @@ client.interceptors.response.use((response) => {
         // identity so protected routes redirect to login on next render.
         localStorage.removeItem('accessToken');
         localStorage.removeItem('user');
+        // Notify the AuthContext so it clears React state + triggers a
+        // redirect to login. Without this, the user stays on a protected
+        // page seeing error toasts on every API call.
+        window.dispatchEvent(new Event('nosh:session-expired'));
         console.error('Authentication Error: session expired, please log in again');
         return Promise.reject(refreshError);
       }

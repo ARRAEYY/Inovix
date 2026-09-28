@@ -2,20 +2,13 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 
-// Helper to map mock outlet IDs to names without changing backend
-const getOutletName = (id) => {
-  const map = {
-    'outlet-1': 'The Commons',
-    'outlet-2': 'Brew & Bites',
-    'mock-outlet-adil': 'Adilreyaz Outlet'
-  };
-  return map[id] || 'Nosh Outlet';
-};
-
 const OutletMobileHeader = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const outletName = getOutletName(user?.outletId);
+  // Outlet name comes straight from the auth payload (GET /auth/me returns
+  // user.outlet). No client-side ID → name mapping — the JWT is the source
+  // of truth, same as OutletSidebar.jsx.
+  const outletName = user?.outlet?.name || 'Nosh Outlet';
 
   const getInitials = (name) => {
     if (!name) return '?';
@@ -30,8 +23,8 @@ const OutletMobileHeader = () => {
         </div>
       </div>
       <div className="mobile-header-right">
-        <button 
-          className="header-profile-btn" 
+        <button
+          className="header-profile-btn"
           onClick={() => navigate('/outlet/profile')}
           aria-label="Go to profile"
         >

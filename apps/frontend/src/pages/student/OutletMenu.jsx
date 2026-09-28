@@ -9,21 +9,38 @@ import BackButton from '../../components/common/BackButton';
 import { catalogService } from '../../services/api/catalogService';
 import { orderService } from '../../services/api/orderService';
 
-// Helper to get category placeholder image
-const getCategoryImage = (categoryName) => {
-  const images = {
-    'Popular': 'https://via.placeholder.com/60?text=Pop',
-    'Burgers': 'https://via.placeholder.com/60?text=Brg',
-    'Fries': 'https://via.placeholder.com/60?text=Fry',
-    'Sandwiches': 'https://via.placeholder.com/60?text=Snd',
-    'Wraps': 'https://via.placeholder.com/60?text=Wrp',
-    'Maggi': 'https://via.placeholder.com/60?text=Mag',
-    'Shakes': 'https://via.placeholder.com/60?text=Shk',
-    'Beverages': 'https://via.placeholder.com/60?text=Bev',
-    'Meals': 'https://via.placeholder.com/60?text=Meal',
-    'Desserts': 'https://via.placeholder.com/60?text=Des'
-  };
-  return images[categoryName] || 'https://via.placeholder.com/60?text=Food';
+// Render a category icon as a self-contained CSS block — no external image
+// service. Uses the first letter (or first two letters for short words) of
+// the category name on a tinted circle. Keeps the sidebar visual without
+// depending on via.placeholder.com.
+const CategoryIcon = ({ name }) => {
+  const label = (name || '?')
+    .split(/\s+/)
+    .map((w) => w.charAt(0).toUpperCase())
+    .slice(0, 2)
+    .join('');
+  return (
+    <span
+      aria-hidden="true"
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: 36,
+        height: 36,
+        borderRadius: 10,
+        background: '#faf5f6',
+        color: '#b10035',
+        fontWeight: 700,
+        fontSize: '0.85rem',
+        letterSpacing: '0.5px',
+        flexShrink: 0,
+        userSelect: 'none',
+      }}
+    >
+      {label}
+    </span>
+  );
 };
 
 // Map a backend menu item onto the fields FoodCard / the cart read.
@@ -81,7 +98,6 @@ const OutletMenu = () => {
           if (!acc[item.category]) {
             acc[item.category] = {
               category: item.category,
-              image: getCategoryImage(item.category),
               items: []
             };
           }
@@ -261,7 +277,7 @@ const OutletMenu = () => {
                     onClick={() => scrollToCategory(section.category)}
                   >
                     <div className="category-img-wrapper">
-                      <img src={section.image} alt={section.category} />
+                      <CategoryIcon name={section.category} />
                     </div>
                     <span className="category-name">{section.category}</span>
                   </button>

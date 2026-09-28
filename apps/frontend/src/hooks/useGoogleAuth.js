@@ -66,10 +66,13 @@ export function useGoogleAuth({ onSuccess, onError } = {}) {
   // the Google OAuth URL, sets the state cookie, and 302s to Google. The
   // rest is handled by the callback + AuthContext (see AuthContext.jsx).
   const signInWithGoogle = useCallback(() => {
-    // Relative URL — goes through the Next.js reverse-proxy to the Inovix
-    // backend on port 4000. The proxy forwards X-Forwarded-Host so the
-    // backend can build the correct redirect_uri.
-    window.location.href = '/api/v1/auth/google';
+    // Use the FULL VITE_API_URL so this works in BOTH deployments:
+    //   - Next.js reverse-proxy (VITE_API_URL=/api/v1 → same-origin, proxied)
+    //   - Vercel standalone (VITE_API_URL=https://<backend>.onrender.com/api/v1 → cross-origin)
+    // A relative '/api/v1/auth/google' would break on Vercel (the frontend
+    // domain has no /api/v1 route).
+    const apiBase = import.meta.env.VITE_API_URL || '/api/v1';
+    window.location.href = `${apiBase}/auth/google`;
   }, []);
 
   // ─── Popup flow (fallback) ─────────────────────────────────────────────

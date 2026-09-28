@@ -113,9 +113,24 @@ const Profile = () => {
 
             <div style={{ display: 'grid', gridTemplateColumns: '200px 1fr', alignItems: 'center' }}>
               <span style={{ fontWeight: '600', color: '#374151' }}>Change Password</span>
-              <button onClick={async () => { try { await require('../../services/api/client').default.post('/auth/forgot-password', { email: user?.email }); toast('Reset code sent to your email'); } catch (e) { toast('Failed to send reset code'); } }} style={{ justifySelf: 'flex-start', padding: '8px 16px', background: 'white', border: '1px solid #d1d5db', borderRadius: '8px', fontWeight: '600', cursor: 'pointer' }}>
-                Send Reset Link
-              </button>
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                <input type="password" placeholder="Current password" id="oldPw" style={{ width: '150px', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: '8px', fontSize: '0.9rem' }} />
+                <input type="password" placeholder="New password (8+)" id="newPw" minLength="8" style={{ width: '150px', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: '8px', fontSize: '0.9rem' }} />
+                <button onClick={async () => {
+                  const oldPw = document.getElementById('oldPw').value;
+                  const newPw = document.getElementById('newPw').value;
+                  if (!oldPw || !newPw) { toast('Fill in both passwords'); return; }
+                  try {
+                    const client = (await import('../../services/api/client')).default;
+                    await client.patch('/auth/me/password', { oldPassword: oldPw, newPassword: newPw });
+                    document.getElementById('oldPw').value = '';
+                    document.getElementById('newPw').value = '';
+                    toast('Password changed successfully');
+                  } catch (e) { toast(e.response?.data?.message || 'Failed to change password'); }
+                }} style={{ padding: '8px 16px', background: '#b10035', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '600', cursor: 'pointer' }}>
+                  Change
+                </button>
+              </div>
             </div>
           </div>
 

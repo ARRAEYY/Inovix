@@ -19,6 +19,10 @@ const Dashboard = () => {
 
   useEffect(() => {
     fetchOrders();
+    // Auto-refresh every 15s so new orders appear without manual refresh.
+    // Socket.IO events (order:status:changed) also trigger a refetch.
+    const interval = setInterval(fetchOrders, 15000);
+    return () => clearInterval(interval);
   }, []);
 
   const updateStats = (currentOrders) => {

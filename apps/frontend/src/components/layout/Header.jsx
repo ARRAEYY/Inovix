@@ -32,14 +32,14 @@ const Header = ({ cartCount, onCartClick, title, subtitle, showBack = false }) =
   useEffect(() => {
     if (!user || user.role !== 'STUDENT') return;
     let active = true;
-    const fetch = async () => {
+    const fetchUnread = async () => {
       try {
         const res = await notificationService.list({ unread: true, pageSize: 1 });
         if (active) setUnreadCount(res.data?.unreadCount ?? res.data?.total ?? 0);
       } catch { /* badge is decorative — ignore */ }
     };
-    fetch();
-    const interval = setInterval(fetch, 30000); // refresh every 30s
+    fetchUnread();
+    const interval = setInterval(fetchUnread, 30000); // refresh every 30s
     return () => { active = false; clearInterval(interval); };
   }, [user]);
 

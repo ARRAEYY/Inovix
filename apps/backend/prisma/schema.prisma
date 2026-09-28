@@ -47,6 +47,8 @@ model User {
   auditLogs           AuditLog[]
   notifications       Notification[]
   passwordResets      PasswordReset[]
+  favorites            Favorite[]
+  reviews              Review[]
 
   @@index([email])
 }
@@ -121,6 +123,8 @@ model Outlet {
   menuItems                 MenuItem[]
   orders                    Order[]
   carts                     Cart[]
+  favorites                Favorite[]
+  reviews                  Review[]
 
   @@index([campusId])
   @@index([status])
@@ -428,6 +432,37 @@ model AuditLog {
   @@index([targetType, targetId])
   @@index([actorUserId])
   @@index([createdAt])
+}
+
+
+// ─── 21. Favorite ─────────────────────────────────────────────────────────
+model Favorite {
+  id        String   @id @default(cuid())
+  userId    String
+  outletId  String
+  createdAt DateTime @default(now())
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  outlet Outlet @relation(fields: [outletId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, outletId])
+  @@index([userId])
+}
+
+// ─── 22. Review ───────────────────────────────────────────────────────────
+model Review {
+  id        String   @id @default(cuid())
+  userId    String
+  outletId  String
+  orderId   String  @unique
+  rating    Int
+  comment   String   @default("")
+  createdAt DateTime @default(now())
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  outlet Outlet @relation(fields: [outletId], references: [id], onDelete: Cascade)
+
+  @@index([outletId, createdAt])
 }
 
 // ─── 20. PasswordReset ─────────────────────────────────────────────────────

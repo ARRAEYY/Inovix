@@ -15,6 +15,8 @@ const paymentsRoutes = require('./modules/payments/payments.routes');
 const notificationsRoutes = require('./modules/notifications/notifications.routes');
 const auditRoutes = require('./modules/audit/audit.routes');
 const uploadsRoutes = require('./modules/uploads/uploads.routes');
+const favoritesRoutes = require('./modules/favorites.routes');
+const reviewsRoutes = require('./modules/reviews.routes');
 
 const { errorHandler } = require('./middleware/error.middleware');
 const { authRateLimit, apiRateLimit } = require('./middleware/rateLimit.middleware');
@@ -123,6 +125,8 @@ app.use('/api/v1/admin', adminRoutes);
 app.use('/api/v1/notifications', notificationsRoutes);
 app.use('/api/v1/audit', auditRoutes);
 app.use('/api/v1/uploads', uploadsRoutes);
+app.use('/api/v1/favorites', favoritesRoutes);
+app.use('/api/v1/reviews', reviewsRoutes);
 
 // ── 404 Handler ───────────────────────────────────────────────────────────────
 app.use((req, res) => {

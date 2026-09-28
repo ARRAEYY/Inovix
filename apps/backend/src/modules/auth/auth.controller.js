@@ -206,11 +206,19 @@ async function googleCallback(req, res, next) {
 
     res.clearCookie(OAUTH_STATE_COOKIE, { path: '/api/v1/auth' });
     setRefreshCookie(res, refreshToken);
-    // The refresh cookie (httpOnly, same-origin) is enough for the
-    // frontend to mint a fresh access token via POST /auth/refresh on
-    // the very next page load. We don't put the access token in a URL
-    // (would leak via history / referrer).
-    return res.redirect(`${FRONTEND_PATH}?google_login=success`);
+    // The refresh cookie (httpOnly, SameSite=None; Secure) lets the frontend
+    // refresh the access token later — BUT third-party cookie blocking
+    // (Safari ITP, Chrome's phase-out, Firefox ETP) may prevent it from being
+    // sent on the cross-site /auth/refresh call. So we ALSO pass the access
+    // token in a URL hash fragment (#at=<jwt>). Hash fragments are NOT sent
+    // to servers in HTTP requests (so they don't leak via referrer headers)
+    // and the frontend's AuthContext reads it on load + cleans the URL
+    // immediately via history.replaceState. The token is short-lived (15m)
+    // so even if the URL is shared before cleanup, the exposure window is
+    // tiny. This is the standard SPA OAuth implicit-flow pattern.
+    return res.redirect(
+      `${FRONTEND_PATH}?google_login=success#at=${encodeURIComponent(accessToken)}`,
+    );
   } catch (error) {
     const reason = encodeURIComponent(error.message || 'google_callback_failed');
     res.clearCookie(OAUTH_STATE_COOKIE, { path: '/api/v1/auth' });

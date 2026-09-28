@@ -44,10 +44,19 @@ const Users = () => {
     }
   };
 
-  const handleEditSubmit = (e) => {
+  const handleEditSubmit = async (e) => {
     e.preventDefault();
-    setUsers(users.map(u => u.id === selectedEditUser.id ? selectedEditUser : u));
-    setSelectedEditUser(null);
+    try {
+      await api.patch(`/admin/users/${selectedEditUser.id}`, {
+        name: selectedEditUser.name,
+        email: selectedEditUser.email,
+        role: selectedEditUser.role,
+      });
+      setUsers(users.map(u => u.id === selectedEditUser.id ? { ...u, ...selectedEditUser } : u));
+      setSelectedEditUser(null);
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to update user');
+    }
   };
 
   const filteredUsers = users.filter(u => {

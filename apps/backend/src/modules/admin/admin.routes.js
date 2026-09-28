@@ -8,6 +8,9 @@ const {
   updateOutletStatusSchema,
   updateMenuAvailabilitySchema,
   refundCreateSchema,
+  updateUserSchema,
+  updateOutletSchema,
+  updateMenuItemSchema,
 } = require('@nosh/validation');
 const { z } = require('zod');
 
@@ -24,11 +27,13 @@ router.get('/users', validateQuery(z.object({
 })), adminController.getUsers);
 router.get('/users/:userId', adminController.getUser);
 router.patch('/users/:userId/status', validateBody(updateUserStatusSchema), adminController.updateUserStatus);
+router.patch('/users/:userId', validateBody(updateUserSchema), adminController.updateUser);
 
 router.get('/outlets', adminController.getOutlets);
 router.post('/outlets', adminController.createOutlet);
 router.get('/outlets/:outletId', adminController.getOutlet);
 router.patch('/outlets/:outletId/status', validateBody(updateOutletStatusSchema), adminController.updateOutletStatus);
+router.patch('/outlets/:outletId', validateBody(updateOutletSchema), adminController.updateOutlet);
 
 router.get('/staff', adminController.getAllStaff);
 
@@ -50,5 +55,6 @@ router.post('/refunds', validateBody(refundCreateSchema), adminController.issueM
 router.get('/menu', adminController.getMenu);
 router.get('/menu/:itemId', adminController.getMenuItem);
 router.patch('/menu/:itemId/status', validateBody(updateMenuAvailabilitySchema), adminController.updateMenuItemStatus);
+router.patch('/menu/:itemId', validateBody(updateMenuItemSchema), adminController.updateMenuItem);
 
 module.exports = router;

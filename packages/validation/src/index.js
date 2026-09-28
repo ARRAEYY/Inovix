@@ -308,6 +308,29 @@ const uploadSignSchema = z.object({
 
 // ─── Exports ─────────────────────────────────────────────────────────────────
 
+// ─── Admin Edit schemas (general update — not just status) ───────────────
+const updateUserSchema = z.object({
+  name: z.string().trim().min(1).max(120).optional(),
+  email: z.string().email().optional(),
+  role: z.enum(['STUDENT', 'OUTLET_STAFF', 'OUTLET_ADMIN', 'SUPER_ADMIN']).optional(),
+}).strict();
+
+const updateOutletSchema = z.object({
+  name: z.string().trim().min(1).optional(),
+  description: z.string().optional(),
+  location: z.string().optional(),
+  status: z.enum(['OPEN', 'BUSY', 'CLOSED', 'PENDING', 'SUSPENDED']).optional(),
+}).strict();
+
+const updateMenuItemSchema = z.object({
+  name: z.string().trim().min(1).optional(),
+  description: z.string().optional(),
+  price: z.number().positive().optional(),
+  imageUrl: z.string().url().nullable().optional(),
+  isAvailable: z.boolean().optional(),
+}).strict();
+
+
 module.exports = {
   // primitives (re-exported for frontend reuse)
   emailField,
@@ -339,6 +362,9 @@ module.exports = {
   razorpayPaymentVerifySchema,
   refundCreateSchema,
   outletStaffInviteSchema,
+  updateUserSchema,
+  updateOutletSchema,
+  updateMenuItemSchema,
   outletProfileUpdateSchema,
   operatingHoursSchema,
   operatingHoursListSchema,

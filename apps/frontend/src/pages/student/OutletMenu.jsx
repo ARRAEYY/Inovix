@@ -8,6 +8,8 @@ import BackButton from '../../components/common/BackButton';
 
 import { catalogService } from '../../services/api/catalogService';
 import { orderService } from '../../services/api/orderService';
+import { paymentService } from '../../services/api/paymentService';
+import { useAuth } from '../../hooks/useAuth';
 
 // Render a category icon as a self-contained CSS block — no external image
 // service. Uses the first letter (or first two letters for short words) of
@@ -63,6 +65,7 @@ const mapOutletDetails = (o) => ({
 const OutletMenu = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   const [outlet, setOutlet] = useState(null);
   const [menuSections, setMenuSections] = useState([]);
@@ -159,24 +162,75 @@ const OutletMenu = () => {
     try { localStorage.removeItem(`nosh:cart:${id}`); } catch {}
   }, [id]);
 
-  // Place the order from the local cart, then try to initialise payment.
+  // ─── Prepaid order flow (every order is paid via Razorpay checkout) ─────
+  // No order is confirmed without payment. The flow:
+  //   1. POST /orders → create the order (status=PENDING, Payment.status=PENDING)
+  //   2. POST /payments/razorpay/order → create a Razorpay gateway order
+  //   3. Open Razorpay checkout → student pays
+  //   4. POST /payments/razorpay/verify → verify the HMAC signature
+  //   5. On success → clear cart + navigate to /student/orders
+  //   6. On dismiss/failure → order stays PENDING, cart is preserved so
+  //      the student can retry. The order appears in /orders with a "Pay"
+  //      button (or auto-cancels after the pickup timeout).
   const handleOrderNow = async () => {
     if (placingOrder) return;
     const entries = Object.entries(cart).filter(([, qty]) => qty > 0);
     if (entries.length === 0) return;
     try {
       setPlacingOrder(true);
-      const res = await orderService.createOrder({
+
+      // Step 1: create the order
+      const orderRes = await orderService.createOrder({
         outletId: id,
         items: entries.map(([menuItemId, quantity]) => ({ menuItemId, quantity })),
       });
-      const order = res.data || {};
+      const order = orderRes.data || {};
+      if (!order.id) {
+        throw new Error(orderRes.message || 'Could not create the order');
+      }
+
+      // Step 2: create a Razorpay gateway order
+      const razorpayRes = await paymentService.createRazorpayOrder(order.id);
+      const rp = razorpayRes.data || {};
+      if (!rp.razorpayOrderId || !rp.keyId) {
+        throw new Error('Could not initialize Razorpay payment');
+      }
+
+      // Step 3: open the Razorpay checkout modal
+      let paymentResponse;
+      try {
+        paymentResponse = await paymentService.openCheckout({
+          keyId: rp.keyId,
+          razorpayOrderId: rp.razorpayOrderId,
+          amount: rp.amount,
+          currency: rp.currency,
+          user,
+          outletName: outlet?.name,
+        });
+      } catch (dismissError) {
+        // User closed the checkout without paying. The order is created but
+        // unpaid (status=PENDING). Navigate to orders so they can retry.
+        setCart({});
+        try { localStorage.removeItem(CART_STORAGE_KEY); } catch {}
+        setIsCartOpen(false);
+        alert(`Order ${order.orderNumber || ''} created but payment was cancelled. You can pay from your orders.`);
+        navigate('/student/orders');
+        return;
+      }
+
+      // Step 4: verify the payment signature
+      const verifyRes = await paymentService.verifyPayment({
+        razorpayOrderId: paymentResponse.razorpay_order_id,
+        razorpayPaymentId: paymentResponse.razorpay_payment_id,
+        razorpaySignature: paymentResponse.razorpay_signature,
+      });
+
+      // Step 5: payment confirmed → clear cart + navigate
       setCart({});
-      // Clear the persisted cart too — a successful order shouldn't leave
-      // stale items in localStorage that reappear on refresh.
       try { localStorage.removeItem(CART_STORAGE_KEY); } catch {}
       setIsCartOpen(false);
-      alert(`Order ${order.orderNumber || ''} placed! Complete the payment at the outlet or from your orders.`);
+      const paid = verifyRes.success ? '✓ Paid' : 'pending verification';
+      alert(`Order ${order.orderNumber || ''} placed! Payment: ${paid}. You'll get a pickup code when the outlet accepts.`);
       navigate('/student/orders');
     } catch (err) {
       alert(err.message || 'Could not place the order. Please try again.');

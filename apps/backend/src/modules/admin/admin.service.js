@@ -667,6 +667,16 @@ async function updateMenuItem(itemId, data) {
 }
 
 
+async function deleteOutlet(outletId) {
+  const outlet = await prisma.outlet.findUnique({ where: { id: outletId } });
+  if (!outlet) throw { statusCode: 404, message: 'Outlet not found' };
+  // Cascade delete: the schema has onDelete: Cascade on OutletStaff,
+  // OperatingHours, MenuCategory, MenuItem, Cart, Orders (via outletId).
+  await prisma.outlet.delete({ where: { id: outletId } });
+  return { deleted: true, name: outlet.name };
+}
+
+
 module.exports = {
   getOverview,
   getUsers,
@@ -686,4 +696,5 @@ module.exports = {
   updateUser,
   updateOutlet,
   updateMenuItem,
+  deleteOutlet,
 };

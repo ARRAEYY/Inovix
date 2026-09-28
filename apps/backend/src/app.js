@@ -62,10 +62,17 @@ app.use((req, _res, next) => {
   next();
 });
 const corsOrigins = isProduction
-  ? [FRONTEND_URL]
-  : Array.from(new Set([FRONTEND_URL, 'http://localhost:5173', 'http://localhost:3001']));
+  ? FRONTEND_URL.split(',').map((s) => s.trim()).filter(Boolean)
+  : Array.from(new Set([...FRONTEND_URL.split(',').map((s) => s.trim()).filter(Boolean), 'http://localhost:5173', 'http://localhost:3001']));
 app.use(cors({
-  origin: corsOrigins,
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps, curl, server-to-server)
+    if (!origin) return callback(null, true);
+    if (corsOrigins.includes(origin) || origin.endsWith('.vercel.app')) {
+      return callback(null, true);
+    }
+    return callback(new Error('Not allowed by CORS'));
+  },
   credentials: true,
 }));
 

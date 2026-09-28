@@ -155,7 +155,7 @@ async function getOutletAnalytics(req, res, next) {
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
-    const [todayOrders, monthOrders, totalOrders, allCompletedOrders, unavailableCount] = await Promise.all([
+    const [todayOrders, monthOrders, totalOrders, allCompletedOrders, unavailableCount, recentOrderRows] = await Promise.all([
       prisma.order.findMany({
         where: { outletId, status: 'COMPLETED', createdAt: { gte: startOfToday } },
         select: { totalAmount: true },
@@ -172,6 +172,20 @@ async function getOutletAnalytics(req, res, next) {
         include: { items: true },
       }),
       prisma.menuItem.count({ where: { outletId, isAvailable: false } }),
+      // Recent orders (any status) for the dashboard's recent-orders table.
+      prisma.order.findMany({
+        where: { outletId },
+        orderBy: { createdAt: 'desc' },
+        take: 3,
+        select: {
+          id: true,
+          orderNumber: true,
+          status: true,
+          totalAmount: true,
+          createdAt: true,
+          student: { select: { name: true } },
+        },
+      }),
     ]);
 
     const todaySales = todayOrders.reduce((acc, o) => acc + Number(o.totalAmount || 0), 0);
@@ -228,6 +242,15 @@ async function getOutletAnalytics(req, res, next) {
         weeklyOrders,
         popularItems,
         attentionNeeded,
+        recentOrders: recentOrderRows.map((o) => ({
+          id: o.id,
+          orderNumber: o.orderNumber,
+          status: o.status,
+          total: Number(o.totalAmount),
+          createdAt: o.createdAt,
+          studentName: o.student?.name || 'Student',
+          outletName: null, // the consuming dashboard renders its own outlet name
+        })),
       },
     });
   } catch (error) {

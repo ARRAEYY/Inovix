@@ -57,6 +57,17 @@ function stripSensitive(user) {
     ...safe,
     outletId: user.outletStaff?.outletId || null,
     outletRole: user.outletStaff?.role || null,
+    outlet: user.outletStaff?.outlet
+      ? {
+          id: user.outletStaff.outlet.id,
+          name: user.outletStaff.outlet.name,
+          logoUrl: user.outletStaff.outlet.logoUrl,
+          location: user.outletStaff.outlet.location,
+          status: user.outletStaff.outlet.status,
+        }
+      : null,
+    // `avatar` is the frontend-facing alias of the stored picture.
+    avatar: user.googlePicture || null,
   };
 }
 
@@ -142,6 +153,54 @@ async function getCurrentUser(req, res, next) {
     const user = await getCurrentUserService(req.user.id);
     return res.status(200).json({
       success: true,
+      data: { user: stripSensitive(user) },
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+// PUT /auth/me — self-service profile update. The frontend profile editor
+// sends { name, avatar }; only fields that exist on the User model are
+// persisted (avatar is stored in googlePicture, the model's picture column).
+async function updateCurrentUser(req, res, next) {
+  try {
+    const { name, avatar } = req.body;
+    const data = {};
+    if (name !== undefined) {
+      if (typeof name !== 'string' || name.trim().length === 0 || name.length > 120) {
+        return res.status(400).json({ success: false, message: 'Name must be a non-empty string (max 120 chars)' });
+      }
+      data.name = name.trim();
+    }
+    if (avatar !== undefined) {
+      if (avatar !== null && (typeof avatar !== 'string' || avatar.length > 2048)) {
+        return res.status(400).json({ success: false, message: 'Avatar must be a URL string' });
+      }
+      data.googlePicture = avatar || null;
+    }
+    if (Object.keys(data).length === 0) {
+      return res.status(400).json({ success: false, message: 'Nothing to update' });
+    }
+
+    const user = await prisma.user.update({
+      where: { id: req.user.id },
+      data,
+      include: { outletStaff: { include: { outlet: { select: { id: true, name: true, logoUrl: true, location: true, status: true } } } }, studentProfile: true },
+    });
+
+    await audit({
+      actorId: req.user.id,
+      action: 'USER_PROFILE_UPDATED',
+      targetType: 'User',
+      targetId: req.user.id,
+      after: { name: user.name },
+      req,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Profile updated',
       data: { user: stripSensitive(user) },
     });
   } catch (error) {
@@ -247,6 +306,7 @@ module.exports = {
   googleLogin,
   devLogin,
   getCurrentUser,
+  updateCurrentUser,
   refresh,
   logout,
   forgotPassword,

@@ -18,7 +18,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  // Dev default per the provider policy above (SQLite migrations in
+  // prisma/migrations target sqlite). Switch to "postgresql" for production.
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 

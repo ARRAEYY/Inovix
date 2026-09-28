@@ -5,6 +5,7 @@ const {
   googleLogin,
   devLogin,
   getCurrentUser,
+  updateCurrentUser,
   refresh,
   logout,
   forgotPassword,
@@ -63,6 +64,7 @@ if (IS_DEV && ENABLE_DEV_LOGIN) {
 
 // Authenticated routes — moderate limiter.
 router.get('/me', authEndpointsRateLimit, protect, getCurrentUser);
+router.put('/me', authEndpointsRateLimit, protect, updateCurrentUser);
 router.post('/logout', authEndpointsRateLimit, protect, logout);
 
 module.exports = router;

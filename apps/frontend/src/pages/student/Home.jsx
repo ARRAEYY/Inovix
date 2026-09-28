@@ -1,0 +1,124 @@
+import React, { useState, useEffect } from 'react';
+import Header from '../../components/layout/Header';
+import OutletCard from '../../components/food/OutletCard';
+import MobileBottomNav from '../../components/layout/MobileBottomNav';
+import { useAuth } from '../../hooks/useAuth';
+import { catalogService } from '../../services/api/catalogService';
+
+const FILTERS = ['All', 'Open now'];
+
+// Map a catalog outlet (Prisma Outlet model) onto the fields OutletCard
+// renders. Only OPEN/BUSY outlets are returned by the backend.
+const mapOutlet = (o) => ({
+  id: o.id,
+  name: o.name,
+  description: o.description,
+  image: o.logoUrl || '/images/cafe.jpg',
+  active: o.status === 'OPEN' || o.status === 'BUSY',
+  rating: o.rating,
+  time: (o.estimatedTime || '').replace(' min', '') || '15-20',
+  location: o.location,
+});
+
+const Home = () => {
+  const { user } = useAuth();
+  const [activeFilter, setActiveFilter] = useState('All');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [outlets, setOutlets] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    const fetchOutlets = async () => {
+      try {
+        setLoading(true);
+        const res = await catalogService.getOutlets();
+        setOutlets((res.data || []).map(mapOutlet));
+        setError(null);
+      } catch (err) {
+        setError(err.message || 'Failed to load outlets');
+        console.error('Failed to fetch outlets:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchOutlets();
+  }, []);
+
+  const filteredOutlets = outlets.filter(outlet => {
+    const matchesSearch =
+      outlet.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      outlet.description.toLowerCase().includes(searchQuery.toLowerCase());
+
+    const matchesFilter = activeFilter === 'All' ? true : outlet.active;
+
+    return matchesSearch && matchesFilter;
+  });
+
+  return (
+    <div className="page-wrapper home-wrapper">
+      <Header />
+      
+      <main className="explore-container">
+        <div className="page-header">
+          <p className="welcome-greeting">Welcome back, {user?.name || 'Student'}</p>
+          <h1 className="page-title">Explore Outlets</h1>
+          <p className="page-subtitle">Order from your favorite campus outlets</p>
+        </div>
+
+        <div className="controls-row">
+          <div className="search-container">
+            <svg className="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <input 
+              type="text" 
+              className="search-input" 
+              placeholder="Search outlets, cuisines..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+            <div className="shortcut-hint">/</div>
+          </div>
+
+          <div className="filter-pills">
+            {FILTERS.map(filter => (
+              <button 
+                key={filter} 
+                className={`pill ${activeFilter === filter ? 'active' : ''}`}
+                onClick={() => setActiveFilter(filter)}
+              >
+                {filter}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {loading ? (
+          <div style={{ textAlign: 'center', padding: '4rem 0', color: 'var(--text-light)' }}>
+            <p>Loading outlets…</p>
+          </div>
+        ) : error ? (
+          <div style={{ textAlign: 'center', padding: '4rem 0', color: 'var(--text-light)' }}>
+            <p>{error}</p>
+          </div>
+        ) : filteredOutlets.length > 0 ? (
+          <div className="outlets-grid">
+            {filteredOutlets.map(outlet => (
+              <OutletCard key={outlet.id} outlet={outlet} />
+            ))}
+          </div>
+        ) : (
+          <div style={{ textAlign: 'center', padding: '4rem 0', color: 'var(--text-light)' }}>
+            <p>No outlets found matching your criteria.</p>
+          </div>
+        )}
+      </main>
+      
+      <MobileBottomNav />
+    </div>
+  );
+};
+
+export default Home;

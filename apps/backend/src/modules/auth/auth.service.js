@@ -8,6 +8,12 @@ const prisma = require('../../lib/prisma');
 const { hashPassword, comparePassword } = require('../../utils/password');
 const { USER_STATUS } = require('../../lib/constants');
 
+// Outlet fields surfaced to the client (name/logo for the sidebar + profile).
+const OUTLET_STAFF_INCLUDE = {
+  outletStaff: { include: { outlet: { select: { id: true, name: true, logoUrl: true, location: true, status: true } } } },
+  studentProfile: true,
+};
+
 async function findOrCreateGoogleUser(googleData) {
   const { googleId, email, name, picture } = googleData;
   const normalizedEmail = email.toLowerCase();
@@ -15,7 +21,7 @@ async function findOrCreateGoogleUser(googleData) {
   let isNew = false;
   let user = await prisma.user.findUnique({
     where: { email: normalizedEmail },
-    include: { outletStaff: true, studentProfile: true },
+    include: OUTLET_STAFF_INCLUDE,
   });
 
   if (!user) {
@@ -29,7 +35,7 @@ async function findOrCreateGoogleUser(googleData) {
         status: 'ACTIVE',
         // role defaults to STUDENT per schema
       },
-      include: { outletStaff: true, studentProfile: true },
+      include: OUTLET_STAFF_INCLUDE,
     });
     isNew = true;
   } else if (!user.googleId) {
@@ -37,7 +43,7 @@ async function findOrCreateGoogleUser(googleData) {
     user = await prisma.user.update({
       where: { id: user.id },
       data: { googleId, googlePicture: picture || null },
-      include: { outletStaff: true, studentProfile: true },
+      include: OUTLET_STAFF_INCLUDE,
     });
   }
 
@@ -47,7 +53,7 @@ async function findOrCreateGoogleUser(googleData) {
 async function getCurrentUser(userId) {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    include: { outletStaff: true, studentProfile: true },
+    include: OUTLET_STAFF_INCLUDE,
   });
   if (!user) {
     const error = new Error('User not found');
@@ -60,7 +66,7 @@ async function getCurrentUser(userId) {
 async function devLogin({ email, password }) {
   const user = await prisma.user.findUnique({
     where: { email: email.toLowerCase() },
-    include: { outletStaff: true, studentProfile: true },
+    include: OUTLET_STAFF_INCLUDE,
   });
 
   if (!user) {
@@ -101,7 +107,7 @@ async function devLogin({ email, password }) {
 async function passwordLogin({ email, password }) {
   const user = await prisma.user.findUnique({
     where: { email: email.toLowerCase() },
-    include: { outletStaff: true, studentProfile: true },
+    include: OUTLET_STAFF_INCLUDE,
   });
 
   if (!user) {

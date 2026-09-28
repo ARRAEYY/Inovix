@@ -94,9 +94,6 @@ const Orders = () => {
     return true;
   });
 
-  // Function to simulate having no orders
-  const clearOrders = () => setOrders([]);
-
   return (
     <div className="page-wrapper bg-white">
       <Header title="Orders" showBack={false} />
@@ -134,13 +131,7 @@ const Orders = () => {
             </button>
             <h1 className="page-title">Your Orders</h1>
             <p className="page-subtitle">View your past orders and reorder favorites</p>
-          </div>
-          {orders.length > 0 && (
-            <button className="pill" onClick={clearOrders} style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}>
-              Test Empty State
-            </button>
-          )}
-        </div>
+          </div></div>
 
         {orders.length > 0 && (
           <div className="filter-pills" style={{ marginBottom: '1.5rem' }}>

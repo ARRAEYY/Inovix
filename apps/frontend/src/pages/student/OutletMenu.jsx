@@ -71,7 +71,30 @@ const OutletMenu = () => {
   const [error, setError] = useState(null);
   const [placingOrder, setPlacingOrder] = useState(false);
 
-  const [cart, setCart] = useState({});
+  // ─── Cart persistence ────────────────────────────────────────────────
+  // The cart was lost on page refresh because it was only in React state.
+  // Now it's persisted to localStorage keyed per outlet (so different
+  // outlets have separate carts). Loaded lazily on mount via useState's
+  // initializer, saved on every change via useEffect.
+  const CART_STORAGE_KEY = `nosh:cart:${id}`;
+  const [cart, setCart] = useState(() => {
+    try {
+      const saved = localStorage.getItem(CART_STORAGE_KEY);
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+  // Persist the cart to localStorage whenever it changes (so a refresh
+  // restores the exact cart the user had).
+  useEffect(() => {
+    try {
+      localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cart));
+    } catch {
+      // localStorage might be full or blocked (incognito) — ignore.
+    }
+  }, [cart, CART_STORAGE_KEY]);
+
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState('');
@@ -129,6 +152,13 @@ const OutletMenu = () => {
     fetchMenu();
   }, [id]);
 
+  // Clear the persisted cart when the outlet ID changes — prevents
+  // accidentally ordering Outlet A's items at Outlet B.
+  useEffect(() => {
+    setCart({});
+    try { localStorage.removeItem(`nosh:cart:${id}`); } catch {}
+  }, [id]);
+
   // Place the order from the local cart, then try to initialise payment.
   const handleOrderNow = async () => {
     if (placingOrder) return;
@@ -142,6 +172,9 @@ const OutletMenu = () => {
       });
       const order = res.data || {};
       setCart({});
+      // Clear the persisted cart too — a successful order shouldn't leave
+      // stale items in localStorage that reappear on refresh.
+      try { localStorage.removeItem(CART_STORAGE_KEY); } catch {}
       setIsCartOpen(false);
       alert(`Order ${order.orderNumber || ''} placed! Complete the payment at the outlet or from your orders.`);
       navigate('/student/orders');
@@ -212,8 +245,8 @@ const OutletMenu = () => {
   // Flattened search results
   const searchResults = isSearching
     ? flatMenuItems.filter(item =>
-        item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (item.description && item.description.toLowerCase().includes(searchQuery.toLowerCase()))
+        (item.name || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (item.description && (item.description || "").toLowerCase().includes(searchQuery.toLowerCase()))
       )
     : [];
 
@@ -221,8 +254,8 @@ const OutletMenu = () => {
   const filteredMenu = menuSections.map(section => ({
     ...section,
     items: section.items.filter(item =>
-      item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (item.description && item.description.toLowerCase().includes(searchQuery.toLowerCase()))
+      (item.name || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (item.description && (item.description || "").toLowerCase().includes(searchQuery.toLowerCase()))
     )
   })).filter(section => section.items.length > 0);
 

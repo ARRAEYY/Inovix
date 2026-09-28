@@ -47,8 +47,8 @@ const Home = () => {
 
   const filteredOutlets = outlets.filter(outlet => {
     const matchesSearch =
-      outlet.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      outlet.description.toLowerCase().includes(searchQuery.toLowerCase());
+      (outlet.name || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (outlet.description || "").toLowerCase().includes(searchQuery.toLowerCase());
 
     const matchesFilter = activeFilter === 'All' ? true : outlet.active;
 

@@ -68,8 +68,8 @@ const Menu = () => {
   const getOutletName = (id) => outlets.find(o => o.id === id)?.name || 'Unknown Outlet';
 
   const filteredMenu = menuItems.filter(m => {
-    const matchesSearch = m.name.toLowerCase().includes(search.toLowerCase()) || 
-                          m.category.toLowerCase().includes(search.toLowerCase());
+    const matchesSearch = (m.name || "").toLowerCase().includes(search.toLowerCase()) || 
+                          (m.category || "").toLowerCase().includes(search.toLowerCase());
     
     if (!matchesSearch) return false;
     

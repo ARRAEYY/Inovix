@@ -31,5 +31,11 @@
     "@sentry/node": "^10.75.2",
     "node-cron": "^4.6.0",
     "nodemailer": "^10.0.10"
+  },
+  "allowScripts": {
+    "@prisma/client@5.22.0": true,
+    "@prisma/engines@5.22.0": true,
+    "prisma@5.22.0": true,
+    "bcrypt@6.0.0": true
   }
 }

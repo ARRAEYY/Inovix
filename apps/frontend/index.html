@@ -4,7 +4,11 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>frontend</title>
+    <title>Nosh — Campus Food Ordering</title>
+    <!-- Google Identity Services (GIS) — loaded async + deferred so it
+         doesn't block the app boot. The useGoogleAuth hook initializes
+         it on first use with the VITE_GOOGLE_CLIENT_ID from .env. -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
   </head>
   <body>
     <div id="root"></div>

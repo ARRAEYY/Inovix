@@ -3,20 +3,42 @@ import AdminLayout from '../../components/layout/AdminLayout';
 import { useAuth } from '../../hooks/useAuth';
 
 const Profile = () => {
-  const { user, logout } = useAuth();
+  const { user, logout, updateProfile } = useAuth();
   const [saving, setSaving] = useState(false);
+  const [nameDraft, setNameDraft] = useState(user?.name || '');
+  const [emailDraft, setEmailDraft] = useState(user?.email || '');
+  const [status, setStatus] = useState(null); // { ok: boolean, text: string }
 
-  const handleSave = () => {
-    setSaving(true);
-    setTimeout(() => {
+  // Persist the name change via PUT /auth/me (handled in AuthContext). Email
+  // is read-only for super admins (the backend rejects email edits in V1) —
+  // we render the field disabled to be honest about that.
+  const handleSave = async () => {
+    const name = nameDraft.trim();
+    if (!name) {
+      setStatus({ ok: false, text: 'Name cannot be empty' });
+      return;
+    }
+    try {
+      setSaving(true);
+      setStatus(null);
+      const updated = await updateProfile({ name });
+      if (updated) {
+        setStatus({ ok: true, text: 'Profile updated successfully' });
+      } else {
+        setStatus({ ok: false, text: 'Could not update profile' });
+      }
+    } catch (err) {
+      setStatus({ ok: false, text: err.message || 'Could not update profile' });
+    } finally {
       setSaving(false);
-      alert('Profile updated successfully!');
-    }, 1000);
+    }
   };
 
   const handleDiscard = () => {
     if (window.confirm('Are you sure you want to discard your changes?')) {
-      alert('Changes discarded');
+      setNameDraft(user?.name || '');
+      setEmailDraft(user?.email || '');
+      setStatus(null);
     }
   };
 
@@ -70,19 +92,21 @@ const Profile = () => {
             
             <div style={{ display: 'grid', gridTemplateColumns: '200px 1fr', alignItems: 'center' }}>
               <span style={{ fontWeight: '600', color: '#374151' }}>Full Name</span>
-              <input 
-                type="text" 
-                defaultValue={user?.name || ''} 
+              <input
+                type="text"
+                value={nameDraft}
+                onChange={(e) => setNameDraft(e.target.value)}
                 style={inputStyle}
               />
             </div>
-            
+
             <div style={{ display: 'grid', gridTemplateColumns: '200px 1fr', alignItems: 'center' }}>
               <span style={{ fontWeight: '600', color: '#374151' }}>Email Address</span>
-              <input 
-                type="email" 
-                defaultValue={user?.email || ''} 
-                style={inputStyle}
+              <input
+                type="email"
+                value={emailDraft}
+                disabled
+                style={{ ...inputStyle, background: '#f3f4f6', color: '#6b7280', cursor: 'not-allowed' }}
               />
             </div>
 
@@ -93,6 +117,21 @@ const Profile = () => {
               </button>
             </div>
           </div>
+
+          {status && (
+            <div style={{
+              marginTop: '8px',
+              padding: '0.65rem 1rem',
+              borderRadius: '8px',
+              fontSize: '0.9rem',
+              fontWeight: 600,
+              background: status.ok ? '#ecfdf5' : '#fef2f2',
+              color: status.ok ? '#10b981' : '#b10035',
+              border: `1px solid ${status.ok ? '#a7f3d0' : '#fecaca'}`,
+            }}>
+              {status.text}
+            </div>
+          )}
 
           <div style={{ borderTop: '1px solid #e5e7eb', marginTop: '32px', paddingTop: '24px', display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
             <button onClick={handleDiscard} disabled={saving} style={{ padding: '10px 20px', background: 'white', color: '#374151', border: '1px solid #d1d5db', borderRadius: '8px', cursor: saving ? 'not-allowed' : 'pointer', fontWeight: '600', opacity: saving ? 0.7 : 1 }}>

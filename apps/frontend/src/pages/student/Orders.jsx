@@ -83,7 +83,7 @@ const mapOrder = (o) => {
     outletId,
     date: formatWhen(o.createdAt),
     timeframe: timeframeOf(o.createdAt),
-    items: (o.items || []).map(i => ({ name: i.name, quantity: i.quantity, price: Number(i.price) })),
+    items: (o.items || []).map(i => ({ name: i.name, quantity: i.quantity, price: Number(i.price), menuItemId: i.menuItemId })),
     total: Math.round(Number(o.totalAmount)),
     status: STATUS_LABELS[o.status] || o.status,
     rawStatus: o.status,   // for cancel/reorder logic

@@ -49,6 +49,21 @@ export const SocketProvider = ({ children }) => {
       console.warn('[socket] connect error:', err.message);
     });
 
+    // ─── Realtime event listeners ────────────────────────────────────
+    // When an order's status changes (outlet accepts/prepares/marks ready),
+    // dispatch a window event so the student Orders page can refetch.
+    socket.on('order:status:changed', (data) => {
+      console.log('[socket] order:status:changed:', data);
+      window.dispatchEvent(new CustomEvent('nosh:order-updated', { detail: data }));
+    });
+
+    // When a notification is created (order accepted, ready, etc.),
+    // dispatch a window event so the notification bell can refetch.
+    socket.on('notification:created', (data) => {
+      console.log('[socket] notification:created:', data);
+      window.dispatchEvent(new CustomEvent('nosh:notification', { detail: data }));
+    });
+
     socketRef.current = socket;
 
     return () => {

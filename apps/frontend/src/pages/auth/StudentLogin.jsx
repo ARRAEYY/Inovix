@@ -60,7 +60,13 @@ const StudentLogin = () => {
       } else if (user?.role === 'OUTLET_ADMIN' || user?.role === 'OUTLET_STAFF') {
         navigate(user.role === 'OUTLET_ADMIN' ? '/outlet/admin' : '/outlet');
       } else {
-        navigate('/student');
+        // Students who haven't completed onboarding → redirect to the
+        // onboarding page (same as the Google callback path).
+        if (!user?.onboardingCompleted) {
+          navigate('/student/onboarding');
+        } else {
+          navigate('/student');
+        }
       }
     } catch (err) {
       setError(err.message || 'Login failed. Please check your credentials.');
@@ -115,7 +121,7 @@ const StudentLogin = () => {
                 required
               />
               <div className="forgot-password-container">
-                <a href="/forgot-password" className="forgot-password">Forgot password?</a>
+                <Link to="/forgot-password" className="forgot-password">Forgot password?</Link>
               </div>
             </div>
 

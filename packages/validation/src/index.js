@@ -155,7 +155,7 @@ const createOrderSchema = z.object({
   paymentMethod: paymentMethodEnum,
   notes: z.string().max(500).optional(),
   // INO-AUDIT6-#3: validate scheduledFor — must be a valid ISO datetime
-  // in the future + within 7 days from now. Prevents clients from
+  // in the future + within 6 hours from now. Prevents clients from
   // submitting arbitrary past timestamps or dates years in the future.
   // (Within-outlet-operating-hours validation is deferred — it requires
   // querying the outlet's OperatingHours rows, which is a service-level
@@ -165,9 +165,9 @@ const createOrderSchema = z.object({
     const dt = new Date(val);
     if (isNaN(dt.getTime())) return false;
     const now = Date.now();
-    const maxFuture = now + 7 * 24 * 60 * 60 * 1000; // 7 days
+    const maxFuture = now + 6 * 60 * 60 * 1000; // 7 days
     return dt.getTime() > now && dt.getTime() < maxFuture;
-  }, { message: 'scheduledFor must be a future datetime within 7 days from now' }),
+  }, { message: 'scheduledFor must be a future datetime within 6 hours from now' }),
 }).strict();
 
 const updateOrderStatusSchema = z.object({

@@ -22,6 +22,7 @@ import OutletAdminDashboard from '../pages/outlet/admin/OutletAdminDashboard';
 import OutletAdminOrders from '../pages/outlet/admin/OutletAdminOrders';
 import OutletAdminMenu from '../pages/outlet/admin/OutletAdminMenu';
 import OutletAdminStaff from '../pages/outlet/admin/OutletAdminStaff';
+import OutletAdminHours from '../pages/outlet/admin/OutletAdminHours';
 import AdminDashboard from '../pages/admin/Dashboard';
 import Outlets from '../pages/admin/Outlets';
 import Users from '../pages/admin/Users';
@@ -99,6 +100,7 @@ const AppRoutes = () => {
               <Route path="/orders" element={<OutletAdminOrders />} />
               <Route path="/menu" element={<OutletAdminMenu />} />
               <Route path="/staff" element={<OutletAdminStaff />} />
+              <Route path="/hours" element={<OutletAdminHours />} />
             </Routes>
           </PrivateRoute>
         } 

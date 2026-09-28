@@ -145,4 +145,10 @@ router.patch('/:staffId/status', async (req, res, next) => {
   }
 });
 
+
+// Operating hours — outlet admin manages weekly open/close times
+const ohController = require('./operating-hours.controller');
+router.get('/operating-hours', ohController.getOperatingHours);
+router.put('/operating-hours', ohController.updateOperatingHours);
+
 module.exports = router;

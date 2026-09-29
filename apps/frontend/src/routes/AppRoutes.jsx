@@ -31,6 +31,7 @@ import AdminMenu from '../pages/admin/Menu';
 import AdminStaff from '../pages/admin/Staff';
 import AdminProfile from '../pages/admin/Profile';
 import AdminSettings from '../pages/admin/Settings';
+import Disputes from '../pages/admin/Disputes';
 import NotFound from '../pages/NotFound';
 // A simple PrivateRoute component to protect dashboard routes
 const PrivateRoute = ({ children, allowedRolePrefix }) => {
@@ -120,6 +121,7 @@ const AppRoutes = () => {
               <Route path="/staff" element={<AdminStaff />} />
               <Route path="/profile" element={<AdminProfile />} />
               <Route path="/settings" element={<AdminSettings />} />
+              <Route path="/disputes" element={<Disputes />} />
             </Routes>
           </PrivateRoute>
         } 

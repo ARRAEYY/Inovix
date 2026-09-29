@@ -49,6 +49,7 @@ model User {
   passwordResets      PasswordReset[]
   favorites            Favorite[]
   reviews              Review[]
+  disputes              Dispute[]
 
   @@index([email])
 }
@@ -125,6 +126,7 @@ model Outlet {
   carts                     Cart[]
   favorites                Favorite[]
   reviews                  Review[]
+  disputes                Dispute[]
 
   @@index([campusId])
   @@index([status])
@@ -299,6 +301,7 @@ model Order {
   outlet          Outlet    @relation(fields: [outletId], references: [id])
   items           OrderItem[]
   payment         Payment?
+  dispute          Dispute?
   notifications   Notification[]
 
   @@index([studentId, status, createdAt])
@@ -434,6 +437,29 @@ model AuditLog {
   @@index([createdAt])
 }
 
+
+
+// ─── 23. Dispute ───────────────────────────────────────────────────────────
+model Dispute {
+  id          String   @id @default(cuid())
+  orderId     String   @unique
+  userId      String
+  outletId    String
+  type        String   // ORDER_ISSUE | PAYMENT_ISSUE | REFUND_REQUEST | OTHER
+  description String
+  status      String   @default("OPEN") // OPEN | RESOLVED | REJECTED
+  resolution  String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  order  Order  @relation(fields: [orderId], references: [id])
+  outlet Outlet @relation(fields: [outletId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([outletId])
+  @@index([status])
+}
 
 // ─── 21. Favorite ─────────────────────────────────────────────────────────
 model Favorite {

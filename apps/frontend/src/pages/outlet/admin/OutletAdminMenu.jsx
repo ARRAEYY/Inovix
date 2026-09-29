@@ -4,6 +4,7 @@ import MenuSearch from '../../../components/outlet/MenuSearch';
 import MenuFilters from '../../../components/outlet/MenuFilters';
 import MenuItemCard from '../../../components/outlet/MenuItemCard';
 import MenuItemForm from '../../../components/outlet/MenuItemForm';
+import client from '../../../services/api/client';
 import { getMenu, createMenuItem, updateMenuItem, deleteMenuItem, updateMenuAvailability } from '../../../services/outletAdminService';
 import '../../../styles/outlet-menu.css';
 import { toast } from 'react-hot-toast';
@@ -23,6 +24,7 @@ const mapMenuItem = (item) => ({
 
 const OutletAdminMenu = () => {
   const [items, setItems] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -41,6 +43,10 @@ const OutletAdminMenu = () => {
     try {
       setLoading(true);
       const res = await getMenu();
+      try {
+        const catRes = await client.get('/outlet/menu/categories');
+        setCategories(catRes.data?.data || []);
+      } catch {}
       setItems((res.data || []).map(mapMenuItem));
       setError(null);
     } catch (err) {
@@ -144,7 +150,35 @@ const OutletAdminMenu = () => {
           </button>
         </div>
 
-        <div className="menu-controls">
+        {/* Category Management */}
+      <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap', marginBottom: '1rem', padding: '0.75rem', background: '#f9fafb', borderRadius: '10px' }}>
+        <span style={{ fontWeight: 700, fontSize: '0.9rem' }}>Categories:</span>
+        {categories.map(cat => (
+          <span key={cat.id} style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', background: 'white', padding: '0.2rem 0.5rem', borderRadius: '6px', border: '1px solid #e5e7eb', fontSize: '0.8rem' }}>
+            {cat.name} <span style={{ color: '#9ca3af' }}>({cat._count?.items || 0})</span>
+            <button onClick={async () => {
+              const name = prompt('Rename category:', cat.name);
+              if (name && name !== cat.name) {
+                try { await client.patch(`/outlet/menu/categories/${cat.id}`, { name }); fetchMenu(); toast.success('Category renamed'); }
+                catch (e) { toast('Failed to rename'); }
+              }
+            }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#3b82f6', fontSize: '0.7rem' }}>✎</button>
+            <button onClick={async () => {
+              if (!confirm(`Delete "${cat.name}"? Items will be uncategorized.`)) return;
+              try { await client.delete(`/outlet/menu/categories/${cat.id}`); fetchMenu(); toast.success('Category deleted'); }
+              catch (e) { toast('Failed to delete'); }
+            }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#dc2626', fontSize: '0.7rem' }}>×</button>
+          </span>
+        ))}
+        <button onClick={async () => {
+          const name = prompt('New category name:');
+          if (!name) return;
+          try { await client.post('/outlet/menu/categories', { name }); fetchMenu(); toast.success('Category created'); }
+          catch (e) { toast(e.response?.data?.message || 'Failed to create'); }
+        }} style={{ background: '#b10035', color: 'white', border: 'none', borderRadius: '6px', padding: '0.2rem 0.6rem', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600 }}>+ Add Category</button>
+      </div>
+
+      <div className="menu-controls">
           <MenuSearch searchTerm={searchTerm} setSearchTerm={setSearchTerm} />
           <MenuFilters 
             categories={CATEGORIES} 

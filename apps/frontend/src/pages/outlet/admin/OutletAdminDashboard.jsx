@@ -76,6 +76,17 @@ const OutletAdminDashboard = () => {
             <p style={statGrowthStyle}>{stats.prepTime?.subtitle}</p>
           </div>
         </div>
+        {/* Enhanced analytics: cancellations + refunds */}
+        <div className="stat-card" style={cardStyle}>
+          <p style={statLabelStyle}>Cancellations (today)</p>
+          <h2 style={statValueStyle}>{stats.cancelledToday ?? 0}</h2>
+          <p style={statGrowthStyle}>Total: {stats.cancelledTotal ?? 0}</p>
+        </div>
+        <div className="stat-card" style={cardStyle}>
+          <p style={statLabelStyle}>Refunds</p>
+          <h2 style={statValueStyle}>{stats.refundsCount ?? 0}</h2>
+          <p style={statGrowthStyle}>₹{stats.refundsTotal ?? 0} refunded</p>
+        </div>
 
         {/* Orders this week (Chart) */}
         <div style={{...cardStyle, paddingBottom: 0}}>

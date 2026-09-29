@@ -14,23 +14,9 @@ export default defineConfig({
     hmr: !isProxied,
   },
   build: {
+    // Just raise the warning limit — the bundle includes all features
+    // (admin, outlet, student, auth, payments, socket.io, toasts, etc.)
+    // in one chunk. Code splitting can be added later with React.lazy().
     chunkSizeWarningLimit: 700,
-    rollupOptions: {
-      output: {
-        // Split vendor code into separate chunks for better caching.
-        // Vite 8 (rolldown) requires a function, not an object.
-        manualChunks(id) {
-          if (id.includes('node_modules/react/') || id.includes('node_modules/react-dom/') || false) {
-            return 'react-vendor';
-          }
-          if (id.includes('react-hot-toast')) {
-            return 'toast';
-          }
-          if (id.includes('socket.io-client')) {
-            return 'socket';
-          }
-        },
-      },
-    },
   },
 })

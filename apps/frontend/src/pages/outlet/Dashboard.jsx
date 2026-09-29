@@ -138,6 +138,7 @@ const Dashboard = () => {
         onAccept={handleAccept}
         onMarkReady={handleMarkReady}
         onComplete={handleComplete}
+        onVerifyPickup={handleVerifyPickup}
         onDecline={(id) => {
           setOrderToDecline(id);
           setDeclineModalOpen(true);

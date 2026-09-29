@@ -67,6 +67,20 @@ const OutletAdminOrders = () => {
   // shows in the Preparing column.
   const handleAccept = (orderId) => handleStatusUpdate(orderId, 'ACCEPTED');
 
+  const handleVerifyPickup = async (orderId, code) => {
+    try {
+      const res = await orderService.updateOrderStatus;
+      // Use the outlet API directly for verify-pickup
+      const client = (await import('../../../services/api/client')).default;
+      await client.post(`/outlet/orders/${orderId}/verify-pickup`, { pickupCode: code });
+      toast('✓ Pickup verified! Order completed.');
+      updateOrderInState(orderId, { backendStatus: 'COMPLETED', status: 'COMPLETED' });
+      fetchOrders();
+    } catch (err) {
+      toast(err.response?.data?.message || 'Invalid pickup code');
+    }
+  };
+
   // Mark Ready: the backend requires ACCEPTED → PREPARING → READY — run
   // both transitions when the order was just accepted.
   const handleMarkReady = async (orderId) => {
@@ -146,6 +160,7 @@ const OutletAdminOrders = () => {
           onAccept={handleAccept}
           onMarkReady={handleMarkReady}
           onComplete={(id) => handleStatusUpdate(id, 'COMPLETED')}
+          onVerifyPickup={handleVerifyPickup}
           onDecline={(id) => {
             setOrderToDecline(id);
             setDeclineModalOpen(true);

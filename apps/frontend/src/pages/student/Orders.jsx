@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Header from '../../components/layout/Header';
 import MobileBottomNav from '../../components/layout/MobileBottomNav';
+import client from '../../services/api/client';
 import { orderService } from '../../services/api/orderService';
 import { toast } from 'react-hot-toast';
 import Skeleton from '../../components/common/Skeleton';
@@ -147,6 +148,18 @@ const Orders = () => {
     navigate(`/student/outlet/${order.outletId}`);
   };
 
+  const [reviewingId, setReviewingId] = useState(null);
+  const [reviewRating, setReviewRating] = useState(5);
+  const [reviewComment, setReviewComment] = useState('');
+
+  const handleSubmitReview = async (orderId, outletId) => {
+    try {
+      await client.post('/reviews', { outletId, orderId, rating: reviewRating, comment: reviewComment });
+      toast.success('Review submitted!');
+      setReviewingId(null); setReviewRating(5); setReviewComment('');
+    } catch (err) { toast(err.response?.data?.message || 'Failed to submit review'); }
+  };
+
   const filteredOrders = orders.filter(order => {
     if (activeFilter === 'All time') return true;
     if (activeFilter === 'Today') return order.timeframe === 'today';
@@ -285,8 +298,31 @@ const Orders = () => {
                         Order again
                       </button>
                     )}
+                    {order.rawStatus === 'COMPLETED' && (
+                      <button className="order-again-btn" onClick={() => setReviewingId(reviewingId === order.id ? null : order.id)}
+                        style={{ color: '#f59e0b', borderColor: '#fde68a' }}>
+                        {reviewingId === order.id ? 'Cancel' : 'Rate ⭐'}
+                      </button>
+                    )}
                   </div>
                 </div>
+
+                {/* Review form */}
+                {reviewingId === order.id && (
+                  <div style={{ borderTop: '1px solid #f3f4f6', paddingTop: '0.75rem', marginTop: '0.75rem' }}>
+                    <div style={{ display: 'flex', gap: '0.25rem', marginBottom: '0.5rem' }}>
+                      {[1,2,3,4,5].map(s => (
+                        <button key={s} onClick={() => setReviewRating(s)}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.5rem', color: s <= reviewRating ? '#f59e0b' : '#d1d5db' }}>★</button>
+                      ))}
+                    </div>
+                    <textarea placeholder="Share your experience (optional)..." value={reviewComment}
+                      onChange={(e) => setReviewComment(e.target.value)}
+                      style={{ width: '100%', padding: '0.5rem', border: '1px solid #d1d5db', borderRadius: '8px', fontSize: '0.85rem', minHeight: '60px', resize: 'vertical', marginBottom: '0.5rem' }} />
+                    <button className="primary-btn" style={{ maxWidth: '150px' }}
+                      onClick={() => handleSubmitReview(order.id, order.outletId)}>Submit Review</button>
+                  </div>
+                )}
 
                 {/* Expandable timeline */}
                 {order.timeline.length > 0 && (

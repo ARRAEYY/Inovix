@@ -173,7 +173,7 @@ const OutletMenu = () => {
   //   6. On dismiss/failure → order stays PENDING, cart is preserved so
   //      the student can retry. The order appears in /orders with a "Pay"
   //      button (or auto-cancels after the pickup timeout).
-  const handleOrderNow = async () => {
+  const handleOrderNow = async ({ notes, scheduledFor } = {}) => {
     if (placingOrder) return;
     const entries = Object.entries(cart).filter(([, qty]) => qty > 0);
     if (entries.length === 0) return;
@@ -184,6 +184,8 @@ const OutletMenu = () => {
       const orderRes = await orderService.createOrder({
         outletId: id,
         items: entries.map(([menuItemId, quantity]) => ({ menuItemId, quantity })),
+        ...(notes ? { notes } : {}),
+        ...(scheduledFor ? { scheduledFor } : {}),
       });
       const order = orderRes.data || {};
       if (!order.id) {

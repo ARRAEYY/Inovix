@@ -3,6 +3,8 @@ import Header from '../../components/layout/Header';
 import OutletCard from '../../components/food/OutletCard';
 import MobileBottomNav from '../../components/layout/MobileBottomNav';
 import { useAuth } from '../../hooks/useAuth';
+import { toast } from 'react-hot-toast';
+import client from '../../services/api/client';
 import { catalogService } from '../../services/api/catalogService';
 import SkeletonGrid from '../../components/common/Skeleton';
 
@@ -27,9 +29,14 @@ const Home = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [outlets, setOutlets] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [favorites, setFavorites] = useState(new Set());
   const [error, setError] = useState(null);
 
   useEffect(() => {
+    // Fetch favorite outlet IDs
+    client.get('/favorites').then(res => {
+      setFavorites(new Set((res.data?.data || []).map(f => f.outletId)));
+    }).catch(() => {});
     const fetchOutlets = async () => {
       try {
         setLoading(true);
@@ -45,6 +52,17 @@ const Home = () => {
     };
     fetchOutlets();
   }, []);
+
+  const toggleFavorite = async (e, outletId) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const isFav = favorites.has(outletId);
+    setFavorites(prev => { const next = new Set(prev); if (isFav) next.delete(outletId); else next.add(outletId); return next; });
+    try {
+      if (isFav) { await client.delete(`/favorites/${outletId}`); toast('Removed from favorites'); }
+      else { await client.post(`/favorites/${outletId}`); toast.success('Added to favorites'); }
+    } catch (err) { toast('Failed to update favorites'); setFavorites(prev => { const next = new Set(prev); if (isFav) next.add(outletId); else next.delete(outletId); return next; }); }
+  };
 
   const filteredOutlets = outlets.filter(outlet => {
     const matchesSearch =

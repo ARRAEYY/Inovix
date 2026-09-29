@@ -160,6 +160,18 @@ const Orders = () => {
     } catch (err) { toast(err.response?.data?.message || 'Failed to submit review'); }
   };
 
+  const [disputeOrderId, setDisputeOrderId] = useState(null);
+  const [disputeType, setDisputeType] = useState('ORDER_ISSUE');
+  const [disputeDesc, setDisputeDesc] = useState('');
+
+  const handleReportIssue = async (orderId, outletId) => {
+    try {
+      await client.post('/disputes', { orderId, outletId, type: disputeType, description: disputeDesc });
+      toast.success('Issue reported. Our team will look into it.');
+      setDisputeOrderId(null); setDisputeDesc(''); setDisputeType('ORDER_ISSUE');
+    } catch (err) { toast(err.response?.data?.message || 'Failed to report issue'); }
+  };
+
   const filteredOrders = orders.filter(order => {
     if (activeFilter === 'All time') return true;
     if (activeFilter === 'Today') return order.timeframe === 'today';
@@ -321,6 +333,27 @@ const Orders = () => {
                       style={{ width: '100%', padding: '0.5rem', border: '1px solid #d1d5db', borderRadius: '8px', fontSize: '0.85rem', minHeight: '60px', resize: 'vertical', marginBottom: '0.5rem' }} />
                     <button className="primary-btn" style={{ maxWidth: '150px' }}
                       onClick={() => handleSubmitReview(order.id, order.outletId)}>Submit Review</button>
+                  </div>
+                )}
+
+                {/* Report an issue */}
+                <button onClick={() => setDisputeOrderId(disputeOrderId === order.id ? null : order.id)}
+                  style={{ background: 'none', border: 'none', color: '#6b7280', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer', padding: 0, marginTop: '0.5rem' }}>
+                  {disputeOrderId === order.id ? '▾ Cancel report' : '▸ Report an issue'}
+                </button>
+                {disputeOrderId === order.id && (
+                  <div style={{ borderTop: '1px solid #f3f4f6', paddingTop: '0.75rem', marginTop: '0.5rem' }}>
+                    <select value={disputeType} onChange={(e) => setDisputeType(e.target.value)} style={{ width: '100%', padding: '0.4rem', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '0.85rem', marginBottom: '0.5rem' }}>
+                      <option value='ORDER_ISSUE'>Order issue (wrong/missing items)</option>
+                      <option value='PAYMENT_ISSUE'>Payment issue</option>
+                      <option value='REFUND_REQUEST'>Refund request</option>
+                      <option value='OTHER'>Other</option>
+                    </select>
+                    <textarea placeholder='Describe the issue...' value={disputeDesc}
+                      onChange={(e) => setDisputeDesc(e.target.value)}
+                      style={{ width: '100%', padding: '0.5rem', border: '1px solid #d1d5db', borderRadius: '8px', fontSize: '0.85rem', minHeight: '60px', resize: 'vertical', marginBottom: '0.5rem' }} />
+                    <button className='primary-btn' style={{ maxWidth: '150px' }}
+                      onClick={() => handleReportIssue(order.id, order.outletId)}>Submit Report</button>
                   </div>
                 )}
 

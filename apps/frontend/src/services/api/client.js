@@ -83,7 +83,20 @@ client.interceptors.response.use((response) => {
   if (status === 401) {
     console.error('Authentication Error: 401 Unauthorized');
   }
-  return Promise.reject(error);
+  // Normalize error messages so toast() calls show user-friendly text
+  // instead of raw axios error objects.
+  const normalizedError = new Error(
+    error.response?.data?.message ||
+    error.response?.data?.errors?.[0]?.message ||
+    (status === 0 ? 'Network error — check your connection' :
+     status === 403 ? 'You don\'t have permission to do this' :
+     status === 404 ? 'Not found' :
+     status >= 500 ? 'Server error — please try again' :
+     'Request failed')
+  );
+  normalizedError.response = error.response;
+  normalizedError.status = status;
+  return Promise.reject(normalizedError);
 });
 
 export default client;

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import AdminLayout from '../../components/layout/AdminLayout';
 import { useAuth } from '../../hooks/useAuth';
+import client from '../../services/api/client';
 import { toast } from 'react-hot-toast';
 
 const Profile = () => {
@@ -121,7 +122,7 @@ const Profile = () => {
                   const newPw = document.getElementById('newPw').value;
                   if (!oldPw || !newPw) { toast('Fill in both passwords'); return; }
                   try {
-                    const client = (await import('../../services/api/client')).default;
+                    client
                     await client.patch('/auth/me/password', { oldPassword: oldPw, newPassword: newPw });
                     document.getElementById('oldPw').value = '';
                     document.getElementById('newPw').value = '';

@@ -3,11 +3,13 @@ import { Toaster } from 'react-hot-toast';
 import { AuthProvider } from './context/AuthContext';
 import { SocketProvider } from './context/SocketContext';
 import AppRoutes from './routes/AppRoutes';
+import ErrorBoundary from './components/common/ErrorBoundary';
 
 const routerBasename = (import.meta.env.BASE_URL || '/').replace(/\/$/, '') || '/';
 
 function App() {
   return (
+    <ErrorBoundary>
     <AuthProvider>
       <SocketProvider>
         <BrowserRouter basename={routerBasename}>
@@ -29,6 +31,7 @@ function App() {
         />
       </SocketProvider>
     </AuthProvider>
+    </ErrorBoundary>
   );
 }
 

@@ -4,6 +4,7 @@ import OrderBoard from '../../../components/outlet/OrderBoard';
 import DeclineOrderModal from '../../../components/outlet/DeclineOrderModal';
 import { getOrders } from '../../../services/outletAdminService';
 import { orderService, OUTLET_DISPLAY_STATUS } from '../../../services/api/orderService';
+import client from '../../../services/api/client';
 import { toast } from 'react-hot-toast';
 
 const OutletAdminOrders = () => {
@@ -71,7 +72,7 @@ const OutletAdminOrders = () => {
     try {
       const res = await orderService.updateOrderStatus;
       // Use the outlet API directly for verify-pickup
-      const client = (await import('../../../services/api/client')).default;
+      client
       await client.post(`/outlet/orders/${orderId}/verify-pickup`, { pickupCode: code });
       toast('✓ Pickup verified! Order completed.');
       updateOrderInState(orderId, { backendStatus: 'COMPLETED', status: 'COMPLETED' });

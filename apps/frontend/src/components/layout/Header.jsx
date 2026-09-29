@@ -40,7 +40,11 @@ const Header = ({ cartCount, onCartClick, title, subtitle, showBack = false }) =
     };
     fetchUnread();
     const interval = setInterval(fetchUnread, 30000); // refresh every 30s
-    return () => { active = false; clearInterval(interval); };
+    // Also listen for real-time Socket.IO notification events
+    // (dispatched by SocketContext when 'notification:created' fires)
+    const onNotification = () => fetchUnread();
+    window.addEventListener('nosh:notification', onNotification);
+    return () => { active = false; clearInterval(interval); window.removeEventListener('nosh:notification', onNotification); };
   }, [user]);
 
   return (

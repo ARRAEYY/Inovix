@@ -5,13 +5,19 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Nosh — Campus Food Ordering</title>
-    <!-- Google Identity Services (GIS) — for the OAuth popup fallback -->
+    <!-- Google Identity Services — async, won't block the app -->
     <script src="https://accounts.google.com/gsi/client" async defer></script>
-    <!-- Razorpay checkout — for the prepaid order flow (every order is prepaid) -->
-    <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+    <!-- Razorpay checkout — async defer so it doesn't block the React module script -->
+    <script src="https://checkout.razorpay.com/v1/checkout.js" async defer></script>
   </head>
   <body>
     <div id="root"></div>
+    <noscript>
+      <div style="font-family:system-ui;padding:2rem;text-align:center">
+        <h1>JavaScript is required</h1>
+        <p>Please enable JavaScript to use Nosh.</p>
+      </div>
+    </noscript>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

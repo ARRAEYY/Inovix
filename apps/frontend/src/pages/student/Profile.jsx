@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import Header from '../../components/layout/Header';
 import MobileBottomNav from '../../components/layout/MobileBottomNav';
 import { useAuth } from '../../hooks/useAuth';
@@ -23,6 +23,7 @@ const Profile = () => {
   const { user, logout, updateProfile } = useAuth();
 
   const [activeView, setActiveView] = useState(null);
+  const [searchParams] = useSearchParams();
 
   // ─── Account ────────────────────────────────────────────────────────────
   const [profile, setProfile] = useState(null);
@@ -37,6 +38,7 @@ const Profile = () => {
   const [notifLoading, setNotifLoading] = useState(false);
   const [notifError, setNotifError] = useState(null);
   const [markingAll, setMarkingAll] = useState(false);
+  const [disputes, setDisputes] = useState([]);
 
   const fetchUnreadCount = useCallback(async () => {
     try {
@@ -51,10 +53,31 @@ const Profile = () => {
     fetchUnreadCount();
   }, [fetchUnreadCount]);
 
+  // Auto-open the view from the URL query param (?view=notifications, etc.)
+  // This lets the notification bell navigate to /student/profile?view=notifications
+  // and the Profile page auto-opens the notifications panel.
+  useEffect(() => {
+    const view = searchParams.get('view');
+    if (view && VIEWS.includes(view)) {
+      setActiveView(view);
+      if (view === 'notifications') fetchNotifications();
+    if (view === 'help') fetchDisputes();
+      if (view === 'account') fetchProfile();
+    }
+  }, [searchParams]);
+
+  const fetchDisputes = async () => {
+    try {
+      const res = await client.get('/disputes/mine');
+      setDisputes(res.data?.data || []);
+    } catch {}
+  };
+
   const openView = (view) => {
     setActiveView(view);
     if (view === 'account') fetchProfile();
     if (view === 'notifications') fetchNotifications();
+    if (view === 'help') fetchDisputes();
   };
 
   const fetchProfile = async () => {
@@ -432,8 +455,29 @@ const Profile = () => {
                   </p>
                 </div>
               </div>
+              {/* Disputes list */}
+              {disputes.length > 0 && (
+                <div style={{ marginTop: '1rem' }}>
+                  <h4 style={{ fontWeight: 700, color: 'var(--text-dark)', marginBottom: '0.5rem', fontSize: '0.9rem' }}>Your reported issues</h4>
+                  {disputes.map(d => (
+                    <div key={d.id} style={{ padding: '0.75rem', border: '1px solid var(--border-color)', borderRadius: '10px', marginBottom: '0.5rem' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
+                        <span style={{ fontWeight: 600, fontSize: '0.85rem' }}>{d.type.replace(/_/g, ' ')}</span>
+                        <span style={{ fontSize: '0.75rem', fontWeight: 700, padding: '0.15rem 0.5rem', borderRadius: '10px',
+                          background: d.status === 'OPEN' ? '#fef3c7' : d.status === 'RESOLVED' ? '#d1fae5' : '#fee2e2',
+                          color: d.status === 'OPEN' ? '#92400e' : d.status === 'RESOLVED' ? '#065f46' : '#991b1b' }}>
+                          {d.status}
+                        </span>
+                      </div>
+                      <p style={{ fontSize: '0.85rem', color: 'var(--text-gray)', margin: 0 }}>{d.description}</p>
+                      {d.resolution && <p style={{ fontSize: '0.8rem', color: '#065f46', marginTop: '0.25rem' }}>✓ {d.resolution}</p>}
+                    </div>
+                  ))}
+                </div>
+              )}
+
               <p style={{ ...panelIntro, marginTop: '1rem', marginBottom: 0 }}>
-                For order or payment issues, contact the outlet staff directly or reach out to your campus administration.
+                For order or payment issues, report from your order history or contact campus administration.
               </p>
             </div>
           )}

@@ -11,7 +11,18 @@
 
 const prisma = require('../../lib/prisma');
 const { emitNotificationEvent } = require('../../lib/socket');
+const { cacheDelPrefix, cached } = require('../../lib/cache');
 const { NOTIFICATION_TYPE } = require('../../lib/constants');
+
+// List reads are cached per user for 60s; every write (create, mark read,
+// mark all read) invalidates that user's keys, so the cache only shortens
+// the read path and never serves stale data after a write.
+const LIST_CACHE_TTL = 60;
+
+const listCacheKey = (userId, { page, pageSize, unreadOnly }) =>
+  `notif:u:${userId}:p${page}:s${pageSize}:r${unreadOnly ? 1 : 0}`;
+
+const invalidateUser = (userId) => cacheDelPrefix(`notif:u:${userId}:`);
 
 const TYPE_TEMPLATES = {
   [NOTIFICATION_TYPE.ORDER_ACCEPTED]: { title: 'Order accepted',   message: (o) => `${o.outletSnapshot?.name || 'Outlet'} accepted your order ${o.orderNumber}.` },
@@ -55,27 +66,30 @@ async function createForOrder(order, actorId) {
   });
 
   emitNotificationEvent(order.studentId, notification);
+  await invalidateUser(order.studentId);
 
   return notification;
 }
 
 /**
- * Paginated list of notifications for the current user.
+ * Paginated list of notifications for the current user (Redis-cached).
  */
 async function listForUser(userId, { page = 1, pageSize = 20, unreadOnly = false } = {}) {
-  const where = { userId };
-  if (unreadOnly) where.isRead = false;
-  const [items, total, unreadCount] = await Promise.all([
-    prisma.notification.findMany({
-      where,
-      orderBy: { createdAt: 'desc' },
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-    }),
-    prisma.notification.count({ where }),
-    prisma.notification.count({ where: { userId, isRead: false } }),
-  ]);
-  return { items, total, unreadCount, page, pageSize };
+  return cached(listCacheKey(userId, { page, pageSize, unreadOnly }), LIST_CACHE_TTL, async () => {
+    const where = { userId };
+    if (unreadOnly) where.isRead = false;
+    const [items, total, unreadCount] = await Promise.all([
+      prisma.notification.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      prisma.notification.count({ where }),
+      prisma.notification.count({ where: { userId, isRead: false } }),
+    ]);
+    return { items, total, unreadCount, page, pageSize };
+  });
 }
 
 async function markRead(userId, notificationId) {
@@ -83,10 +97,12 @@ async function markRead(userId, notificationId) {
   if (!notification || notification.userId !== userId) {
     throw { statusCode: 404, message: 'Notification not found' };
   }
-  return prisma.notification.update({
+  const updated = await prisma.notification.update({
     where: { id: notificationId },
     data: { isRead: true },
   });
+  await invalidateUser(userId);
+  return updated;
 }
 
 async function markAllRead(userId) {
@@ -94,6 +110,7 @@ async function markAllRead(userId) {
     where: { userId, isRead: false },
     data: { isRead: true },
   });
+  await invalidateUser(userId);
   return result.count;
 }
 

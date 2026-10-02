@@ -165,11 +165,75 @@ See `docs/security.md` for the full production checklist.
 
 ### Frontend status
 
-The frontend is at M1 visual-complete but still uses hardcoded `MOCK_*` data — needs wiring to the new backend API. See the audit review in the conversation history for the gap list. AuthContext now stores only minimum UI identity in localStorage (id, name, email, role, outletId, onboardingCompleted).
+The frontend is **fully wired to the backend API** — every page calls the real REST endpoints via the shared axios `client.js` (`catalogService`, `menuService`, `orderService`, `notificationService`, `outletAdminService`, `authService`). The student Home / OutletMenu / Orders, admin Dashboard / Outlets / Users / Orders / Menu / Staff, and outlet Dashboard / OutletMenuPage / OutletAdminOrders / OutletAdminMenu / OutletAdminStaff pages all read live data, with loading + error states and optimistic updates for toggles.
+
+The last hardcoded `MOCK_*` remnants have also been cleaned up:
+
+- `OutletMobileHeader.jsx` — dropped the client-side `outlet-1 / outlet-2 / mock-outlet-adil` ID → name map; the header now reads `user.outlet.name` straight from the JWT payload, matching `OutletSidebar.jsx`.
+- `admin/Profile.jsx` — `handleSave` is no longer a `setTimeout + alert` stub; it calls `PUT /auth/me` via `useAuth().updateProfile({ name })` with a success/error banner. Email is rendered disabled (the backend rejects email edits in V1).
+- `admin/Settings.jsx` — there is no `/admin/settings` endpoint on the backend in V1, so the form is honest about that and persists to `localStorage` (`nosh:admin-settings:v1`) with a clear "backend persistence ships with the next milestone" notice, replacing the `Settings saved successfully (Mock)` stub.
+- `student/OutletMenu.jsx` — the category sidebar no longer pulls placeholder images from `via.placeholder.com`; categories render self-contained CSS initial badges (`<CategoryIcon />`).
+- `pages/auth/StudentLogin.jsx` — the post-login redirect is now role-aware (SUPER_ADMIN → `/admin`, OUTLET_ADMIN → `/outlet/admin`, OUTLET_STAFF → `/outlet`, STUDENT → `/student`). Previously it always navigated to `/student`, so a SUPER_ADMIN who used the student login form got bounced back to `/` by the role guard — looking like a failed login.
+
+`AuthContext` stores only minimum UI identity in localStorage (id, name, email, role, outletId, onboardingCompleted).
+
+### Google OAuth (M1 — wired, redirect flow)
+
+The "Continue with Google" buttons on all three login pages (Student / Outlet / Admin) use the **OAuth authorization-code redirect flow** (more reliable than the GIS popup — works with popup blockers, headless browsers, mobile, and doesn't depend on FedCM):
+
+1. User clicks "Continue with Google" → `window.location.href = '/api/v1/auth/google'`
+2. Backend `GET /auth/google` (`googleAuthStart`): builds the Google consent URL with `redirect_uri=<origin>/api/v1/auth/google/callback` (origin derived from `X-Forwarded-Host` set by the Next.js reverse-proxy), sets a `google_oauth_state` httpOnly cookie (CSRF, 10-min TTL), 302-redirects to Google.
+3. User picks an account on Google.
+4. Google 302-redirects to `<origin>/api/v1/auth/google/callback?code=...&state=...`
+5. Backend `GET /auth/google/callback` (`googleCallback`): verifies the state cookie (rejects with `state_mismatch` if missing/no-match), exchanges the code for tokens via `OAuth2Client.getToken()` (uses `GOOGLE_CLIENT_SECRET`), verifies the ID token, calls `findOrCreateGoogleUser`, issues access + refresh tokens, sets the `nosh_refresh` httpOnly cookie, 302-redirects to `/inovix-app/?google_login=success` (or `?google_login=error&reason=...` on failure).
+6. The Inovix app loads — `AuthContext` detects `?google_login=success`, calls `/auth/refresh` (the Next.js proxy forwards the httpOnly `nosh_refresh` cookie), gets a fresh access token, calls `/auth/me`, stores the user, and the role-aware `PrivateRoute` / login-page navigation lands them on the right dashboard.
+
+The GIS popup flow (`signInWithGooglePopup`) is kept in `useGoogleAuth.js` as a fallback for environments where the redirect_uri isn't registered.
+
+#### Configuration
+
+Backend `/tmp/Inovix/.env`:
+
+```
+GOOGLE_CLIENT_ID=199533025613-42r2moirh0h692unkn8912bj7vl1ig02.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=<your-google-client-secret>    # required for the code-exchange step (server-side)
+COLLEGE_EMAIL_DOMAIN=.rishihood.edu.in                        # campus gate (production)
+ALLOW_ANY_GOOGLE_EMAIL=true                                  # DEV ONLY — skip the campus-domain check so testers can log in with a regular Gmail
+GOOGLE_OAUTH_FRONTEND_PATH=/inovix-app/                      # where the backend redirects after the callback (default)
+```
+
+Cloudinary (for outlet-scoped menu-item image uploads — `lib/cloudinary.js`):
+
+```
+CLOUDINARY_CLOUD_NAME=bvwu6qxm
+CLOUDINARY_API_KEY=<your-cloudinary-api-key>
+CLOUDINARY_API_SECRET=<still-needed — Cloudinary signed uploads require all three>
+```
+
+Frontend `apps/frontend/.env`:
+
+```
+VITE_GOOGLE_CLIENT_ID=199533025613-42r2moirh0h692unkn8912bj7vl1ig02.apps.googleusercontent.com   # public — safe for the browser
+```
+
+#### Google Cloud Console configuration
+
+Under **APIs & Services → Credentials → [client ID]**:
+
+- **Authorized JavaScript origins**: `http://localhost:3000` ✓ (registered)
+- **Authorized redirect URIs**:
+  - `http://localhost:3000/api/v1/auth/google/callback` ✓ (registered — matches the backend's `googleCallback` route)
+  - `http://localhost:8000/api/auth/google/callback` (your older registration — unused by Inovix)
+
+The backend auto-builds `redirect_uri` from the request's `X-Forwarded-Host` header (set by the Next.js reverse-proxy), so the same backend works for local dev (`http://localhost:3000`) and the preview (`https://preview-chat-*.space-z.ai`) — as long as each origin's callback URL is registered. For a new preview session, register `https://preview-chat-<session-id>.space-z.ai/api/v1/auth/google/callback`.
+
+#### Dev-mode domain bypass
+
+`ALLOW_ANY_GOOGLE_EMAIL=true` makes `verifyGoogleCredential()` skip the `COLLEGE_EMAIL_DOMAIN` check, so any verified Google email is accepted. **Never set this in production** — it would let any Gmail user log in as a student. Production keeps the default `@rishihood.edu.in` gate.
 
 ### TODO / next steps
 
-- [ ] Wire frontend to backend API (kill `MOCK_OUTLETS`/`MOCK_MENU`/`MOCK_ORDERS`)
+- [x] Wire frontend to backend API (kill `MOCK_OUTLETS`/`MOCK_MENU`/`MOCK_ORDERS`) — done; all student/admin/outlet pages hit the real REST API. Last mock remnants (OutletMobileHeader name map, admin Profile/Settings stubs, via.placeholder category icons) cleaned up too.
 - [ ] Add TanStack Query + invalidation on socket events
 - [ ] Mocked integration tests for payment/refund flows (needs client factory refactor or `clientCache` export)
 - [ ] DB-level CHECK constraints for enum fields (Postgres production only)

@@ -4,6 +4,8 @@ import OrderBoard from '../../../components/outlet/OrderBoard';
 import DeclineOrderModal from '../../../components/outlet/DeclineOrderModal';
 import { getOrders } from '../../../services/outletAdminService';
 import { orderService, OUTLET_DISPLAY_STATUS } from '../../../services/api/orderService';
+import client from '../../../services/api/client';
+import { toast } from 'react-hot-toast';
 
 const OutletAdminOrders = () => {
   const [orders, setOrders] = useState([]);
@@ -17,6 +19,10 @@ const OutletAdminOrders = () => {
 
   useEffect(() => {
     fetchOrders();
+    // Auto-refresh every 15s so new orders appear without manual refresh.
+    // Socket.IO events (order:status:changed) also trigger a refetch.
+    const interval = setInterval(fetchOrders, 15000);
+    return () => clearInterval(interval);
   }, []);
 
   const fetchOrders = async () => {
@@ -54,13 +60,27 @@ const OutletAdminOrders = () => {
       });
     } catch (err) {
       console.error('Failed to update status', err);
-      alert(err.message || 'Failed to update status');
+      toast(err.message || 'Failed to update status');
     }
   };
 
   // Accept: the backend only allows PENDING → ACCEPTED, then the order
   // shows in the Preparing column.
   const handleAccept = (orderId) => handleStatusUpdate(orderId, 'ACCEPTED');
+
+  const handleVerifyPickup = async (orderId, code) => {
+    try {
+      const res = await orderService.updateOrderStatus;
+      // Use the outlet API directly for verify-pickup
+      client
+      await client.post(`/outlet/orders/${orderId}/verify-pickup`, { pickupCode: code });
+      toast('✓ Pickup verified! Order completed.');
+      updateOrderInState(orderId, { backendStatus: 'COMPLETED', status: 'COMPLETED' });
+      fetchOrders();
+    } catch (err) {
+      toast(err.response?.data?.message || 'Invalid pickup code');
+    }
+  };
 
   // Mark Ready: the backend requires ACCEPTED → PREPARING → READY — run
   // both transitions when the order was just accepted.
@@ -74,7 +94,7 @@ const OutletAdminOrders = () => {
       updateOrderInState(orderId, { backendStatus: 'READY', status: 'READY' });
     } catch (err) {
       console.error('Failed to mark ready', err);
-      alert(err.message || 'Failed to mark order ready');
+      toast(err.message || 'Failed to mark order ready');
     }
   };
 
@@ -86,7 +106,7 @@ const OutletAdminOrders = () => {
       setDeclineModalOpen(false);
       setOrderToDecline(null);
     } catch (err) {
-      alert(err.message || 'Failed to decline order');
+      toast(err.message || 'Failed to decline order');
       throw err;
     }
   };
@@ -141,6 +161,7 @@ const OutletAdminOrders = () => {
           onAccept={handleAccept}
           onMarkReady={handleMarkReady}
           onComplete={(id) => handleStatusUpdate(id, 'COMPLETED')}
+          onVerifyPickup={handleVerifyPickup}
           onDecline={(id) => {
             setOrderToDecline(id);
             setDeclineModalOpen(true);

@@ -9,7 +9,7 @@ async function findAllByOutletId(outletId) {
   return prisma.menuItem.findMany({
     where: { outletId },
     orderBy: [{ category: { sortOrder: 'asc' } }, { name: 'asc' }],
-    include: { category: true },
+    include: { category: true, customizationGroups: { include: { options: true } } },
   });
 }
 

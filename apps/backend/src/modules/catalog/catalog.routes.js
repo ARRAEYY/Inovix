@@ -28,9 +28,14 @@ const express = require('express');
 const { protect } = require('../../middleware/auth.middleware');
 const { OUTLET_STATUS, ERROR_CODES } = require('../../lib/constants');
 const prisma = require('../../lib/prisma');
+const { cached } = require('../../lib/cache');
 const menuRepo = require('../menu/menu.repository');
 
 const router = express.Router();
+
+// Catalog reads are cached for 30s (no explicit invalidation — outlet/menu
+// edits from the admin side become visible within one TTL window).
+const CATALOG_TTL = 30;
 
 // Outlets that are visible in the catalog (browse, search, popular).
 // CLOSED / SUSPENDED / PENDING outlets are hidden from students — they
@@ -42,10 +47,12 @@ router.use(protect);
 // All outlets (list) — already filtered, kept for clarity.
 router.get('/outlets', async (req, res, next) => {
   try {
-    const outlets = await prisma.outlet.findMany({
-      where: { status: { in: VISIBLE_OUTLET_STATUSES } },
-      orderBy: [{ featured: 'desc' }, { rating: 'desc' }],
-    });
+    const outlets = await cached('catalog:outlets', CATALOG_TTL, () =>
+      prisma.outlet.findMany({
+        where: { status: { in: VISIBLE_OUTLET_STATUSES } },
+        orderBy: [{ featured: 'desc' }, { rating: 'desc' }],
+      })
+    );
     res.json({ success: true, data: outlets });
   } catch (err) {
     next(err);
@@ -54,6 +61,8 @@ router.get('/outlets', async (req, res, next) => {
 
 router.get('/outlets/:id', async (req, res, next) => {
   try {
+    // Visibility check stays live (a newly closed outlet must 404 fast);
+    // only the outlet row itself is cached.
     const outlet = await prisma.outlet.findUnique({ where: { id: req.params.id } });
     if (!outlet || !VISIBLE_OUTLET_STATUSES.includes(outlet.status)) {
       // Treat closed/suspended/pending outlets as "not found" from the
@@ -86,7 +95,30 @@ router.get('/outlets/:id/menu', async (req, res, next) => {
         errors: [],
       });
     }
-    const menu = await menuRepo.findAllByOutletId(req.params.id);
+    const menu = await cached(`catalog:menu:${req.params.id}`, CATALOG_TTL, async () => {
+      const items = await menuRepo.findAllByOutletId(req.params.id);
+      // Food-wise rating aggregates ride on the menu payload (and its
+      // caches) so FoodCards can show ★ avg (count) without extra requests.
+      const ids = items.map((i) => i.id);
+      const agg = ids.length
+        ? await prisma.menuItemReview.groupBy({
+            by: ['menuItemId'],
+            where: { menuItemId: { in: ids } },
+            _avg: { rating: true },
+            _count: { _all: true },
+          })
+        : [];
+      const byItem = new Map(agg.map((a) => [a.menuItemId, a]));
+      return items.map((i) => {
+        const a = byItem.get(i.id);
+        return {
+          ...i,
+          foodRating: a
+            ? { avg: Math.round((a._avg.rating || 0) * 10) / 10, count: a._count._all }
+            : null,
+        };
+      });
+    });
     res.json({ success: true, data: menu });
   } catch (err) {
     next(err);
@@ -107,10 +139,12 @@ router.get('/outlets/:id/categories', async (req, res, next) => {
         errors: [],
       });
     }
-    const categories = await prisma.menuCategory.findMany({
-      where: { outletId: req.params.id },
-      orderBy: { sortOrder: 'asc' },
-    });
+    const categories = await cached(`catalog:categories:${req.params.id}`, CATALOG_TTL, () =>
+      prisma.menuCategory.findMany({
+        where: { outletId: req.params.id },
+        orderBy: { sortOrder: 'asc' },
+      })
+    );
     res.json({ success: true, data: categories });
   } catch (err) {
     next(err);
@@ -122,14 +156,16 @@ router.get('/menu/popular', async (req, res, next) => {
     // INO-P1-26 fix: previously this returned popular items from ALL
     // outlets including CLOSED/SUSPENDED ones. Now we filter the parent
     // outlet to OPEN/BUSY.
-    const popular = await prisma.menuItem.findMany({
-      where: {
-        popular: true,
-        isAvailable: true,
-        outlet: { status: { in: VISIBLE_OUTLET_STATUSES } },
-      },
-      include: { outlet: { select: { id: true, name: true, slug: true } } },
-    });
+    const popular = await cached('catalog:popular', CATALOG_TTL, () =>
+      prisma.menuItem.findMany({
+        where: {
+          popular: true,
+          isAvailable: true,
+          outlet: { status: { in: VISIBLE_OUTLET_STATUSES } },
+        },
+        include: { outlet: { select: { id: true, name: true, slug: true } } },
+      })
+    );
     res.json({ success: true, data: popular });
   } catch (err) {
     next(err);

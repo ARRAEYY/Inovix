@@ -1,36 +1,32 @@
-import React, { useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 
 const CartDrawer = ({ isOpen, onClose, cart, menuItems, outletName, onUpdateQuantity, onOrderNow, placingOrder }) => {
-  // Prevent body scroll when drawer is open
+  const [notes, setNotes] = useState('');
+  const [scheduledTime, setScheduledTime] = useState('');
+
   useEffect(() => {
-    if (isOpen) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = 'unset';
-    }
-    return () => {
-      document.body.style.overflow = 'unset';
-    };
+    document.body.style.overflow = isOpen ? 'hidden' : 'unset';
+    return () => { document.body.style.overflow = 'unset'; };
   }, [isOpen]);
 
   const cartEntries = Object.entries(cart).filter(([id, qty]) => qty > 0);
-  
   const subtotal = cartEntries.reduce((total, [itemId, qty]) => {
     const item = menuItems.find(i => i.id === itemId);
     return total + (item ? item.price * qty : 0);
   }, 0);
-
   const platformFee = cartEntries.length > 0 ? 5 : 0;
   const total = subtotal + platformFee;
-
   if (!isOpen) return null;
+
+  // Min datetime for the picker: now; max: 6 hours forward
+  const now = new Date();
+  const maxTime = new Date(now.getTime() + 6 * 60 * 60 * 1000);
+  const minStr = now.toISOString().slice(0, 16);
+  const maxStr = maxTime.toISOString().slice(0, 16);
 
   return (
     <>
-      {/* Overlay */}
       <div className="cart-drawer-overlay" onClick={onClose}></div>
-      
-      {/* Drawer */}
       <div className={`cart-drawer ${isOpen ? 'open' : ''}`}>
         <div className="cart-drawer-header">
           <div className="cart-drawer-title-group">
@@ -38,18 +34,12 @@ const CartDrawer = ({ isOpen, onClose, cart, menuItems, outletName, onUpdateQuan
             <p className="cart-drawer-subtitle">From {outletName}</p>
           </div>
           <button className="cart-close-btn" onClick={onClose} aria-label="Close cart">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#4b5563" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
-            </svg>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#4b5563" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
           </button>
         </div>
-
         <div className="cart-drawer-body">
           {cartEntries.length === 0 ? (
-            <div className="cart-empty-state">
-              <p>Your cart is empty.</p>
-            </div>
+            <div className="cart-empty-state"><p>Your cart is empty.</p></div>
           ) : (
             <div className="cart-items-list">
               {cartEntries.map(([itemId, qty]) => {
@@ -58,21 +48,13 @@ const CartDrawer = ({ isOpen, onClose, cart, menuItems, outletName, onUpdateQuan
                 return (
                   <div key={itemId} className="cart-item-card">
                     <div className="cart-item-info">
-                      <h4 className="cart-item-name">{item.name}</h4>
-                      <span className="cart-item-price">₹{item.price * qty}</span>
+                      <span className="cart-item-name">{item.name}</span>
+                      <span className="cart-item-price">₹{item.price}</span>
                     </div>
-                    <div className="cart-item-actions">
-                      <div className="quantity-selector">
-                        <button className="qty-btn" onClick={() => onUpdateQuantity(itemId, qty - 1)}>−</button>
-                        <span className="qty-value">{qty}</span>
-                        <button className="qty-btn" onClick={() => onUpdateQuantity(itemId, qty + 1)}>+</button>
-                      </div>
-                      <button className="cart-item-delete" onClick={() => onUpdateQuantity(itemId, 0)} title="Remove item">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <polyline points="3 6 5 6 21 6"></polyline>
-                          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                        </svg>
-                      </button>
+                    <div className="cart-item-qty">
+                      <button onClick={() => onUpdateQuantity(itemId, qty - 1)}>−</button>
+                      <span>{qty}</span>
+                      <button onClick={() => onUpdateQuantity(itemId, qty + 1)}>+</button>
                     </div>
                   </div>
                 );
@@ -80,39 +62,33 @@ const CartDrawer = ({ isOpen, onClose, cart, menuItems, outletName, onUpdateQuan
             </div>
           )}
         </div>
-
-        <div className="cart-drawer-footer">
-          <div className="cart-summary-line">
-            <span className="summary-label">Subtotal</span>
-            <span className="summary-value">₹{subtotal}</span>
-          </div>
-          <div className="cart-summary-line">
-            <span className="summary-label">Platform fee</span>
-            <span className="summary-value">₹{platformFee}</span>
-          </div>
-          <div className="cart-summary-total">
-            <span className="total-label">Total</span>
-            <span className="total-value">₹{total}</span>
-          </div>
-          
-          <div className="cart-action-buttons">
-            <button 
-              className="checkout-btn schedule-btn" 
-              disabled={cartEntries.length === 0}
-              onClick={() => alert('Scheduling order!')}
-            >
-              Schedule
+        {cartEntries.length > 0 && (
+          <div className="cart-drawer-footer">
+            {/* Order notes */}
+            <input type="text" placeholder="Order notes (e.g., less spicy, no onions)" value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              style={{ width: '100%', padding: '0.5rem', border: '1px solid #e5e7eb', borderRadius: '8px', fontSize: '0.85rem', marginBottom: '0.5rem' }} />
+            {/* Scheduling (optional pickup time — within 6 hours) */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
+              <label style={{ fontSize: '0.8rem', color: '#6b7280', whiteSpace: 'nowrap' }}>Pickup time:</label>
+              <input type="datetime-local" value={scheduledTime}
+                onChange={(e) => setScheduledTime(e.target.value)}
+                min={minStr} max={maxStr}
+                style={{ padding: '0.4rem', border: '1px solid #e5e7eb', borderRadius: '6px', fontSize: '0.8rem', flex: 1, minWidth: 0 }} />
+              <span style={{ fontSize: '0.7rem', color: '#9ca3af', whiteSpace: 'nowrap' }}>(optional, within 6h)</span>
+            </div>
+            <div className="cart-drawer-summary">
+              <div className="summary-row"><span>Subtotal</span><span>₹{subtotal}</span></div>
+              <div className="summary-row"><span>Platform fee</span><span>₹{platformFee}</span></div>
+              <div className="summary-row total"><span>Total</span><span>₹{total}</span></div>
+            </div>
+            <button className="checkout-btn" disabled={placingOrder}
+              onClick={() => onOrderNow({ notes: notes.trim() || undefined, scheduledFor: scheduledTime ? new Date(scheduledTime).toISOString() : undefined })}>
+              {placingOrder ? 'Placing order…' : `Place order · ₹${total}`}
             </button>
-            <button
-              className="checkout-btn order-now-btn"
-              disabled={cartEntries.length === 0 || placingOrder}
-              onClick={onOrderNow}
-            >
-              {placingOrder ? 'Placing…' : 'Order Now'} <span className="arrow">›</span>
-            </button>
+            <p className="checkout-note">Prepaid · Razorpay secured payment</p>
           </div>
-          <p className="checkout-note">Pickup only · no delivery fee</p>
-        </div>
+        )}
       </div>
     </>
   );

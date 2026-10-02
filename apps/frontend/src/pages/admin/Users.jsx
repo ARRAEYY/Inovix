@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import AdminLayout from '../../components/layout/AdminLayout';
 import api from '../../services/api/client';
+import { toast } from 'react-hot-toast';
 
 const Users = () => {
   const [users, setUsers] = useState([]);
@@ -39,15 +40,24 @@ const Users = () => {
         await api.patch(`/admin/users/${userId}/status`, { status: newStatus });
         setUsers(users.map(u => u.id === userId ? { ...u, status: newStatus } : u));
       } catch (err) {
-        alert(err.response?.data?.message || 'Failed to update user status');
+        toast(err.response?.data?.message || 'Failed to update user status');
       }
     }
   };
 
-  const handleEditSubmit = (e) => {
+  const handleEditSubmit = async (e) => {
     e.preventDefault();
-    setUsers(users.map(u => u.id === selectedEditUser.id ? selectedEditUser : u));
-    setSelectedEditUser(null);
+    try {
+      await api.patch(`/admin/users/${selectedEditUser.id}`, {
+        name: selectedEditUser.name,
+        email: selectedEditUser.email,
+        role: selectedEditUser.role,
+      });
+      setUsers(users.map(u => u.id === selectedEditUser.id ? { ...u, ...selectedEditUser } : u));
+      setSelectedEditUser(null);
+    } catch (err) {
+      toast(err.response?.data?.message || 'Failed to update user');
+    }
   };
 
   const filteredUsers = users.filter(u => {

@@ -17,7 +17,7 @@ const { hashToken } = require('../../lib/tokens');
 const { hashPassword } = require('../../utils/password');
 const { sendPasswordResetOTP } = require('../../lib/email');
 const { audit } = require('../../lib/audit');
-const { verifyGoogleCredential } = require('./google.service');
+const { verifyGoogleCredential, getAuthUrl, exchangeCodeForUser } = require('./google.service');
 const {
   findOrCreateGoogleUser,
   getCurrentUser: getCurrentUserService,
@@ -50,25 +50,79 @@ function clearRefreshCookie(res) {
   res.clearCookie(REFRESH_COOKIE, { ...REFRESH_COOKIE_OPTIONS, maxAge: undefined });
 }
 
+// Serialize a user for API responses. Role-aware: only includes the fields
+// relevant to the user's role, so a student doesn't get a response full of
+// `outlet: null` / `outletId: null` / `outletRole: null` / `outletStaff: null`
+// noise. Strips `passwordHash`, `googleId`, `googlePicture` (the picture is
+// exposed as the frontend-facing `avatar` alias), and the raw `outletStaff`
+// Prisma relation (which leaks internal IDs the frontend doesn't need).
+//
+// Shape per role:
+//   STUDENT      → core + studentProfile (if present)
+//   OUTLET_STAFF → core + outletId + outletRole + outlet (the linked outlet)
+//   OUTLET_ADMIN → core + outletId + outletRole + outlet
+//   SUPER_ADMIN  → core only (no outlet, no studentProfile)
 function stripSensitive(user) {
   if (!user) return null;
-  const { passwordHash, googleId, ...safe } = user;
-  return {
-    ...safe,
-    outletId: user.outletStaff?.outletId || null,
-    outletRole: user.outletStaff?.role || null,
-    outlet: user.outletStaff?.outlet
-      ? {
-          id: user.outletStaff.outlet.id,
-          name: user.outletStaff.outlet.name,
-          logoUrl: user.outletStaff.outlet.logoUrl,
-          location: user.outletStaff.outlet.location,
-          status: user.outletStaff.outlet.status,
-        }
-      : null,
-    // `avatar` is the frontend-facing alias of the stored picture.
-    avatar: user.googlePicture || null,
+  // Drop secrets + the raw Prisma relations we re-shape below.
+  const {
+    passwordHash,
+    googleId,
+    googlePicture,
+    outletStaff,
+    studentProfile: rawStudentProfile,
+    ...core
+  } = user;
+
+  // `avatar` is the frontend-facing alias of the stored Google picture.
+  const base = {
+    ...core,
+    avatar: googlePicture || null,
   };
+
+  // Role-specific fields — only present when relevant.
+  if (user.role === 'OUTLET_STAFF' || user.role === 'OUTLET_ADMIN') {
+    if (outletStaff?.outlet) {
+      return {
+        ...base,
+        outletId: outletStaff.outletId,
+        outletRole: outletStaff.role,
+        outlet: {
+          id: outletStaff.outlet.id,
+          name: outletStaff.outlet.name,
+          logoUrl: outletStaff.outlet.logoUrl,
+          location: outletStaff.outlet.location,
+          status: outletStaff.outlet.status,
+        },
+      };
+    }
+    // Outlet staff with no linked outlet (rare edge case) — still surface
+    // the IDs so the frontend can tell them apart from students.
+    return {
+      ...base,
+      outletId: outletStaff?.outletId || null,
+      outletRole: outletStaff?.role || null,
+    };
+  }
+
+  if (user.role === 'STUDENT' && rawStudentProfile) {
+    return {
+      ...base,
+      studentProfile: {
+        id: rawStudentProfile.id,
+        fullName: rawStudentProfile.fullName,
+        phone: rawStudentProfile.phone,
+        course: rawStudentProfile.course,
+        year: rawStudentProfile.year,
+        collegeId: rawStudentProfile.collegeId,
+        submittedAt: rawStudentProfile.submittedAt,
+      },
+    };
+  }
+
+  // SUPER_ADMIN, or STUDENT without a completed profile, or any other role —
+  // just the core fields. No outlet/student noise.
+  return base;
 }
 
 async function googleLogin(req, res, next) {
@@ -106,6 +160,123 @@ async function googleLogin(req, res, next) {
     });
   } catch (error) {
     next(error);
+  }
+}
+
+// ─── OAuth authorization-code redirect flow ───────────────────────────────
+// GET /api/v1/auth/google — kick off Google OAuth via redirect (more
+// reliable than the GIS popup). Builds the consent URL with a redirect_uri
+// derived from the request's forwarded host (so it works behind the
+// Next.js reverse-proxy + the preview ALB without per-session env tweaks),
+// sets a `google_oauth_state` httpOnly cookie for CSRF, and 302-redirects
+// to Google.
+const OAUTH_STATE_COOKIE = 'google_oauth_state';
+const OAUTH_STATE_COOKIE_OPTIONS = {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === 'production' || process.env.COOKIE_SECURE === 'true',
+  sameSite: process.env.COOKIE_SAMESITE || 'lax',
+  path: '/api/v1/auth',
+  maxAge: 10 * 60 * 1000, // 10 minutes — OAuth round-trip shouldn't take this long
+};
+
+// Reconstruct the public origin from X-Forwarded-* headers (set by the
+// Next.js reverse-proxy / Caddy / ALB). Falls back to the direct request
+// scheme + host when no proxy is in front (e.g. local dev hitting port
+// 4000 directly).
+function publicOrigin(req) {
+  const proto = req.headers['x-forwarded-proto'] || req.protocol || 'http';
+  const host = req.headers['x-forwarded-host'] || req.headers.host || req.get('host');
+  return `${proto}://${host}`;
+}
+
+async function googleAuthStart(req, res, next) {
+  try {
+    // redirect_uri MUST exactly match a URI registered under Authorized
+    // redirect URIs in the Google Cloud Console. We build it from the
+    // request's public origin so the same backend works for local dev
+    // (http://localhost:3000), the Next.js proxy, and the preview ALB
+    // (https://preview-chat-*.space-z.ai) — as long as the operator
+    // registered each origin's callback URL.
+    const redirectUri = `${publicOrigin(req)}/api/v1/auth/google/callback`;
+    const state = crypto.randomBytes(16).toString('hex');
+    res.cookie(OAUTH_STATE_COOKIE, state, OAUTH_STATE_COOKIE_OPTIONS);
+    const url = getAuthUrl({ redirectUri, state });
+    return res.redirect(url);
+  } catch (error) {
+    next(error);
+  }
+}
+
+// GET /api/v1/auth/google/callback — Google redirects here with
+// ?code=...&state=... (or ?error=... on user-cancel). Verify the state
+// cookie (CSRF), exchange the code for tokens, find/create the user, set
+// the refresh cookie, then 302-redirect to the frontend. The frontend's
+// AuthContext detects `?google_login=success` and refreshes the access
+// token via /auth/refresh.
+async function googleCallback(req, res, next) {
+  // Frontend path to redirect to after a successful login. The Inovix
+  // app is served at /inovix-app/ through the Next.js reverse-proxy.
+  const FRONTEND_PATH = process.env.GOOGLE_OAUTH_FRONTEND_PATH || '/inovix-app/';
+
+  // User cancelled or Google errored — bounce back to the login page
+  // with an error flag the frontend can show.
+  if (req.query.error) {
+    res.clearCookie(OAUTH_STATE_COOKIE, { path: '/api/v1/auth' });
+    return res.redirect(`${FRONTEND_PATH}?google_login=error&reason=${encodeURIComponent(String(req.query.error))}`);
+  }
+
+  const code = req.query.code;
+  const state = req.query.state;
+  const cookieState = req.cookies[OAUTH_STATE_COOKIE];
+
+  // CSRF: the state returned by Google must match the cookie we set in
+  // googleAuthStart. A mismatch (or missing cookie) = potential CSRF /
+  // replay attack — reject and redirect to the login page.
+  if (!state || !cookieState || state !== cookieState) {
+    res.clearCookie(OAUTH_STATE_COOKIE, { path: '/api/v1/auth' });
+    return res.redirect(`${FRONTEND_PATH}?google_login=error&reason=state_mismatch`);
+  }
+
+  try {
+    const redirectUri = `${publicOrigin(req)}/api/v1/auth/google/callback`;
+    const googleUser = await exchangeCodeForUser(code, redirectUri);
+    const { user, isNew } = await findOrCreateGoogleUser(googleUser);
+
+    if (user.status === USER_STATUS.SUSPENDED) {
+      res.clearCookie(OAUTH_STATE_COOKIE, { path: '/api/v1/auth' });
+      return res.redirect(`${FRONTEND_PATH}?google_login=error&reason=suspended`);
+    }
+
+    const accessToken = signAccessToken(user);
+    const refreshToken = await issueRefreshToken(user, { req });
+
+    await audit({
+      actorId: user.id,
+      action: isNew ? 'USER_GOOGLE_REGISTER' : 'USER_GOOGLE_LOGIN',
+      targetType: 'User',
+      targetId: user.id,
+      req,
+    });
+
+    res.clearCookie(OAUTH_STATE_COOKIE, { path: '/api/v1/auth' });
+    setRefreshCookie(res, refreshToken);
+    // The refresh cookie (httpOnly, SameSite=None; Secure) lets the frontend
+    // refresh the access token later — BUT third-party cookie blocking
+    // (Safari ITP, Chrome's phase-out, Firefox ETP) may prevent it from being
+    // sent on the cross-site /auth/refresh call. So we ALSO pass the access
+    // token in a URL hash fragment (#at=<jwt>). Hash fragments are NOT sent
+    // to servers in HTTP requests (so they don't leak via referrer headers)
+    // and the frontend's AuthContext reads it on load + cleans the URL
+    // immediately via history.replaceState. The token is short-lived (15m)
+    // so even if the URL is shared before cleanup, the exposure window is
+    // tiny. This is the standard SPA OAuth implicit-flow pattern.
+    return res.redirect(
+      `${FRONTEND_PATH}?google_login=success#at=${encodeURIComponent(accessToken)}`,
+    );
+  } catch (error) {
+    const reason = encodeURIComponent(error.message || 'google_callback_failed');
+    res.clearCookie(OAUTH_STATE_COOKIE, { path: '/api/v1/auth' });
+    return res.redirect(`${FRONTEND_PATH}?google_login=error&reason=${reason}`);
   }
 }
 
@@ -301,9 +472,45 @@ async function login(req, res, next) {
   }
 }
 
+// ─── Change password (while logged in) ──────────────────────────────────
+// Body: { oldPassword, newPassword }
+// Verifies the old password (if the user has one — Google-only users have
+// passwordHash=null, so they can't use this; they should use forgot-password
+// or set a password via onboarding).
+async function changePassword(req, res, next) {
+  try {
+    const { oldPassword, newPassword } = req.body;
+    if (!oldPassword || !newPassword) {
+      return res.status(400).json({ success: false, message: 'Old password and new password are required' });
+    }
+    if (newPassword.length < 8) {
+      return res.status(400).json({ success: false, message: 'New password must be at least 8 characters' });
+    }
+    const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+    if (!user.passwordHash) {
+      return res.status(400).json({ success: false, message: 'This account uses Google OAuth. Use "Forgot Password" to set a password.' });
+    }
+    const { comparePassword } = require('../../utils/password');
+    const isMatch = await comparePassword(oldPassword, user.passwordHash);
+    if (!isMatch) {
+      return res.status(401).json({ success: false, message: 'Current password is incorrect' });
+    }
+    const { hashPassword } = require('../../utils/password');
+    const newHash = await hashPassword(newPassword);
+    await prisma.user.update({ where: { id: user.id }, data: { passwordHash: newHash } });
+    await audit({ actorId: user.id, action: 'USER_PASSWORD_CHANGED', targetType: 'User', targetId: user.id, req });
+    return res.status(200).json({ success: true, message: 'Password changed successfully' });
+  } catch (error) {
+    next(error);
+  }
+}
+
+
 module.exports = {
   login,
   googleLogin,
+  googleAuthStart,
+  googleCallback,
   devLogin,
   getCurrentUser,
   updateCurrentUser,
@@ -311,6 +518,7 @@ module.exports = {
   logout,
   forgotPassword,
   resetPassword,
+  changePassword,
 };
 
 /**

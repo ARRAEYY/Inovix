@@ -7,23 +7,45 @@ import MobileBottomNav from '../../components/layout/MobileBottomNav';
 import BackButton from '../../components/common/BackButton';
 
 import { catalogService } from '../../services/api/catalogService';
+import { cacheGet, cacheSet } from '../../services/cache/localCache';
+import FoodReviewsModal from '../../components/food/FoodReviewsModal';
 import { orderService } from '../../services/api/orderService';
+import { paymentService } from '../../services/api/paymentService';
+import { useAuth } from '../../hooks/useAuth';
+import { toast } from 'react-hot-toast';
 
-// Helper to get category placeholder image
-const getCategoryImage = (categoryName) => {
-  const images = {
-    'Popular': 'https://via.placeholder.com/60?text=Pop',
-    'Burgers': 'https://via.placeholder.com/60?text=Brg',
-    'Fries': 'https://via.placeholder.com/60?text=Fry',
-    'Sandwiches': 'https://via.placeholder.com/60?text=Snd',
-    'Wraps': 'https://via.placeholder.com/60?text=Wrp',
-    'Maggi': 'https://via.placeholder.com/60?text=Mag',
-    'Shakes': 'https://via.placeholder.com/60?text=Shk',
-    'Beverages': 'https://via.placeholder.com/60?text=Bev',
-    'Meals': 'https://via.placeholder.com/60?text=Meal',
-    'Desserts': 'https://via.placeholder.com/60?text=Des'
-  };
-  return images[categoryName] || 'https://via.placeholder.com/60?text=Food';
+// Render a category icon as a self-contained CSS block — no external image
+// service. Uses the first letter (or first two letters for short words) of
+// the category name on a tinted circle. Keeps the sidebar visual without
+// depending on via.placeholder.com.
+const CategoryIcon = ({ name }) => {
+  const label = (name || '?')
+    .split(/\s+/)
+    .map((w) => w.charAt(0).toUpperCase())
+    .slice(0, 2)
+    .join('');
+  return (
+    <span
+      aria-hidden="true"
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: 36,
+        height: 36,
+        borderRadius: 10,
+        background: '#faf5f6',
+        color: '#b10035',
+        fontWeight: 700,
+        fontSize: '0.85rem',
+        letterSpacing: '0.5px',
+        flexShrink: 0,
+        userSelect: 'none',
+      }}
+    >
+      {label}
+    </span>
+  );
 };
 
 // Map a backend menu item onto the fields FoodCard / the cart read.
@@ -33,6 +55,10 @@ const mapMenuItem = (item) => ({
   image: item.imageUrl || null,
   price: Number(item.price),
 });
+
+// How long a cached menu may be rendered before showing the skeleton
+// instead. The network refresh always runs regardless.
+const MENU_CACHE_MAX_AGE_MS = 5 * 60 * 1000;
 
 // Map the catalog outlet onto the banner fields.
 const mapOutletDetails = (o) => ({
@@ -46,6 +72,7 @@ const mapOutletDetails = (o) => ({
 const OutletMenu = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   const [outlet, setOutlet] = useState(null);
   const [menuSections, setMenuSections] = useState([]);
@@ -53,8 +80,32 @@ const OutletMenu = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [placingOrder, setPlacingOrder] = useState(false);
+  const [reviewsItem, setReviewsItem] = useState(null);
 
-  const [cart, setCart] = useState({});
+  // ─── Cart persistence ────────────────────────────────────────────────
+  // The cart was lost on page refresh because it was only in React state.
+  // Now it's persisted to localStorage keyed per outlet (so different
+  // outlets have separate carts). Loaded lazily on mount via useState's
+  // initializer, saved on every change via useEffect.
+  const CART_STORAGE_KEY = `nosh:cart:${id}`;
+  const [cart, setCart] = useState(() => {
+    try {
+      const saved = localStorage.getItem(CART_STORAGE_KEY);
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+  // Persist the cart to localStorage whenever it changes (so a refresh
+  // restores the exact cart the user had).
+  useEffect(() => {
+    try {
+      localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cart));
+    } catch {
+      // localStorage might be full or blocked (incognito) — ignore.
+    }
+  }, [cart, CART_STORAGE_KEY]);
+
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState('');
@@ -64,48 +115,65 @@ const OutletMenu = () => {
   const menuContentRef = useRef(null);
 
   useEffect(() => {
+    // Stale-while-revalidate: paint the outlet + menu instantly from the
+    // last visit's cache, then refresh underneath (no skeleton flash).
+    const applyData = (outletRaw, itemsRaw) => {
+      setOutlet(mapOutletDetails(outletRaw || {}));
+
+      const items = (itemsRaw || []).map(mapMenuItem);
+      setFlatMenuItems(items);
+
+      // Group by category
+      const grouped = items.reduce((acc, item) => {
+        if (!acc[item.category]) {
+          acc[item.category] = {
+            category: item.category,
+            items: []
+          };
+        }
+        acc[item.category].items.push(item);
+        return acc;
+      }, {});
+
+      const sectionsArray = Object.values(grouped);
+
+      // Sort sections logically, putting 'Popular' first
+      sectionsArray.sort((a, b) => {
+        if (a.category === 'Popular') return -1;
+        if (b.category === 'Popular') return 1;
+        return a.category.localeCompare(b.category);
+      });
+
+      setMenuSections(sectionsArray);
+      // Keep the user's selected category across background refreshes.
+      setActiveCategory((prev) =>
+        sectionsArray.some((s) => s.category === prev) ? prev : (sectionsArray[0]?.category || '')
+      );
+    };
+
     const fetchMenu = async () => {
-      try {
+      const cacheKey = `menu:${id}`;
+      const cached = cacheGet(cacheKey, MENU_CACHE_MAX_AGE_MS);
+      if (cached) {
+        applyData(cached.outlet, cached.items);
+        setLoading(false);
+      } else {
         setLoading(true);
+      }
+      try {
         const [outletRes, menuRes] = await Promise.all([
           catalogService.getOutletDetails(id),
           catalogService.getOutletMenu(id),
         ]);
-        setOutlet(mapOutletDetails(outletRes.data || {}));
-
-        const items = (menuRes.data || []).map(mapMenuItem);
-        setFlatMenuItems(items);
-
-        // Group by category
-        const grouped = items.reduce((acc, item) => {
-          if (!acc[item.category]) {
-            acc[item.category] = {
-              category: item.category,
-              image: getCategoryImage(item.category),
-              items: []
-            };
-          }
-          acc[item.category].items.push(item);
-          return acc;
-        }, {});
-
-        const sectionsArray = Object.values(grouped);
-
-        // Sort sections logically, putting 'Popular' first
-        sectionsArray.sort((a, b) => {
-          if (a.category === 'Popular') return -1;
-          if (b.category === 'Popular') return 1;
-          return a.category.localeCompare(b.category);
-        });
-
-        setMenuSections(sectionsArray);
-        if (sectionsArray.length > 0) {
-          setActiveCategory(sectionsArray[0].category);
-        }
+        const outletRaw = outletRes.data || {};
+        const itemsRaw = menuRes.data || [];
+        cacheSet(cacheKey, { outlet: outletRaw, items: itemsRaw });
+        applyData(outletRaw, itemsRaw);
         setError(null);
       } catch (err) {
         console.error('Failed to fetch menu:', err);
-        setError(err.message || 'Failed to load this outlet\'s menu');
+        // Only surface the error when there was nothing cached to show.
+        if (!cached) setError(err.message || 'Failed to load this outlet\'s menu');
       } finally {
         setLoading(false);
       }
@@ -113,24 +181,94 @@ const OutletMenu = () => {
     fetchMenu();
   }, [id]);
 
-  // Place the order from the local cart, then try to initialise payment.
-  const handleOrderNow = async () => {
+  // ─── Outlet-wise cart ──────────────────────────────────────────────────
+  // Carts are keyed per outlet (nosh:cart:{id}) and persist across visits:
+  // leaving an outlet keeps its cart saved, and returning restores it.
+  // Switching outlets shows that outlet's own cart — items are never mixed
+  // because every read/write goes through the outlet-scoped key.
+
+  // ─── Prepaid order flow (every order is paid via Razorpay checkout) ─────
+  // No order is confirmed without payment. The flow:
+  //   1. POST /orders → create the order (status=PENDING, Payment.status=PENDING)
+  //   2. POST /payments/razorpay/order → create a Razorpay gateway order
+  //   3. Open Razorpay checkout → student pays
+  //   4. POST /payments/razorpay/verify → verify the HMAC signature
+  //   5. On success → clear cart + navigate to /student/orders
+  //   6. On dismiss/failure → order stays PENDING, cart is preserved so
+  //      the student can retry. The order appears in /orders with a "Pay"
+  //      button (or auto-cancels after the pickup timeout).
+  const handleOrderNow = async ({ notes, scheduledFor } = {}) => {
     if (placingOrder) return;
     const entries = Object.entries(cart).filter(([, qty]) => qty > 0);
     if (entries.length === 0) return;
     try {
       setPlacingOrder(true);
-      const res = await orderService.createOrder({
+
+      // Step 1: create the order
+      const orderRes = await orderService.createOrder({
         outletId: id,
         items: entries.map(([menuItemId, quantity]) => ({ menuItemId, quantity })),
+        ...(notes ? { notes } : {}),
+        ...(scheduledFor ? { scheduledFor } : {}),
       });
-      const order = res.data || {};
+      const order = orderRes.data || {};
+      if (!order.id) {
+        throw new Error(orderRes.message || 'Could not create the order');
+      }
+
+      // Step 2: create a Razorpay gateway order
+      const razorpayRes = await paymentService.createRazorpayOrder(order.id);
+      const rp = razorpayRes.data || {};
+      if (!rp.razorpayOrderId || !rp.keyId) {
+        throw new Error('Could not initialize Razorpay payment');
+      }
+
+      // Step 3: open the Razorpay checkout modal
+      let paymentResponse;
+      try {
+        paymentResponse = await paymentService.openCheckout({
+          keyId: rp.keyId,
+          razorpayOrderId: rp.razorpayOrderId,
+          amount: rp.amount,
+          currency: rp.currency,
+          user,
+          outletName: outlet?.name,
+        });
+      } catch (dismissError) {
+        // Payment failed or user dismissed the checkout. The order was
+        // created (step 1) but NOT paid. Auto-cancel it so it doesn't
+        // show as "successfully placed" — the user shouldn't have a
+        // dangling unpaid order in their list.
+        try {
+          await orderService.cancelOrder(order.id);
+        } catch (cancelErr) {
+          // If cancel fails (e.g. outlet already accepted — rare for a
+          // sub-second turnaround), the order stays PENDING. The
+          // reconciliation worker or a manual cancel will handle it.
+          console.error('Auto-cancel failed:', cancelErr);
+        }
+        setIsCartOpen(false);
+        // Keep the cart intact so the user can try again immediately.
+        toast('Payment cancelled. Order was not placed — your cart is saved so you can try again.');
+        return;
+      }
+
+      // Step 4: verify the payment signature
+      const verifyRes = await paymentService.verifyPayment({
+        razorpayOrderId: paymentResponse.razorpay_order_id,
+        razorpayPaymentId: paymentResponse.razorpay_payment_id,
+        razorpaySignature: paymentResponse.razorpay_signature,
+      });
+
+      // Step 5: payment confirmed → clear cart + navigate
       setCart({});
+      try { localStorage.removeItem(CART_STORAGE_KEY); } catch {}
       setIsCartOpen(false);
-      alert(`Order ${order.orderNumber || ''} placed! Complete the payment at the outlet or from your orders.`);
+      const paid = verifyRes.success ? '✓ Paid' : 'pending verification';
+      toast(`Order ${order.orderNumber || ''} placed! Payment: ${paid}. You'll get a pickup code when the outlet accepts.`);
       navigate('/student/orders');
     } catch (err) {
-      alert(err.message || 'Could not place the order. Please try again.');
+      toast(err.message || 'Could not place the order. Please try again.');
     } finally {
       setPlacingOrder(false);
     }
@@ -196,8 +334,8 @@ const OutletMenu = () => {
   // Flattened search results
   const searchResults = isSearching
     ? flatMenuItems.filter(item =>
-        item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (item.description && item.description.toLowerCase().includes(searchQuery.toLowerCase()))
+        (item.name || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (item.description && (item.description || "").toLowerCase().includes(searchQuery.toLowerCase()))
       )
     : [];
 
@@ -205,8 +343,8 @@ const OutletMenu = () => {
   const filteredMenu = menuSections.map(section => ({
     ...section,
     items: section.items.filter(item =>
-      item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (item.description && item.description.toLowerCase().includes(searchQuery.toLowerCase()))
+      (item.name || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (item.description && (item.description || "").toLowerCase().includes(searchQuery.toLowerCase()))
     )
   })).filter(section => section.items.length > 0);
 
@@ -261,7 +399,7 @@ const OutletMenu = () => {
                     onClick={() => scrollToCategory(section.category)}
                   >
                     <div className="category-img-wrapper">
-                      <img src={section.image} alt={section.category} />
+                      <CategoryIcon name={section.category} />
                     </div>
                     <span className="category-name">{section.category}</span>
                   </button>
@@ -318,6 +456,7 @@ const OutletMenu = () => {
                           food={item}
                           quantity={cart[item.id] || 0}
                           onUpdateQuantity={handleUpdateQuantity}
+                          onShowReviews={setReviewsItem}
                         />
                       ))}
                     </div>
@@ -332,6 +471,10 @@ const OutletMenu = () => {
           </div>
         </main>
       </div>
+
+      {reviewsItem && (
+        <FoodReviewsModal item={reviewsItem} onClose={() => setReviewsItem(null)} />
+      )}
 
       <CartDrawer
         isOpen={isCartOpen}

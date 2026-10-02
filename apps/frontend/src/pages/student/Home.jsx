@@ -3,9 +3,17 @@ import Header from '../../components/layout/Header';
 import OutletCard from '../../components/food/OutletCard';
 import MobileBottomNav from '../../components/layout/MobileBottomNav';
 import { useAuth } from '../../hooks/useAuth';
+import { toast } from 'react-hot-toast';
+import client from '../../services/api/client';
 import { catalogService } from '../../services/api/catalogService';
+import { cacheGet, cacheSet } from '../../services/cache/localCache';
+import SkeletonGrid from '../../components/common/Skeleton';
 
 const FILTERS = ['All', 'Open now'];
+
+// How long the cached outlets list may be rendered before falling back to
+// the loading skeleton. The network refresh always runs regardless.
+const OUTLETS_MAX_AGE_MS = 5 * 60 * 1000;
 
 // Map a catalog outlet (Prisma Outlet model) onto the fields OutletCard
 // renders. Only OPEN/BUSY outlets are returned by the backend.
@@ -26,14 +34,29 @@ const Home = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [outlets, setOutlets] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [favorites, setFavorites] = useState(new Set());
   const [error, setError] = useState(null);
 
   useEffect(() => {
+    // Fetch favorite outlet IDs
+    client.get('/favorites').then(res => {
+      setFavorites(new Set((res.data?.data || []).map(f => f.outletId)));
+    }).catch(() => {});
     const fetchOutlets = async () => {
-      try {
+      // Stale-while-revalidate: render the cached list instantly (no
+      // skeleton on repeat visits), refresh underneath, cache the result.
+      const cached = cacheGet('outlets', OUTLETS_MAX_AGE_MS);
+      if (cached) {
+        setOutlets(cached.map(mapOutlet));
+        setLoading(false);
+      } else {
         setLoading(true);
+      }
+      try {
         const res = await catalogService.getOutlets();
-        setOutlets((res.data || []).map(mapOutlet));
+        const raw = res.data || [];
+        cacheSet('outlets', raw);
+        setOutlets(raw.map(mapOutlet));
         setError(null);
       } catch (err) {
         setError(err.message || 'Failed to load outlets');
@@ -45,10 +68,21 @@ const Home = () => {
     fetchOutlets();
   }, []);
 
+  const toggleFavorite = async (e, outletId) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const isFav = favorites.has(outletId);
+    setFavorites(prev => { const next = new Set(prev); if (isFav) next.delete(outletId); else next.add(outletId); return next; });
+    try {
+      if (isFav) { await client.delete(`/favorites/${outletId}`); toast('Removed from favorites'); }
+      else { await client.post(`/favorites/${outletId}`); toast.success('Added to favorites'); }
+    } catch (err) { toast('Failed to update favorites'); setFavorites(prev => { const next = new Set(prev); if (isFav) next.add(outletId); else next.delete(outletId); return next; }); }
+  };
+
   const filteredOutlets = outlets.filter(outlet => {
     const matchesSearch =
-      outlet.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      outlet.description.toLowerCase().includes(searchQuery.toLowerCase());
+      (outlet.name || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (outlet.description || "").toLowerCase().includes(searchQuery.toLowerCase());
 
     const matchesFilter = activeFilter === 'All' ? true : outlet.active;
 
@@ -97,7 +131,7 @@ const Home = () => {
 
         {loading ? (
           <div style={{ textAlign: 'center', padding: '4rem 0', color: 'var(--text-light)' }}>
-            <p>Loading outlets…</p>
+            <SkeletonGrid count={6} cols={3} />
           </div>
         ) : error ? (
           <div style={{ textAlign: 'center', padding: '4rem 0', color: 'var(--text-light)' }}>

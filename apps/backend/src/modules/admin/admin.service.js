@@ -629,6 +629,54 @@ async function issueManualRefund(orderId, { amount, reason }, actorId) {
   return { refund, retried: false };
 }
 
+// ─── General update (Edit) functions ────────────────────────────────────
+async function updateUser(userId, data, reqUserId) {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) throw { statusCode: 404, message: 'User not found' };
+  const before = { name: user.name, email: user.email, role: user.role };
+  const updateData = {};
+  if (data.name !== undefined) updateData.name = data.name;
+  if (data.email !== undefined) updateData.email = data.email.toLowerCase();
+  if (data.role !== undefined) updateData.role = data.role;
+  const updated = await prisma.user.update({
+    where: { id: userId },
+    data: updateData,
+    include: { outletStaff: { include: { outlet: { select: { id: true, name: true, logoUrl: true, location: true, status: true } } } }, studentProfile: true },
+  });
+  return { user: updated, before };
+}
+
+async function updateOutlet(outletId, data) {
+  const outlet = await prisma.outlet.findUnique({ where: { id: outletId } });
+  if (!outlet) throw { statusCode: 404, message: 'Outlet not found' };
+  const before = { name: outlet.name, description: outlet.description, location: outlet.location };
+  const updated = await prisma.outlet.update({ where: { id: outletId }, data });
+  return { outlet: updated, before };
+}
+
+async function updateMenuItem(itemId, data) {
+  const item = await prisma.menuItem.findUnique({ where: { id: itemId } });
+  if (!item) throw { statusCode: 404, message: 'Menu item not found' };
+  const before = { name: item.name, price: item.price, description: item.description };
+  const updated = await prisma.menuItem.update({
+    where: { id: itemId },
+    data,
+    include: { outlet: { select: { id: true, name: true } }, category: { select: { id: true, name: true } } },
+  });
+  return { item: updated, before };
+}
+
+
+async function deleteOutlet(outletId) {
+  const outlet = await prisma.outlet.findUnique({ where: { id: outletId } });
+  if (!outlet) throw { statusCode: 404, message: 'Outlet not found' };
+  // Cascade delete: the schema has onDelete: Cascade on OutletStaff,
+  // OperatingHours, MenuCategory, MenuItem, Cart, Orders (via outletId).
+  await prisma.outlet.delete({ where: { id: outletId } });
+  return { deleted: true, name: outlet.name };
+}
+
+
 module.exports = {
   getOverview,
   getUsers,
@@ -645,4 +693,8 @@ module.exports = {
   getMenuItem,
   updateMenuItemStatus,
   issueManualRefund,
+  updateUser,
+  updateOutlet,
+  updateMenuItem,
+  deleteOutlet,
 };

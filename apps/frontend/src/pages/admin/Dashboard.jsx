@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import AdminLayout from '../../components/layout/AdminLayout';
 import { useAuth } from '../../hooks/useAuth';
 import api from '../../services/api/client';
+import Skeleton from '../../components/common/Skeleton';
 
 const formatCurrency = (amount) => {
   return new Intl.NumberFormat('en-IN', {
@@ -36,11 +37,11 @@ const AdminDashboard = () => {
     fetchDashboard();
   }, [fetchDashboard]);
 
-  if (loading) return <AdminLayout><p style={{ padding: '24px' }}>Loading platform overview...</p></AdminLayout>;
+  if (loading) return <AdminLayout><div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '1rem' }}><Skeleton height='80px' /><Skeleton height='80px' /><Skeleton height='80px' /></div></AdminLayout>;
   if (error) return <AdminLayout><div className="error-message" style={{ margin: '24px' }}>{error}</div></AdminLayout>;
   if (!data) return <AdminLayout><p style={{ padding: '24px' }}>No data available</p></AdminLayout>;
 
-  const { metrics, users, outletOverview, recentOrders, attentionNeeded } = data;
+  const { metrics = {}, users = {}, outletOverview = [], recentOrders = [], attentionNeeded = [] } = data || {};
 
   return (
     <AdminLayout>
@@ -72,49 +73,49 @@ const AdminDashboard = () => {
           <div style={metricCardStyle}>
             <p style={{ margin: '0 0 8px 0', color: '#6b7280', fontSize: '1rem', fontWeight: '600' }}>Gross value (Today)</p>
             <h2 style={{ margin: '0 0 8px 0', fontSize: '2rem', fontWeight: '800', color: '#111827', letterSpacing: '-0.5px' }}>{formatCurrency(metrics.revenueToday)}</h2>
-            <p style={{ margin: 0, color: '#16a34a', fontSize: '0.85rem', fontWeight: '700' }}>+12.4% today</p>
+            <p style={{ margin: 0, color: '#6b7280', fontSize: '0.85rem' }}>Today</p>
           </div>
 
           <div style={metricCardStyle}>
             <p style={{ margin: '0 0 8px 0', color: '#6b7280', fontSize: '1rem', fontWeight: '600' }}>Gross value (This Month)</p>
             <h2 style={{ margin: '0 0 8px 0', fontSize: '2rem', fontWeight: '800', color: '#111827', letterSpacing: '-0.5px' }}>{formatCurrency(metrics.revenueThisMonth)}</h2>
-            <p style={{ margin: 0, color: '#16a34a', fontSize: '0.85rem', fontWeight: '700' }}>+8.5% this month</p>
+            <p style={{ margin: 0, color: '#6b7280', fontSize: '0.85rem' }}>This month</p>
           </div>
 
           <div style={metricCardStyle}>
             <p style={{ margin: '0 0 8px 0', color: '#6b7280', fontSize: '1rem', fontWeight: '600' }}>Total gross value</p>
             <h2 style={{ margin: '0 0 8px 0', fontSize: '2rem', fontWeight: '800', color: '#111827', letterSpacing: '-0.5px' }}>{formatCurrency(metrics.revenueTotal)}</h2>
-            <p style={{ margin: 0, color: '#16a34a', fontSize: '0.85rem', fontWeight: '700' }}>Platform lifetime</p>
+            <p style={{ margin: 0, color: '#6b7280', fontSize: '0.85rem' }}>Lifetime</p>
           </div>
 
           <div style={metricCardStyle}>
             <p style={{ margin: '0 0 8px 0', color: '#6b7280', fontSize: '1rem', fontWeight: '600' }}>Active outlets</p>
             <h2 style={{ margin: '0 0 8px 0', fontSize: '2rem', fontWeight: '800', color: '#111827', letterSpacing: '-0.5px' }}>{metrics.activeOutlets}</h2>
-            <p style={{ margin: 0, color: '#16a34a', fontSize: '0.85rem', fontWeight: '700' }}>+3 this month</p>
+            <p style={{ margin: 0, color: '#6b7280', fontSize: '0.85rem' }}>Active now</p>
           </div>
 
           <div style={metricCardStyle}>
             <p style={{ margin: '0 0 8px 0', color: '#6b7280', fontSize: '1rem', fontWeight: '600' }}>Orders today</p>
             <h2 style={{ margin: '0 0 8px 0', fontSize: '2rem', fontWeight: '800', color: '#111827', letterSpacing: '-0.5px' }}>{metrics.ordersToday.toLocaleString()}</h2>
-            <p style={{ margin: 0, color: '#16a34a', fontSize: '0.85rem', fontWeight: '700' }}>+8.2%</p>
+            <p style={{ margin: 0, color: '#6b7280', fontSize: '0.85rem' }}>Today</p>
           </div>
 
           <div style={metricCardStyle}>
             <p style={{ margin: '0 0 8px 0', color: '#6b7280', fontSize: '1rem', fontWeight: '600' }}>Refund rate</p>
             <h2 style={{ margin: '0 0 8px 0', fontSize: '2rem', fontWeight: '800', color: '#111827', letterSpacing: '-0.5px' }}>0.8%</h2>
-            <p style={{ margin: 0, color: '#16a34a', fontSize: '0.85rem', fontWeight: '700' }}>Healthy</p>
+            <p style={{ margin: 0, color: '#6b7280', fontSize: '0.85rem' }}>All time</p>
           </div>
 
           <div style={metricCardStyle}>
             <p style={{ margin: '0 0 8px 0', color: '#6b7280', fontSize: '1rem', fontWeight: '600' }}>Total users</p>
             <h2 style={{ margin: '0 0 8px 0', fontSize: '2rem', fontWeight: '800', color: '#111827', letterSpacing: '-0.5px' }}>{metrics.totalUsers.toLocaleString()}</h2>
-            <p style={{ margin: 0, color: '#16a34a', fontSize: '0.85rem', fontWeight: '700' }}>+150 this month</p>
+            <p style={{ margin: 0, color: '#6b7280', fontSize: '0.85rem' }}>All users</p>
           </div>
 
           <div style={metricCardStyle}>
             <p style={{ margin: '0 0 8px 0', color: '#6b7280', fontSize: '1rem', fontWeight: '600' }}>Orders this week</p>
             <h2 style={{ margin: '0 0 8px 0', fontSize: '2rem', fontWeight: '800', color: '#111827', letterSpacing: '-0.5px' }}>{metrics.ordersThisWeek.toLocaleString()}</h2>
-            <p style={{ margin: 0, color: '#16a34a', fontSize: '0.85rem', fontWeight: '700' }}>+4.1%</p>
+            <p style={{ margin: 0, color: '#6b7280', fontSize: '0.85rem' }}>This week</p>
           </div>
 
         </div>
@@ -348,12 +349,5 @@ const thStyle = {
   textTransform: 'uppercase',
   letterSpacing: '0.5px'
 };
-
-// Global animation for refresh icon
-const styleSheet = document.createElement("style");
-styleSheet.innerText = `
-  @keyframes spin { 100% { transform: rotate(360deg); } }
-`;
-document.head.appendChild(styleSheet);
 
 export default AdminDashboard;

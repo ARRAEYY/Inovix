@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import AdminLayout from '../../components/layout/AdminLayout';
 import api from '../../services/api/client';
+import { toast } from 'react-hot-toast';
 
 const Staff = () => {
   const [users, setUsers] = useState([]);
@@ -39,10 +40,19 @@ const Staff = () => {
     fetchData();
   }, []);
 
-  const handleEditSubmit = (e) => {
+  const handleEditSubmit = async (e) => {
     e.preventDefault();
-    setUsers(users.map(u => u.id === selectedEditStaff.id ? selectedEditStaff : u));
-    setSelectedEditStaff(null);
+    try {
+      await api.patch(`/admin/users/${selectedEditStaff.id}`, {
+        name: selectedEditStaff.name,
+        email: selectedEditStaff.email,
+        role: selectedEditStaff.role,
+      });
+      setUsers(users.map(u => u.id === selectedEditStaff.id ? { ...u, ...selectedEditStaff } : u));
+      setSelectedEditStaff(null);
+    } catch (err) {
+      toast(err.response?.data?.message || 'Failed to update staff member');
+    }
   };
 
   const getOutletName = (id) => outlets.find(o => o.id === id)?.name || 'Unknown Outlet';
@@ -51,8 +61,8 @@ const Staff = () => {
   const staffMembers = users.filter(u => u.role === 'OUTLET_STAFF' || u.role === 'OUTLET_ADMIN');
 
   const filteredStaff = staffMembers.filter(m => {
-    const matchesSearch = m.name.toLowerCase().includes(search.toLowerCase()) || 
-                          m.email.toLowerCase().includes(search.toLowerCase());
+    const matchesSearch = (m.name || "").toLowerCase().includes(search.toLowerCase()) || 
+                          (m.email || "").toLowerCase().includes(search.toLowerCase());
     
     if (!matchesSearch) return false;
     

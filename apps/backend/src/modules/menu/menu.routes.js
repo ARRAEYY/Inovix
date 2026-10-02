@@ -20,4 +20,56 @@ router.post('/', protect, authorizeRole(...OUTLET_ADMIN_ROLES), requireOutletSco
 router.patch('/:itemId', protect, authorizeRole(...OUTLET_ADMIN_ROLES), requireOutletScope, validateBody(menuItemUpdateSchema), menuController.updateMenuItem);
 router.delete('/:itemId', protect, authorizeRole(...OUTLET_ADMIN_ROLES), requireOutletScope, menuController.deleteMenuItem);
 
+// ─── Menu category CRUD (outlet admin only) ──────────────────────────────
+const prisma = require('../../lib/prisma');
+
+router.get('/categories', protect, authorizeRole(...OUTLET_ROLES), requireOutletScope, async (req, res, next) => {
+  try {
+    const cats = await prisma.menuCategory.findMany({
+      where: { outletId: req.user.outletId },
+      orderBy: { sortOrder: 'asc' },
+      include: { _count: { select: { items: true } } },
+    });
+    res.json({ success: true, data: cats });
+  } catch (err) { next(err); }
+});
+
+router.post('/categories', protect, authorizeRole(...OUTLET_ADMIN_ROLES), requireOutletScope, async (req, res, next) => {
+  try {
+    const { name, sortOrder } = req.body;
+    if (!name) return res.status(400).json({ success: false, message: 'Category name is required' });
+    const cat = await prisma.menuCategory.create({
+      data: { outletId: req.user.outletId, name, sortOrder: sortOrder || 0 },
+    });
+    res.status(201).json({ success: true, data: cat });
+  } catch (err) {
+    if (err.code === 'P2002') return res.status(409).json({ success: false, message: 'Category already exists' });
+    next(err);
+  }
+});
+
+router.patch('/categories/:categoryId', protect, authorizeRole(...OUTLET_ADMIN_ROLES), requireOutletScope, async (req, res, next) => {
+  try {
+    const { name, sortOrder } = req.body;
+    const cat = await prisma.menuCategory.update({
+      where: { id: req.params.categoryId },
+      data: { ...(name ? { name } : {}), ...(sortOrder !== undefined ? { sortOrder } : {}) },
+    });
+    res.json({ success: true, data: cat });
+  } catch (err) { next(err); }
+});
+
+router.delete('/categories/:categoryId', protect, authorizeRole(...OUTLET_ADMIN_ROLES), requireOutletScope, async (req, res, next) => {
+  try {
+    // Unassign items from this category before deleting
+    await prisma.menuItem.updateMany({
+      where: { categoryId: req.params.categoryId },
+      data: { categoryId: null },
+    });
+    await prisma.menuCategory.delete({ where: { id: req.params.categoryId } });
+    res.json({ success: true, message: 'Category deleted' });
+  } catch (err) { next(err); }
+});
+
+
 module.exports = router;

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import AdminLayout from '../../components/layout/AdminLayout';
 import api from '../../services/api/client';
+import { toast } from 'react-hot-toast';
 
 const formatCurrency = (amount) => {
   return new Intl.NumberFormat('en-IN', {
@@ -54,22 +55,31 @@ const Menu = () => {
         await api.patch(`/admin/menu/${itemId}/status`, { isAvailable: !currentAvailability });
         setMenuItems(menuItems.map(m => m.id === itemId ? { ...m, isAvailable: !currentAvailability } : m));
       } catch (err) {
-        alert('Failed to update menu item');
+        toast('Failed to update menu item');
       }
     }
   };
 
-  const handleEditSubmit = (e) => {
+  const handleEditSubmit = async (e) => {
     e.preventDefault();
-    setMenuItems(menuItems.map(m => m.id === selectedEditItem.id ? selectedEditItem : m));
-    setSelectedEditItem(null);
+    try {
+      await api.patch(`/admin/menu/${selectedEditItem.id}`, {
+        name: selectedEditItem.name,
+        price: selectedEditItem.price,
+        description: selectedEditItem.description,
+      });
+      setMenuItems(menuItems.map(m => m.id === selectedEditItem.id ? selectedEditItem : m));
+      setSelectedEditItem(null);
+    } catch (err) {
+      toast(err.response?.data?.message || 'Failed to update menu item');
+    }
   };
 
   const getOutletName = (id) => outlets.find(o => o.id === id)?.name || 'Unknown Outlet';
 
   const filteredMenu = menuItems.filter(m => {
-    const matchesSearch = m.name.toLowerCase().includes(search.toLowerCase()) || 
-                          m.category.toLowerCase().includes(search.toLowerCase());
+    const matchesSearch = (m.name || "").toLowerCase().includes(search.toLowerCase()) || 
+                          (m.category || "").toLowerCase().includes(search.toLowerCase());
     
     if (!matchesSearch) return false;
     

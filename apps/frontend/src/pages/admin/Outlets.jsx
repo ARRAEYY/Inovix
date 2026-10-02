@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import AdminLayout from '../../components/layout/AdminLayout';
 import api from '../../services/api/client';
+import { toast } from 'react-hot-toast';
 
 const Outlets = () => {
   const [outlets, setOutlets] = useState([]);
@@ -45,7 +46,7 @@ const Outlets = () => {
       setShowAddModal(false);
       setNewOutlet({ name: '', description: '', location: '', contactEmail: '', contactNumber: '', status: 'OPEN' });
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to add outlet');
+      toast(err.response?.data?.message || 'Failed to add outlet');
     }
   };
 
@@ -56,20 +57,28 @@ const Outlets = () => {
         // Update local state
         setOutlets(outlets.map(o => o.id === outletId ? { ...o, status: 'CLOSED' } : o));
       } catch (err) {
-        alert('Failed to suspend outlet');
+        toast('Failed to suspend outlet');
       }
     }
   };
 
-  const handleEditSubmit = (e) => {
+  const handleEditSubmit = async (e) => {
     e.preventDefault();
-    // Simulate updating local state without a real endpoint
-    setOutlets(outlets.map(o => o.id === selectedEditOutlet.id ? selectedEditOutlet : o));
-    setSelectedEditOutlet(null);
+    try {
+      await api.patch(`/admin/outlets/${selectedEditOutlet.id}`, {
+        name: selectedEditOutlet.name,
+        description: selectedEditOutlet.description,
+        location: selectedEditOutlet.location,
+      });
+      setOutlets(outlets.map(o => o.id === selectedEditOutlet.id ? { ...o, ...selectedEditOutlet } : o));
+      setSelectedEditOutlet(null);
+    } catch (err) {
+      toast(err.response?.data?.message || 'Failed to update outlet');
+    }
   };
 
   const filteredOutlets = outlets.filter(o => {
-    const matchesSearch = o.name.toLowerCase().includes(search.toLowerCase());
+    const matchesSearch = (o.name || "").toLowerCase().includes(search.toLowerCase());
     if (filter === 'All') return matchesSearch;
     if (filter === 'Active') return matchesSearch && (o.status === 'OPEN' || o.status === 'BUSY');
     if (filter === 'Inactive') return matchesSearch && o.status === 'CLOSED';
@@ -184,6 +193,16 @@ const Outlets = () => {
                         {outlet.status !== 'CLOSED' && (
                           <button onClick={() => handleSuspend(outlet.id)} style={{ background: 'none', border: 'none', color: '#b10035', fontWeight: '500', cursor: 'pointer', fontSize: '0.85rem' }}>Suspend</button>
                         )}
+                        <button onClick={async () => {
+                          if (!window.confirm(`Delete "${outlet.name}"? This permanently removes the outlet, its menu, staff, and orders.`)) return;
+                          try {
+                            await api.delete(`/admin/outlets/${outlet.id}`);
+                            setOutlets(outlets.filter(o => o.id !== outlet.id));
+                            toast('Outlet deleted');
+                          } catch (err) {
+                            toast(err.response?.data?.message || 'Failed to delete outlet');
+                          }
+                        }} style={{ background: 'none', border: 'none', color: '#dc2626', fontWeight: '500', cursor: 'pointer', fontSize: '0.85rem' }}>Delete</button>
                       </div>
                     </td>
                   </tr>

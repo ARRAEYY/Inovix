@@ -143,9 +143,40 @@ const issueManualRefund = wrap(async (req, res) => {
   res.status(200).json({ success: true, data: result.refund });
 });
 
+// ─── General Edit (update name/email/role, outlet details, menu item) ────
+const updateUser = wrap(async (req, res) => {
+  const { user, before } = await adminService.updateUser(req.params.userId, req.body, req.user.id);
+  await audit({ actorId: req.user.id, action: 'USER_UPDATED', targetType: 'User', targetId: user.id, before, after: { name: user.name, email: user.email, role: user.role }, req });
+  res.status(200).json({ success: true, data: user });
+});
+
+const updateOutlet = wrap(async (req, res) => {
+  const { outlet, before } = await adminService.updateOutlet(req.params.outletId, req.body);
+  await audit({ actorId: req.user.id, action: 'OUTLET_UPDATED', targetType: 'Outlet', targetId: outlet.id, before, after: { name: outlet.name, description: outlet.description, location: outlet.location }, req });
+  res.status(200).json({ success: true, data: outlet });
+});
+
+const updateMenuItem = wrap(async (req, res) => {
+  const { item, before } = await adminService.updateMenuItem(req.params.itemId, req.body);
+  await audit({ actorId: req.user.id, action: 'MENU_ITEM_UPDATED', targetType: 'MenuItem', targetId: item.id, before, after: { name: item.name, price: item.price, description: item.description }, req });
+  res.status(200).json({ success: true, data: item });
+});
+
+
+const deleteOutlet = wrap(async (req, res) => {
+  const result = await adminService.deleteOutlet(req.params.outletId);
+  await audit({ actorId: req.user.id, action: 'OUTLET_DELETED', targetType: 'Outlet', targetId: req.params.outletId, after: { name: result.name }, req });
+  res.status(200).json({ success: true, data: result });
+});
+
+
 module.exports = {
   getOverview, getUsers, getUser, updateUserStatus,
   getOutlets, getOutlet, createOutlet, getAllStaff, updateOutletStatus,
   getOrders, getOrder, getMenu, getMenuItem, updateMenuItemStatus,
   issueManualRefund,
+  updateUser,
+  updateOutlet,
+  updateMenuItem,
+  deleteOutlet,
 };

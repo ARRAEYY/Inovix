@@ -15,6 +15,9 @@ const paymentsRoutes = require('./modules/payments/payments.routes');
 const notificationsRoutes = require('./modules/notifications/notifications.routes');
 const auditRoutes = require('./modules/audit/audit.routes');
 const uploadsRoutes = require('./modules/uploads/uploads.routes');
+const favoritesRoutes = require('./modules/favorites.routes');
+const reviewsRoutes = require('./modules/reviews.routes');
+const disputesRoutes = require('./modules/disputes.routes');
 
 const { errorHandler } = require('./middleware/error.middleware');
 const { authRateLimit, apiRateLimit } = require('./middleware/rateLimit.middleware');
@@ -63,7 +66,7 @@ app.use((req, _res, next) => {
 });
 const corsOrigins = isProduction
   ? FRONTEND_URL.split(',').map((s) => s.trim()).filter(Boolean)
-  : Array.from(new Set([...FRONTEND_URL.split(',').map((s) => s.trim()).filter(Boolean), 'http://localhost:5173', 'http://localhost:3001']));
+  : Array.from(new Set([...FRONTEND_URL.split(',').map((s) => s.trim()).filter(Boolean), 'http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:3001']));
 app.use(cors({
   origin: (origin, callback) => {
     // Allow requests with no origin (like mobile apps, curl, server-to-server)
@@ -123,6 +126,9 @@ app.use('/api/v1/admin', adminRoutes);
 app.use('/api/v1/notifications', notificationsRoutes);
 app.use('/api/v1/audit', auditRoutes);
 app.use('/api/v1/uploads', uploadsRoutes);
+app.use('/api/v1/favorites', favoritesRoutes);
+app.use('/api/v1/reviews', reviewsRoutes);
+app.use('/api/v1/disputes', disputesRoutes);
 
 // ── 404 Handler ───────────────────────────────────────────────────────────────
 app.use((req, res) => {

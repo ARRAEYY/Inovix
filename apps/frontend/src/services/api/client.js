@@ -70,6 +70,10 @@ client.interceptors.response.use((response) => {
         // identity so protected routes redirect to login on next render.
         localStorage.removeItem('accessToken');
         localStorage.removeItem('user');
+        // Notify the AuthContext so it clears React state + triggers a
+        // redirect to login. Without this, the user stays on a protected
+        // page seeing error toasts on every API call.
+        window.dispatchEvent(new Event('nosh:session-expired'));
         console.error('Authentication Error: session expired, please log in again');
         return Promise.reject(refreshError);
       }
@@ -79,7 +83,20 @@ client.interceptors.response.use((response) => {
   if (status === 401) {
     console.error('Authentication Error: 401 Unauthorized');
   }
-  return Promise.reject(error);
+  // Normalize error messages so toast() calls show user-friendly text
+  // instead of raw axios error objects.
+  const normalizedError = new Error(
+    error.response?.data?.message ||
+    error.response?.data?.errors?.[0]?.message ||
+    (status === 0 ? 'Network error — check your connection' :
+     status === 403 ? 'You don\'t have permission to do this' :
+     status === 404 ? 'Not found' :
+     status >= 500 ? 'Server error — please try again' :
+     'Request failed')
+  );
+  normalizedError.response = error.response;
+  normalizedError.status = status;
+  return Promise.reject(normalizedError);
 });
 
 export default client;

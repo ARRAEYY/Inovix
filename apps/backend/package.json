@@ -18,7 +18,12 @@
     "schema": "prisma/schema.prisma",
     "seed": "node prisma/seed.js"
   },
-  "keywords": ["express", "prisma", "node", "campus-food"],
+  "keywords": [
+    "express",
+    "prisma",
+    "node",
+    "campus-food"
+  ],
   "license": "ISC",
   "dependencies": {
     "@nosh/validation": "*",
@@ -31,6 +36,7 @@
     "express-rate-limit": "^8.7.0",
     "google-auth-library": "^10.9.1",
     "helmet": "^8.3.0",
+    "ioredis": "^6.0.0",
     "jsonwebtoken": "^9.0.3",
     "razorpay": "^2.9.4",
     "socket.io": "^4.8.1",

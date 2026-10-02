@@ -216,11 +216,35 @@ const OutletMenu = () => {
         throw new Error(orderRes.message || 'Could not create the order');
       }
 
-      // Step 2: create a Razorpay gateway order
-      const razorpayRes = await paymentService.createRazorpayOrder(order.id);
-      const rp = razorpayRes.data || {};
-      if (!rp.razorpayOrderId || !rp.keyId) {
-        throw new Error('Could not initialize Razorpay payment');
+      // Step 2: create a Razorpay gateway order. When the outlet has no
+      // Razorpay credentials configured (local dev) AND the app runs in dev
+      // mode, fall back to the backend's dev-only mock confirm so the
+      // prepaid flow still completes end to end. In production the route
+      // doesn't exist and the error propagates.
+      let rp;
+      try {
+        const razorpayRes = await paymentService.createRazorpayOrder(order.id);
+        rp = razorpayRes.data || {};
+        if (!rp.razorpayOrderId || !rp.keyId) {
+          throw new Error('Could not initialize Razorpay payment');
+        }
+      } catch (gatewayError) {
+        const notConfigured =
+          gatewayError?.response?.data?.code === 'PAYMENT_NOT_CONFIGURED' ||
+          gatewayError?.code === 'PAYMENT_NOT_CONFIGURED';
+        if (!(import.meta.env.DEV && notConfigured)) {
+          throw gatewayError;
+        }
+        const confirmRes = await paymentService.devConfirm(order.id);
+        if (!confirmRes.success) {
+          throw new Error(confirmRes.message || 'Dev payment confirmation failed');
+        }
+        setCart({});
+        try { localStorage.removeItem(CART_STORAGE_KEY); } catch {}
+        setIsCartOpen(false);
+        toast(`Order ${order.orderNumber || ''} placed! Payment auto-confirmed (dev mode — no Razorpay configured).`);
+        navigate('/student/orders');
+        return;
       }
 
       // Step 3: open the Razorpay checkout modal

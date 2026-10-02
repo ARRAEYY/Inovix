@@ -70,9 +70,6 @@ const OutletAdminOrders = () => {
 
   const handleVerifyPickup = async (orderId, code) => {
     try {
-      const res = await orderService.updateOrderStatus;
-      // Use the outlet API directly for verify-pickup
-      client
       await client.post(`/outlet/orders/${orderId}/verify-pickup`, { pickupCode: code });
       toast('✓ Pickup verified! Order completed.');
       updateOrderInState(orderId, { backendStatus: 'COMPLETED', status: 'COMPLETED' });

@@ -933,11 +933,88 @@ async function processRefundAfterCommit(refundId, actorId) {
   return updated;
 }
 
+/**
+ * Dev-only payment confirm — the mock counterpart of verifyRazorpayPayment.
+ *
+ * Mounted at POST /payments/dev-confirm ONLY when NODE_ENV=development AND
+ * ENABLE_DEV_LOGIN=true (same explicit opt-in gate as /auth/dev-login; the
+ * controller re-checks both at request time as belt-and-suspenders).
+ *
+ * Why: every order is prepaid and the transition guard requires
+ * Payment.status === PAID, so without live Razorpay credentials no order can
+ * ever leave PENDING — the app is untestable end-to-end in local dev. This
+ * path marks the PENDING payment PAID exactly like a verified gateway
+ * payment would (same socket emit, same audit trail with a distinct action
+ * name), minus the gateway calls. In production the route simply doesn't
+ * exist.
+ */
+async function devConfirmPayment(orderId, actorId) {
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    include: { payment: true, outlet: true },
+  });
+  if (!order) throw { statusCode: 404, message: 'Order not found' };
+  if (order.studentId !== actorId) {
+    throw { statusCode: 403, message: 'Not your order' };
+  }
+  if (!order.payment) {
+    throw { statusCode: 409, code: 'INVALID_PAYMENT_STATE', message: 'Order has no payment row' };
+  }
+  // Idempotent like the verify path — returning the already-PAID payment
+  // lets a retried click double-fire without corrupting state.
+  if (order.payment.status === PAYMENT_STATUS.PAID) {
+    return { ...order.payment, idempotent: true };
+  }
+  if (order.payment.status !== PAYMENT_STATUS.PENDING) {
+    throw {
+      statusCode: 409,
+      code: 'INVALID_PAYMENT_STATE',
+      message: `Payment is in state ${order.payment.status}; cannot mark as PAID`,
+    };
+  }
+
+  // razorpayPaymentId is the gateway-facing reference used by refunds and
+  // reconciliation; a `dev_pay_` prefix makes mock payments easy to spot.
+  // razorpayOrderId stays NULL (it has a unique constraint and the mock
+  // payment never existed at the gateway).
+  const devPaymentId = `dev_pay_${order.orderNumber}`;
+  const claimed = await prisma.payment.updateMany({
+    where: { id: order.payment.id, status: PAYMENT_STATUS.PENDING },
+    data: {
+      status: PAYMENT_STATUS.PAID,
+      razorpayPaymentId: devPaymentId,
+      method: order.paymentMethod || 'ONLINE',
+    },
+  });
+  if (claimed.count !== 1) {
+    throw { statusCode: 409, code: 'PAYMENT_STATE_RACE', message: 'Payment state changed while confirming' };
+  }
+
+  const updated = await prisma.payment.findUnique({
+    where: { id: order.payment.id },
+    include: { order: true },
+  });
+
+  await audit({
+    actorId,
+    action: 'DEV_PAYMENT_CONFIRMED',
+    targetType: 'Payment',
+    targetId: order.payment.id,
+    after: { status: PAYMENT_STATUS.PAID, amount: order.totalAmount },
+  });
+
+  const { emitOrderEvent } = require('../../lib/socket');
+  emitOrderEvent('order:new', `outlet:${order.outletId}`, { order: updated.order });
+
+  return updated;
+}
+
 module.exports = {
   getOutletRazorpayClient,
   setOutletRazorpayCredentials,
   createRazorpayOrder,
   verifyRazorpayPayment,
+  devConfirmPayment,
   handleRazorpayWebhook,
   // INO-AUDIT5-D27: processAutoRefundOnTransition is DELETED (was dead
   // code — superseded by transition.service.js + processRefundAfterCommit).

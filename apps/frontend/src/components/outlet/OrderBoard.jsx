@@ -1,7 +1,7 @@
 import React from 'react';
 import OutletOrderCard from './OutletOrderCard';
 
-const OrderColumn = ({ title, orders, emptyText, onAccept, onDecline, onMarkReady, onComplete }) => {
+const OrderColumn = ({ title, orders, emptyText, onAccept, onDecline, onMarkReady, onComplete, onVerifyPickup }) => {
   return (
     <div className="order-column">
       <div className="column-header">
@@ -11,13 +11,14 @@ const OrderColumn = ({ title, orders, emptyText, onAccept, onDecline, onMarkRead
       <div className="column-content">
         {orders.length > 0 ? (
           orders.map(order => (
-            <OutletOrderCard 
-              key={order.id} 
-              order={order} 
+            <OutletOrderCard
+              key={order.id}
+              order={order}
               onAccept={onAccept}
               onDecline={onDecline}
               onMarkReady={onMarkReady}
               onComplete={onComplete}
+              onVerifyPickup={onVerifyPickup}
             />
           ))
         ) : (
@@ -30,7 +31,7 @@ const OrderColumn = ({ title, orders, emptyText, onAccept, onDecline, onMarkRead
   );
 };
 
-const OrderBoard = ({ orders, activeStatus, onAccept, onDecline, onMarkReady, onComplete }) => {
+const OrderBoard = ({ orders, activeStatus, onAccept, onDecline, onMarkReady, onComplete, onVerifyPickup }) => {
   const newOrders = orders.filter(o => o.status === 'NEW' || o.status === 'PLACED');
   const preparingOrders = orders.filter(o => o.status === 'PREPARING');
   const readyOrders = orders.filter(o => o.status === 'READY');
@@ -40,38 +41,41 @@ const OrderBoard = ({ orders, activeStatus, onAccept, onDecline, onMarkReady, on
   return (
     <div className={`order-board kanban-board ${activeTabClass}`}>
       <div className="kanban-col-wrapper col-new">
-        <OrderColumn 
-          title="NEW ORDERS" 
-          orders={newOrders} 
-          emptyText="No new orders" 
+        <OrderColumn
+          title="NEW ORDERS"
+          orders={newOrders}
+          emptyText="No new orders"
           onAccept={onAccept}
           onDecline={onDecline}
           onMarkReady={onMarkReady}
           onComplete={onComplete}
+          onVerifyPickup={onVerifyPickup}
         />
       </div>
-      
+
       <div className="kanban-col-wrapper col-preparing">
-        <OrderColumn 
-          title="PREPARING" 
-          orders={preparingOrders} 
-          emptyText="No orders in prep" 
+        <OrderColumn
+          title="PREPARING"
+          orders={preparingOrders}
+          emptyText="No orders in prep"
           onAccept={onAccept}
           onDecline={onDecline}
           onMarkReady={onMarkReady}
           onComplete={onComplete}
+          onVerifyPickup={onVerifyPickup}
         />
       </div>
-      
+
       <div className="kanban-col-wrapper col-ready">
-        <OrderColumn 
-          title="READY FOR PICKUP" 
-          orders={readyOrders} 
-          emptyText="No orders ready" 
+        <OrderColumn
+          title="READY FOR PICKUP"
+          orders={readyOrders}
+          emptyText="No orders ready"
           onAccept={onAccept}
           onDecline={onDecline}
           onMarkReady={onMarkReady}
           onComplete={onComplete}
+          onVerifyPickup={onVerifyPickup}
         />
       </div>
     </div>

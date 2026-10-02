@@ -6,6 +6,7 @@ const {
   razorpayOrderCreateSchema,
   razorpayPaymentVerifySchema,
   razorpayCredentialsSchema,
+  devPaymentConfirmSchema,
 } = require('@nosh/validation');
 const paymentsController = require('./payments.controller');
 const paymentsService = require('./payments.service');
@@ -29,6 +30,22 @@ router.use((req, res, next) => {
 // Authenticated routes
 router.post('/razorpay/order', protect, validateBody(razorpayOrderCreateSchema), paymentsController.createRazorpayOrder);
 router.post('/razorpay/verify', protect, validateBody(razorpayPaymentVerifySchema), paymentsController.verifyPayment);
+
+// ─── Dev-only mock payment confirm ──────────────────────────────────────
+// Mounted ONLY when NODE_ENV=development AND ENABLE_DEV_LOGIN=true — the
+// same explicit opt-in gate as /auth/dev-login. Lets local dev run the full
+// prepaid order lifecycle (order → payment PAID → outlet transitions) with
+// no Razorpay credentials configured. In production the route doesn't exist.
+const DEV_PAYMENT_ENABLED =
+  process.env.NODE_ENV === 'development' && process.env.ENABLE_DEV_LOGIN === 'true';
+if (DEV_PAYMENT_ENABLED) {
+  router.post(
+    '/dev-confirm',
+    protect,
+    validateBody(devPaymentConfirmSchema),
+    paymentsController.devConfirmPayment
+  );
+}
 
 // Razorpay webhook — public (verified via signature, NOT JWT)
 // MUST use express.raw because the signature is computed over the raw body.

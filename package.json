@@ -15,7 +15,7 @@
     "test": "npm run test --workspace=backend",
     "db:migrate": "prisma migrate dev --schema=apps/backend/prisma/schema.prisma",
     "db:reset": "prisma migrate reset --schema=apps/backend/prisma/schema.prisma --force --skip-seed",
-    "db:seed": "cross-env-shell DATABASE_URL=\"file:./dev.db\" node apps/backend/prisma/seed.js",
+    "db:seed": "node apps/backend/prisma/seed.js",
     "db:studio": "prisma studio --schema=apps/backend/prisma/schema.prisma",
     "db:generate": "prisma generate --schema=apps/backend/prisma/schema.prisma"
   },

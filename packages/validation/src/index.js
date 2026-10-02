@@ -250,6 +250,14 @@ const razorpayPaymentVerifySchema = z.object({
   razorpaySignature: z.string().min(1),
 }).strict();
 
+// Dev-only mock payment confirm (POST /payments/dev-confirm). The route is
+// mounted ONLY when NODE_ENV=development AND ENABLE_DEV_LOGIN=true — same
+// explicit opt-in gate as /auth/dev-login. It exists so the full prepaid
+// order lifecycle can run locally without live Razorpay credentials.
+const devPaymentConfirmSchema = z.object({
+  orderId: z.string().min(1, { message: 'orderId is required' }),
+}).strict();
+
 const refundCreateSchema = z.object({
   orderId: z.string().min(1),
   amount: priceField,
@@ -360,6 +368,7 @@ module.exports = {
   cartItemUpdateSchema,
   razorpayOrderCreateSchema,
   razorpayPaymentVerifySchema,
+  devPaymentConfirmSchema,
   refundCreateSchema,
   outletStaffInviteSchema,
   updateUserSchema,

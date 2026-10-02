@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
-    "test": "JWT_SECRET=test JWT_ACCESS_EXPIRES_IN=1h node --test tests/**/*.test.js",
+    "test": "JWT_SECRET=test JWT_ACCESS_EXPIRES_IN=1h node --env-file=../../.env --test tests/",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:reset": "prisma migrate reset --force --skip-seed",

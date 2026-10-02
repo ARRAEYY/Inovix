@@ -17,6 +17,16 @@ const menuRepo = require('../menu/menu.repository');
 const { validateAndComputeOptionsDelta, normalizeSelectedOptions } = require('../menu/customization');
 const { toPaise, fromPaise } = require('../../lib/money'); // INO-AUDIT4-D14: centralized
 const { ORDER_STATUS, ALLOWED_TRANSITIONS, ERROR_CODES } = require('../../lib/constants');
+const { cached, cacheDelPrefix } = require('../../lib/cache');
+
+// Order lists are cached briefly per viewer; every mutation (create,
+// cancel, outlet status transition) invalidates the affected user's and
+// outlet's keys, so the cache only shortens the read path.
+const ORDERS_CACHE_TTL = 20;
+const userOrdersKey = (studentId, { page, pageSize, status }) =>
+  `orders:u:${studentId}:p${page || 1}:s${pageSize || 20}:st${status || 'all'}`;
+const outletOrdersKey = (outletId, { page, pageSize, status }) =>
+  `orders:o:${outletId}:p${page || 1}:s${pageSize || 20}:st${status || 'all'}`;
 
 // INO-AUDIT3-4 fix: use integer paise internally for money arithmetic.
 // PLATFORM_FEE is in rupees; the paise equivalent is 500.
@@ -145,11 +155,18 @@ async function createOrder(studentId, payload) {
     items: processedItems,
   };
 
-  return ordersRepo.createOrder(newOrder);
+  const created = await ordersRepo.createOrder(newOrder);
+  await Promise.all([
+    cacheDelPrefix(`orders:u:${studentId}:`),
+    cacheDelPrefix(`orders:o:${outletId}:`),
+  ]);
+  return created;
 }
 
 async function getUserOrders(studentId, { page, pageSize, status } = {}) {
-  return ordersRepo.findByUserId(studentId, { page, pageSize, status });
+  return cached(userOrdersKey(studentId, { page, pageSize, status }), ORDERS_CACHE_TTL, () =>
+    ordersRepo.findByUserId(studentId, { page, pageSize, status })
+  );
 }
 
 async function getOrderById(studentId, orderId) {
@@ -163,7 +180,9 @@ async function getOrderById(studentId, orderId) {
 }
 
 async function getOutletOrders(outletId, { page, pageSize, status } = {}) {
-  return ordersRepo.findByOutletId(outletId, { page, pageSize, status });
+  return cached(outletOrdersKey(outletId, { page, pageSize, status }), ORDERS_CACHE_TTL, () =>
+    ordersRepo.findByOutletId(outletId, { page, pageSize, status })
+  );
 }
 
 // INO-P1-32 fix: expose the existing ordersRepo.countByStatus via a
@@ -219,6 +238,10 @@ async function cancelOrder(studentId, orderId) {
     throw error;
   }
 
+  await Promise.all([
+    cacheDelPrefix(`orders:u:${studentId}:`),
+    cacheDelPrefix(`orders:o:${order.outletId}:`),
+  ]);
   return { updated, before };
 }
 

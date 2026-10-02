@@ -6,9 +6,14 @@ import { useAuth } from '../../hooks/useAuth';
 import { toast } from 'react-hot-toast';
 import client from '../../services/api/client';
 import { catalogService } from '../../services/api/catalogService';
+import { cacheGet, cacheSet } from '../../services/cache/localCache';
 import SkeletonGrid from '../../components/common/Skeleton';
 
 const FILTERS = ['All', 'Open now'];
+
+// How long the cached outlets list may be rendered before falling back to
+// the loading skeleton. The network refresh always runs regardless.
+const OUTLETS_MAX_AGE_MS = 5 * 60 * 1000;
 
 // Map a catalog outlet (Prisma Outlet model) onto the fields OutletCard
 // renders. Only OPEN/BUSY outlets are returned by the backend.
@@ -38,10 +43,20 @@ const Home = () => {
       setFavorites(new Set((res.data?.data || []).map(f => f.outletId)));
     }).catch(() => {});
     const fetchOutlets = async () => {
-      try {
+      // Stale-while-revalidate: render the cached list instantly (no
+      // skeleton on repeat visits), refresh underneath, cache the result.
+      const cached = cacheGet('outlets', OUTLETS_MAX_AGE_MS);
+      if (cached) {
+        setOutlets(cached.map(mapOutlet));
+        setLoading(false);
+      } else {
         setLoading(true);
+      }
+      try {
         const res = await catalogService.getOutlets();
-        setOutlets((res.data || []).map(mapOutlet));
+        const raw = res.data || [];
+        cacheSet('outlets', raw);
+        setOutlets(raw.map(mapOutlet));
         setError(null);
       } catch (err) {
         setError(err.message || 'Failed to load outlets');

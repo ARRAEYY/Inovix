@@ -34,6 +34,7 @@
  */
 
 const prisma = require('../../lib/prisma');
+const { cacheDelPrefix } = require('../../lib/cache');
 const {
   ORDER_STATUS,
   ALLOWED_TRANSITIONS,
@@ -113,7 +114,7 @@ async function performTransition({
   const notificationType = STATUS_TO_NOTIFICATION[toStatus] || null;
 
   // ─── Atomic DB write ──────────────────────────────────────────────────
-  return prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     // Read inside the tx so we see the latest committed state.
     const order = await tx.order.findUnique({
       where: { id: orderId },
@@ -253,6 +254,16 @@ async function performTransition({
       notification,
     };
   });
+
+  // Post-commit cache invalidation: the student's and outlet's order lists,
+  // plus the student's notification list (the notification above is created
+  // inline in the tx, bypassing notifications.service.createForOrder).
+  await Promise.all([
+    cacheDelPrefix(`orders:u:${result.updated.studentId}:`),
+    cacheDelPrefix(`orders:o:${result.updated.outletId}:`),
+    cacheDelPrefix(`notif:u:${result.updated.studentId}:`),
+  ]);
+  return result;
 }
 
 module.exports = {

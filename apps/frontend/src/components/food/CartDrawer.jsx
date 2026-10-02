@@ -69,15 +69,15 @@ const CartDrawer = ({ isOpen, onClose, cart, menuItems, outletName, onUpdateQuan
               onChange={(e) => setNotes(e.target.value)}
               style={{ width: '100%', padding: '0.5rem', border: '1px solid #e5e7eb', borderRadius: '8px', fontSize: '0.85rem', marginBottom: '0.5rem' }} />
             {/* Scheduling (optional pickup time — within 6 hours) */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
               <label style={{ fontSize: '0.8rem', color: '#6b7280', whiteSpace: 'nowrap' }}>Pickup time:</label>
               <input type="datetime-local" value={scheduledTime}
                 onChange={(e) => setScheduledTime(e.target.value)}
                 min={minStr} max={maxStr}
-                style={{ padding: '0.4rem', border: '1px solid #e5e7eb', borderRadius: '6px', fontSize: '0.8rem', flex: 1 }} />
-              <span style={{ fontSize: '0.7rem', color: '#9ca3af' }}>(optional, within 6h)</span>
+                style={{ padding: '0.4rem', border: '1px solid #e5e7eb', borderRadius: '6px', fontSize: '0.8rem', flex: 1, minWidth: 0 }} />
+              <span style={{ fontSize: '0.7rem', color: '#9ca3af', whiteSpace: 'nowrap' }}>(optional, within 6h)</span>
             </div>
-            <div className="cart-summary">
+            <div className="cart-drawer-summary">
               <div className="summary-row"><span>Subtotal</span><span>₹{subtotal}</span></div>
               <div className="summary-row"><span>Platform fee</span><span>₹{platformFee}</span></div>
               <div className="summary-row total"><span>Total</span><span>₹{total}</span></div>

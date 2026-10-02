@@ -1,22 +1,15 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import Header from '../../components/layout/Header';
 import MobileBottomNav from '../../components/layout/MobileBottomNav';
 import { useAuth } from '../../hooks/useAuth';
 import { authService } from '../../services/auth/authService';
-import { notificationService } from '../../services/api/notificationService';
+import client from '../../services/api/client';
 
 // Views opened from the profile menu. null = the menu itself.
-const VIEWS = ['account', 'notifications', 'settings', 'help'];
-
-const formatTime = (iso) => {
-  const d = new Date(iso);
-  const now = new Date();
-  const sameDay = d.toDateString() === now.toDateString();
-  const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-  if (sameDay) return time;
-  return `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })}, ${time}`;
-};
+// Notifications live in the Header bell dropdown (NotificationsDropdown),
+// not on this page.
+const VIEWS = ['account', 'settings', 'help'];
 
 const Profile = () => {
   const navigate = useNavigate();
@@ -32,35 +25,14 @@ const Profile = () => {
   const [savingName, setSavingName] = useState(false);
   const [nameMessage, setNameMessage] = useState(null);
 
-  // ─── Notifications ──────────────────────────────────────────────────────
-  const [notifications, setNotifications] = useState([]);
-  const [unreadCount, setUnreadCount] = useState(0);
-  const [notifLoading, setNotifLoading] = useState(false);
-  const [notifError, setNotifError] = useState(null);
-  const [markingAll, setMarkingAll] = useState(false);
+  // ─── Help (disputes) ─────────────────────────────────────────────────────
   const [disputes, setDisputes] = useState([]);
 
-  const fetchUnreadCount = useCallback(async () => {
-    try {
-      const res = await notificationService.list({ unread: true, pageSize: 1 });
-      setUnreadCount(res.data?.unreadCount ?? res.data?.total ?? 0);
-    } catch {
-      // badge is decorative — ignore fetch failures here
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchUnreadCount();
-  }, [fetchUnreadCount]);
-
-  // Auto-open the view from the URL query param (?view=notifications, etc.)
-  // This lets the notification bell navigate to /student/profile?view=notifications
-  // and the Profile page auto-opens the notifications panel.
+  // Auto-open the view from the URL query param (?view=account, etc.)
   useEffect(() => {
     const view = searchParams.get('view');
     if (view && VIEWS.includes(view)) {
       setActiveView(view);
-      if (view === 'notifications') fetchNotifications();
     if (view === 'help') fetchDisputes();
       if (view === 'account') fetchProfile();
     }
@@ -76,7 +48,6 @@ const Profile = () => {
   const openView = (view) => {
     setActiveView(view);
     if (view === 'account') fetchProfile();
-    if (view === 'notifications') fetchNotifications();
     if (view === 'help') fetchDisputes();
   };
 
@@ -91,20 +62,6 @@ const Profile = () => {
       console.error('Failed to load profile', err);
     } finally {
       setProfileLoading(false);
-    }
-  };
-
-  const fetchNotifications = async () => {
-    try {
-      setNotifLoading(true);
-      setNotifError(null);
-      const res = await notificationService.list({ pageSize: 30 });
-      setNotifications(res.data?.items || []);
-      setUnreadCount(res.data?.unreadCount ?? 0);
-    } catch (err) {
-      setNotifError(err.message || 'Failed to load notifications');
-    } finally {
-      setNotifLoading(false);
     }
   };
 
@@ -125,30 +82,6 @@ const Profile = () => {
       setNameMessage({ ok: false, text: err.message || 'Could not update name' });
     } finally {
       setSavingName(false);
-    }
-  };
-
-  const handleMarkAllRead = async () => {
-    try {
-      setMarkingAll(true);
-      await notificationService.markAllRead();
-      setNotifications((list) => list.map((n) => ({ ...n, isRead: true })));
-      setUnreadCount(0);
-    } catch (err) {
-      alert(err.message || 'Could not mark notifications as read');
-    } finally {
-      setMarkingAll(false);
-    }
-  };
-
-  const handleMarkOneRead = async (n) => {
-    if (n.isRead) return;
-    try {
-      await notificationService.markRead(n.id);
-      setNotifications((list) => list.map((x) => (x.id === n.id ? { ...x, isRead: true } : x)));
-      setUnreadCount((c) => Math.max(0, c - 1));
-    } catch (err) {
-      console.error('Failed to mark read', err);
     }
   };
 
@@ -231,50 +164,69 @@ const Profile = () => {
           {/* ─── ACCOUNT ─── */}
           {activeView === 'account' && (
             <div style={{ padding: '1.25rem' }}>
-              <h3 style={panelTitle}>Account</h3>
-              <p style={panelIntro}>Your college account details, fetched live from your sign-in.</p>
               {profileLoading ? (
                 <p style={{ color: 'var(--text-gray)' }}>Loading account…</p>
               ) : (
                 <>
-                  <div style={{ border: '1px solid var(--border-color)', borderRadius: '12px', overflow: 'hidden', marginBottom: '1.25rem' }}>
-                    <div style={panelRow}>
-                      <span style={panelLabel}>Full name</span>
-                      <span style={panelValue}>{profile?.studentProfile?.fullName || profile?.name || user?.name || '—'}</span>
+                  {/* Identity header — avatar, name, email, status pill */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.9rem', marginBottom: '1.25rem' }}>
+                    <div style={{
+                      width: 54, height: 54, borderRadius: '50%', flexShrink: 0,
+                      background: 'var(--primary)', color: 'var(--white)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontWeight: 700, fontSize: '1.15rem',
+                    }}>
+                      {getInitials(profile?.name || user?.name)}
                     </div>
-                    <div style={panelRow}>
-                      <span style={panelLabel}>College email</span>
-                      <span style={panelValue}>{profile?.email || user?.email || '—'}</span>
-                    </div>
-                    {profile?.studentProfile && (
-                      <>
-                        <div style={panelRow}>
-                          <span style={panelLabel}>College ID</span>
-                          <span style={panelValue}>{profile.studentProfile.collegeId || '—'}</span>
-                        </div>
-                        <div style={panelRow}>
-                          <span style={panelLabel}>Course</span>
-                          <span style={panelValue}>{profile.studentProfile.course || '—'}</span>
-                        </div>
-                        <div style={panelRow}>
-                          <span style={panelLabel}>Year</span>
-                          <span style={panelValue}>{profile.studentProfile.year || '—'}</span>
-                        </div>
-                        <div style={panelRow}>
-                          <span style={panelLabel}>Phone</span>
-                          <span style={panelValue}>{profile.studentProfile.phone || '—'}</span>
-                        </div>
-                      </>
-                    )}
-                    <div style={{ ...panelRow, borderBottom: 'none' }}>
-                      <span style={panelLabel}>Account status</span>
-                      <span style={{ ...panelValue, color: profile?.status === 'ACTIVE' ? '#10b981' : '#b10035', fontWeight: 700 }}>
-                        {profile?.status || 'ACTIVE'}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-dark)', lineHeight: 1.3 }}>
+                        {profile?.studentProfile?.fullName || profile?.name || user?.name || '—'}
+                      </div>
+                      <div style={{ fontSize: '0.85rem', color: 'var(--text-gray)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {profile?.email || user?.email || '—'}
+                      </div>
+                      <span style={{
+                        display: 'inline-flex', alignItems: 'center', gap: '0.35rem',
+                        marginTop: '0.35rem', padding: '0.15rem 0.6rem',
+                        borderRadius: 999, fontSize: '0.72rem', fontWeight: 700,
+                        color: profile?.status === 'ACTIVE' ? '#065f46' : '#b10035',
+                        background: profile?.status === 'ACTIVE' ? '#d1fae5' : '#fde8ec',
+                      }}>
+                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: profile?.status === 'ACTIVE' ? '#10b981' : '#b10035' }} />
+                        {profile?.status === 'ACTIVE' ? 'Active account' : (profile?.status || 'Unknown')}
                       </span>
                     </div>
                   </div>
 
-                  <label style={{ ...panelLabel, display: 'block', marginBottom: '0.4rem' }}>Display name</label>
+                  {/* College details — 2-column field grid */}
+                  {profile?.studentProfile ? (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem', marginBottom: '1.25rem' }}>
+                      {[
+                        { label: 'College ID', value: profile.studentProfile.collegeId },
+                        { label: 'Course', value: profile.studentProfile.course },
+                        { label: 'Year', value: profile.studentProfile.year },
+                        { label: 'Phone', value: profile.studentProfile.phone },
+                      ].map((f) => (
+                        <div key={f.label} style={{ border: '1px solid var(--border-color)', borderRadius: 10, padding: '0.65rem 0.8rem', minWidth: 0 }}>
+                          <div style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-gray)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '0.2rem' }}>{f.label}</div>
+                          <div style={{ fontSize: '0.92rem', fontWeight: 600, color: 'var(--text-dark)', wordBreak: 'break-word' }}>{f.value || '—'}</div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={{ border: '1px dashed var(--border-color)', borderRadius: 10, padding: '0.9rem 1rem', marginBottom: '1.25rem', fontSize: '0.88rem', color: 'var(--text-gray)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' }}>
+                      <span>College details (ID, course, year) aren't filled in yet.</span>
+                      <button onClick={() => navigate('/student/onboarding')} style={{ flexShrink: 0, padding: '0.4rem 0.8rem', border: 'none', borderRadius: 8, background: 'var(--primary)', color: 'var(--white)', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer' }}>
+                        Complete
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Display name editor */}
+                  <label style={{ ...panelLabel, display: 'block', marginBottom: '0.2rem' }}>Display name</label>
+                  <p style={{ fontSize: '0.8rem', color: 'var(--text-gray)', margin: '0 0 0.5rem 0' }}>
+                    Shown to outlets on your orders and on your reviews.
+                  </p>
                   <div style={{ display: 'flex', gap: '0.5rem' }}>
                     <input
                       value={nameDraft}
@@ -282,6 +234,7 @@ const Profile = () => {
                       placeholder="Your name"
                       style={{
                         flex: 1,
+                        minWidth: 0,
                         padding: '0.65rem 0.85rem',
                         border: '1px solid var(--border-color)',
                         borderRadius: '8px',
@@ -290,7 +243,7 @@ const Profile = () => {
                     />
                     <button
                       onClick={handleSaveName}
-                      disabled={savingName}
+                      disabled={savingName || !nameDraft.trim() || nameDraft.trim() === (profile?.name || user?.name || '')}
                       style={{
                         padding: '0.65rem 1.1rem',
                         border: 'none',
@@ -298,6 +251,7 @@ const Profile = () => {
                         background: 'var(--primary)',
                         color: 'var(--white)',
                         fontWeight: 600,
+                        opacity: savingName || !nameDraft.trim() || nameDraft.trim() === (profile?.name || user?.name || '') ? 0.5 : 1,
                         cursor: savingName ? 'wait' : 'pointer',
                       }}
                     >
@@ -306,88 +260,10 @@ const Profile = () => {
                   </div>
                   {nameMessage && (
                     <p style={{ marginTop: '0.5rem', fontSize: '0.85rem', fontWeight: 600, color: nameMessage.ok ? '#10b981' : '#b10035' }}>
-                      {nameMessage.text}
+                      {nameMessage.ok ? '✓ ' : '✕ '}{nameMessage.text}
                     </p>
                   )}
                 </>
-              )}
-            </div>
-          )}
-
-          {/* ─── NOTIFICATIONS ─── */}
-          {activeView === 'notifications' && (
-            <div style={{ padding: '1.25rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-                <h3 style={{ ...panelTitle, marginBottom: 0 }}>Notifications</h3>
-                {unreadCount > 0 && (
-                  <button
-                    onClick={handleMarkAllRead}
-                    disabled={markingAll}
-                    style={{
-                      padding: '0.4rem 0.85rem',
-                      border: '1px solid var(--border-color)',
-                      borderRadius: '20px',
-                      background: 'var(--white)',
-                      fontSize: '0.8rem',
-                      fontWeight: 600,
-                      color: 'var(--primary)',
-                      cursor: markingAll ? 'wait' : 'pointer',
-                    }}
-                  >
-                    {markingAll ? 'Marking…' : `Mark all read (${unreadCount})`}
-                  </button>
-                )}
-              </div>
-              <p style={panelIntro}>Order updates from outlets — accepted, preparing, ready for pickup.</p>
-              {notifLoading ? (
-                <p style={{ color: 'var(--text-gray)' }}>Loading notifications…</p>
-              ) : notifError ? (
-                <p style={{ color: '#b10035' }}>{notifError}</p>
-              ) : notifications.length === 0 ? (
-                <p style={{ color: 'var(--text-gray)' }}>No notifications yet. Place an order and updates will appear here.</p>
-              ) : (
-                <div style={{ border: '1px solid var(--border-color)', borderRadius: '12px', overflow: 'hidden' }}>
-                  {notifications.map((n, idx) => (
-                    <button
-                      key={n.id}
-                      onClick={() => handleMarkOneRead(n)}
-                      style={{
-                        display: 'flex',
-                        gap: '0.75rem',
-                        width: '100%',
-                        textAlign: 'left',
-                        padding: '1rem 1.25rem',
-                        background: n.isRead ? 'var(--white)' : '#fdf5f7',
-                        border: 'none',
-                        borderBottom: idx !== notifications.length - 1 ? '1px solid var(--border-color)' : 'none',
-                        cursor: n.isRead ? 'default' : 'pointer',
-                      }}
-                    >
-                      <span
-                        style={{
-                          marginTop: '0.4rem',
-                          width: 8,
-                          height: 8,
-                          minWidth: 8,
-                          borderRadius: '50%',
-                          background: n.isRead ? 'transparent' : 'var(--primary)',
-                        }}
-                      />
-                      <span style={{ flex: 1 }}>
-                        <span style={{ display: 'block', fontWeight: n.isRead ? 500 : 700, color: 'var(--text-dark)', fontSize: '0.95rem' }}>
-                          {n.title}
-                        </span>
-                        <span style={{ display: 'block', color: 'var(--text-gray)', fontSize: '0.88rem', marginTop: '0.15rem', lineHeight: 1.4 }}>
-                          {n.message}
-                        </span>
-                        <span style={{ display: 'block', color: 'var(--text-light, #9ca3af)', fontSize: '0.78rem', marginTop: '0.35rem' }}>
-                          {formatTime(n.createdAt)}
-                          {!n.isRead && ' · tap to mark read'}
-                        </span>
-                      </span>
-                    </button>
-                  ))}
-                </div>
               )}
             </div>
           )}
@@ -507,26 +383,6 @@ const Profile = () => {
               <li>
                 <button className="profile-menu-btn" onClick={() => openView('account')}>
                   <span>Account</span>
-                  <span className="arrow-icon">→</span>
-                </button>
-              </li>
-              <li>
-                <button className="profile-menu-btn" onClick={() => openView('notifications')}>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    Notifications
-                    {unreadCount > 0 && (
-                      <span style={{
-                        background: 'var(--primary)',
-                        color: 'var(--white)',
-                        borderRadius: '999px',
-                        fontSize: '0.72rem',
-                        fontWeight: 700,
-                        padding: '0.1rem 0.5rem',
-                      }}>
-                        {unreadCount}
-                      </span>
-                    )}
-                  </span>
                   <span className="arrow-icon">→</span>
                 </button>
               </li>

@@ -7,6 +7,8 @@ import MobileBottomNav from '../../components/layout/MobileBottomNav';
 import BackButton from '../../components/common/BackButton';
 
 import { catalogService } from '../../services/api/catalogService';
+import { cacheGet, cacheSet } from '../../services/cache/localCache';
+import FoodReviewsModal from '../../components/food/FoodReviewsModal';
 import { orderService } from '../../services/api/orderService';
 import { paymentService } from '../../services/api/paymentService';
 import { useAuth } from '../../hooks/useAuth';
@@ -54,6 +56,10 @@ const mapMenuItem = (item) => ({
   price: Number(item.price),
 });
 
+// How long a cached menu may be rendered before showing the skeleton
+// instead. The network refresh always runs regardless.
+const MENU_CACHE_MAX_AGE_MS = 5 * 60 * 1000;
+
 // Map the catalog outlet onto the banner fields.
 const mapOutletDetails = (o) => ({
   name: o.name,
@@ -74,6 +80,7 @@ const OutletMenu = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [placingOrder, setPlacingOrder] = useState(false);
+  const [reviewsItem, setReviewsItem] = useState(null);
 
   // ─── Cart persistence ────────────────────────────────────────────────
   // The cart was lost on page refresh because it was only in React state.
@@ -108,47 +115,65 @@ const OutletMenu = () => {
   const menuContentRef = useRef(null);
 
   useEffect(() => {
+    // Stale-while-revalidate: paint the outlet + menu instantly from the
+    // last visit's cache, then refresh underneath (no skeleton flash).
+    const applyData = (outletRaw, itemsRaw) => {
+      setOutlet(mapOutletDetails(outletRaw || {}));
+
+      const items = (itemsRaw || []).map(mapMenuItem);
+      setFlatMenuItems(items);
+
+      // Group by category
+      const grouped = items.reduce((acc, item) => {
+        if (!acc[item.category]) {
+          acc[item.category] = {
+            category: item.category,
+            items: []
+          };
+        }
+        acc[item.category].items.push(item);
+        return acc;
+      }, {});
+
+      const sectionsArray = Object.values(grouped);
+
+      // Sort sections logically, putting 'Popular' first
+      sectionsArray.sort((a, b) => {
+        if (a.category === 'Popular') return -1;
+        if (b.category === 'Popular') return 1;
+        return a.category.localeCompare(b.category);
+      });
+
+      setMenuSections(sectionsArray);
+      // Keep the user's selected category across background refreshes.
+      setActiveCategory((prev) =>
+        sectionsArray.some((s) => s.category === prev) ? prev : (sectionsArray[0]?.category || '')
+      );
+    };
+
     const fetchMenu = async () => {
-      try {
+      const cacheKey = `menu:${id}`;
+      const cached = cacheGet(cacheKey, MENU_CACHE_MAX_AGE_MS);
+      if (cached) {
+        applyData(cached.outlet, cached.items);
+        setLoading(false);
+      } else {
         setLoading(true);
+      }
+      try {
         const [outletRes, menuRes] = await Promise.all([
           catalogService.getOutletDetails(id),
           catalogService.getOutletMenu(id),
         ]);
-        setOutlet(mapOutletDetails(outletRes.data || {}));
-
-        const items = (menuRes.data || []).map(mapMenuItem);
-        setFlatMenuItems(items);
-
-        // Group by category
-        const grouped = items.reduce((acc, item) => {
-          if (!acc[item.category]) {
-            acc[item.category] = {
-              category: item.category,
-              items: []
-            };
-          }
-          acc[item.category].items.push(item);
-          return acc;
-        }, {});
-
-        const sectionsArray = Object.values(grouped);
-
-        // Sort sections logically, putting 'Popular' first
-        sectionsArray.sort((a, b) => {
-          if (a.category === 'Popular') return -1;
-          if (b.category === 'Popular') return 1;
-          return a.category.localeCompare(b.category);
-        });
-
-        setMenuSections(sectionsArray);
-        if (sectionsArray.length > 0) {
-          setActiveCategory(sectionsArray[0].category);
-        }
+        const outletRaw = outletRes.data || {};
+        const itemsRaw = menuRes.data || [];
+        cacheSet(cacheKey, { outlet: outletRaw, items: itemsRaw });
+        applyData(outletRaw, itemsRaw);
         setError(null);
       } catch (err) {
         console.error('Failed to fetch menu:', err);
-        setError(err.message || 'Failed to load this outlet\'s menu');
+        // Only surface the error when there was nothing cached to show.
+        if (!cached) setError(err.message || 'Failed to load this outlet\'s menu');
       } finally {
         setLoading(false);
       }
@@ -156,12 +181,11 @@ const OutletMenu = () => {
     fetchMenu();
   }, [id]);
 
-  // Clear the persisted cart when the outlet ID changes — prevents
-  // accidentally ordering Outlet A's items at Outlet B.
-  useEffect(() => {
-    setCart({});
-    try { localStorage.removeItem(`nosh:cart:${id}`); } catch {}
-  }, [id]);
+  // ─── Outlet-wise cart ──────────────────────────────────────────────────
+  // Carts are keyed per outlet (nosh:cart:{id}) and persist across visits:
+  // leaving an outlet keeps its cart saved, and returning restores it.
+  // Switching outlets shows that outlet's own cart — items are never mixed
+  // because every read/write goes through the outlet-scoped key.
 
   // ─── Prepaid order flow (every order is paid via Razorpay checkout) ─────
   // No order is confirmed without payment. The flow:
@@ -432,6 +456,7 @@ const OutletMenu = () => {
                           food={item}
                           quantity={cart[item.id] || 0}
                           onUpdateQuantity={handleUpdateQuantity}
+                          onShowReviews={setReviewsItem}
                         />
                       ))}
                     </div>
@@ -446,6 +471,10 @@ const OutletMenu = () => {
           </div>
         </main>
       </div>
+
+      {reviewsItem && (
+        <FoodReviewsModal item={reviewsItem} onClose={() => setReviewsItem(null)} />
+      )}
 
       <CartDrawer
         isOpen={isCartOpen}

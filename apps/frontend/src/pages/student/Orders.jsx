@@ -3,7 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import Header from '../../components/layout/Header';
 import MobileBottomNav from '../../components/layout/MobileBottomNav';
 import client from '../../services/api/client';
+import { useAuth } from '../../hooks/useAuth';
 import { orderService } from '../../services/api/orderService';
+import { reviewService } from '../../services/api/reviewService';
+import { cacheGet, cacheSet } from '../../services/cache/localCache';
 import { toast } from 'react-hot-toast';
 import Skeleton from '../../components/common/Skeleton';
 
@@ -99,24 +102,39 @@ const Orders = () => {
   const [orders, setOrders] = useState([]);
   const [activeFilter, setActiveFilter] = useState('All time');
   const [loading, setLoading] = useState(true);
+  const { user } = useAuth();
+  // Stale-while-revalidate: render the last-seen order list instantly and
+  // refresh underneath, so repeat visits don't wait on the network.
+  const ORDERS_CACHE_KEY = user ? `orders:${user.id}` : null;
+  const ORDERS_MAX_AGE_MS = 60 * 1000;
   const [error, setError] = useState(null);
   const [expandedId, setExpandedId] = useState(null);
   const [cancellingId, setCancellingId] = useState(null);
 
   const fetchOrders = async () => {
-    try {
+    if (!ORDERS_CACHE_KEY) return;
+    const cached = cacheGet(ORDERS_CACHE_KEY, ORDERS_MAX_AGE_MS);
+    if (cached) {
+      setOrders(cached.map(mapOrder));
+      setLoading(false);
+    } else {
       setLoading(true);
+    }
+    try {
       const res = await orderService.getMyOrders();
-      setOrders((res.data || []).map(mapOrder));
+      const raw = res.data || [];
+      cacheSet(ORDERS_CACHE_KEY, raw);
+      setOrders(raw.map(mapOrder));
       setError(null);
     } catch (err) {
-      setError(err.message || 'Failed to load orders');
+      // Only surface the error when there was nothing cached to show.
+      if (!cached) setError(err.message || 'Failed to load orders');
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => { fetchOrders(); }, []);
+  useEffect(() => { fetchOrders(); }, [ORDERS_CACHE_KEY]);
 
   const handleCancel = async (orderId) => {
     if (!window.confirm('Cancel this order? You\'ll get a full refund.')) return;
@@ -151,10 +169,19 @@ const Orders = () => {
   const [reviewingId, setReviewingId] = useState(null);
   const [reviewRating, setReviewRating] = useState(5);
   const [reviewComment, setReviewComment] = useState('');
+  // Food-wise ratings — one optional 1-5 per item of the order being rated.
+  const [itemRatings, setItemRatings] = useState({});
 
   const handleSubmitReview = async (orderId, outletId) => {
     try {
-      await client.post('/reviews', { outletId, orderId, rating: reviewRating, comment: reviewComment });
+      const itemReviews = Object.entries(itemRatings)
+        .filter(([, rating]) => rating > 0)
+        .map(([menuItemId, rating]) => ({ menuItemId, rating }));
+      await client.post('/reviews', {
+        outletId, orderId, rating: reviewRating, comment: reviewComment,
+        ...(itemReviews.length > 0 ? { itemReviews } : {}),
+      });
+      reviewService.invalidateAll();
       toast.success('Review submitted!');
       setReviewingId(null); setReviewRating(5); setReviewComment('');
     } catch (err) { toast(err.response?.data?.message || 'Failed to submit review'); }
@@ -328,6 +355,25 @@ const Orders = () => {
                           style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.5rem', color: s <= reviewRating ? '#f59e0b' : '#d1d5db' }}>★</button>
                       ))}
                     </div>
+                    {order.items.filter(it => it.menuItemId).length > 0 && (
+                      <div style={{ margin: '0.25rem 0 0.6rem 0' }}>
+                        <p style={{ margin: '0 0 0.35rem 0', fontSize: '0.8rem', fontWeight: 600, color: '#6b7280' }}>Rate the food (optional):</p>
+                        {order.items.filter(it => it.menuItemId).map(it => (
+                          <div key={it.menuItemId} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem', padding: '0.25rem 0' }}>
+                            <span style={{ fontSize: '0.85rem', color: '#374151', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {it.name} × {it.quantity}
+                            </span>
+                            <span style={{ display: 'flex', gap: '0.1rem', flexShrink: 0 }}>
+                              {[1,2,3,4,5].map(star => (
+                                <button key={star}
+                                  onClick={() => setItemRatings(prev => ({ ...prev, [it.menuItemId]: star }))}
+                                  style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.1rem', padding: '0 1px', color: star <= (itemRatings[it.menuItemId] || 0) ? '#f59e0b' : '#d1d5db' }}>★</button>
+                              ))}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     <textarea placeholder="Share your experience (optional)..." value={reviewComment}
                       onChange={(e) => setReviewComment(e.target.value)}
                       style={{ width: '100%', padding: '0.5rem', border: '1px solid #d1d5db', borderRadius: '8px', fontSize: '0.85rem', minHeight: '60px', resize: 'vertical', marginBottom: '0.5rem' }} />

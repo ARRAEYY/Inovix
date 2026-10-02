@@ -953,6 +953,32 @@ img {
   flex: 1;
 }
 
+/* Food-wise rating chip — opens the item's reviews modal */
+.food-rating-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-top: 0.35rem;
+  padding: 0.15rem 0.55rem;
+  border: none;
+  border-radius: 999px;
+  background: #fef3c7;
+  color: #b45309;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.food-rating-chip:hover {
+  background: #fde68a;
+}
+
+.food-rating-count {
+  font-weight: 600;
+  color: #92400e;
+}
+
 .food-footer {
   display: flex;
   justify-content: space-between;
@@ -1369,6 +1395,69 @@ img {
   opacity: 0.7;
 }
 
+/* Quantity stepper in drawer cart items */
+.cart-item-qty {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  align-self: flex-start;
+}
+
+.cart-item-qty button {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--white);
+  color: var(--text-dark);
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.cart-item-qty button:hover {
+  background: var(--bg-color);
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.cart-item-qty span {
+  min-width: 2rem;
+  text-align: center;
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--text-dark);
+}
+
+/* Totals block in the drawer footer. Named separately from the sticky
+   cart bar's .cart-summary, which is an inline flex row. */
+.cart-drawer-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0.75rem 0 1rem 0;
+}
+
+.summary-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.92rem;
+  color: var(--text-gray);
+}
+
+.summary-row.total {
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border-color);
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text-dark);
+}
+
 .cart-drawer-footer {
   padding: 1.5rem;
   border-top: 1px solid var(--border-color);
@@ -1401,6 +1490,7 @@ img {
 
 .checkout-btn {
   flex: 1;
+  width: 100%;
   background-color: var(--primary);
   color: white;
   border: 1px solid var(--primary);

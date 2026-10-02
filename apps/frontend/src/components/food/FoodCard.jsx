@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 
-const FoodCard = ({ food, quantity, onUpdateQuantity }) => {
+const FoodCard = ({ food, quantity, onUpdateQuantity, onShowReviews }) => {
   const [showCustomize, setShowCustomize] = useState(false);
   const [selectedOptions, setSelectedOptions] = useState({});
   const hasCustomizations = food.customizationGroups && food.customizationGroups.length > 0;
@@ -54,6 +54,17 @@ const FoodCard = ({ food, quantity, onUpdateQuantity }) => {
         <div className="food-info-group">
           <h4 className="food-name">{food.name}</h4>
           {food.description && <p className="food-desc" title={food.description}>{food.description}</p>}
+          {food.foodRating && (
+            <button
+              type="button"
+              className="food-rating-chip"
+              onClick={() => onShowReviews && onShowReviews(food)}
+              title="See food reviews"
+            >
+              ★ {food.foodRating.avg}
+              <span className="food-rating-count">({food.foodRating.count})</span>
+            </button>
+          )}
         </div>
         <div className="food-footer">
           <span className="food-price">₹{adjustedPrice}</span>

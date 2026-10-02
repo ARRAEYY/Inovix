@@ -66,7 +66,7 @@ app.use((req, _res, next) => {
 });
 const corsOrigins = isProduction
   ? FRONTEND_URL.split(',').map((s) => s.trim()).filter(Boolean)
-  : Array.from(new Set([...FRONTEND_URL.split(',').map((s) => s.trim()).filter(Boolean), 'http://localhost:5173', 'http://localhost:3001']));
+  : Array.from(new Set([...FRONTEND_URL.split(',').map((s) => s.trim()).filter(Boolean), 'http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:3001']));
 app.use(cors({
   origin: (origin, callback) => {
     // Allow requests with no origin (like mobile apps, curl, server-to-server)

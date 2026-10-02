@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import OutletAdminLayout from '../../../components/layout/OutletAdminLayout';
 import { getStaff, createStaff, updateStaffStatus } from '../../../services/outletAdminService';
+import { toast } from 'react-hot-toast';
 
 const AddStaffModal = ({ isOpen, onClose, onAdd }) => {
   const [formData, setFormData] = useState({ name: '', email: '', phone: '', password: '' });
@@ -120,7 +121,7 @@ const OutletAdminStaff = () => {
       await updateStaffStatus(staffId, newStatus);
       fetchStaff(); // Refresh list
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to update status');
+      toast(err.response?.data?.message || 'Failed to update status');
     }
   };
 

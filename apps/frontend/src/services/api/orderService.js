@@ -38,6 +38,16 @@ export const orderService = {
     }
   },
 
+  // ─── Cancel order (student, while PENDING — triggers auto-refund) ───
+  cancelOrder: async (orderId) => {
+    try {
+      const response = await client.post(`/orders/${orderId}/cancel`);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Network Error' };
+    }
+  },
+
   // ─── Outlet (staff + admin) ────────────────────────────────────────────
   getOutletOrders: async () => {
     try {
@@ -60,5 +70,5 @@ export const orderService = {
     } catch (error) {
       throw error.response?.data || { message: 'Network Error' };
     }
-  }
+  },
 };

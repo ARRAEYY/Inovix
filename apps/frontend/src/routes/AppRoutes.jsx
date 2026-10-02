@@ -6,6 +6,9 @@ import { useAuth } from '../hooks/useAuth';
 import StudentLogin from '../pages/auth/StudentLogin';
 import OutletLogin from '../pages/auth/OutletLogin';
 import AdminLogin from '../pages/auth/AdminLogin';
+import ForgotPassword from '../pages/auth/ForgotPassword';
+import ResetPassword from '../pages/auth/ResetPassword';
+import Onboarding from '../pages/student/Onboarding';
 
 // Dashboards (Dummy)
 import StudentHome from '../pages/student/Home';
@@ -19,6 +22,7 @@ import OutletAdminDashboard from '../pages/outlet/admin/OutletAdminDashboard';
 import OutletAdminOrders from '../pages/outlet/admin/OutletAdminOrders';
 import OutletAdminMenu from '../pages/outlet/admin/OutletAdminMenu';
 import OutletAdminStaff from '../pages/outlet/admin/OutletAdminStaff';
+import OutletAdminHours from '../pages/outlet/admin/OutletAdminHours';
 import AdminDashboard from '../pages/admin/Dashboard';
 import Outlets from '../pages/admin/Outlets';
 import Users from '../pages/admin/Users';
@@ -27,6 +31,8 @@ import AdminMenu from '../pages/admin/Menu';
 import AdminStaff from '../pages/admin/Staff';
 import AdminProfile from '../pages/admin/Profile';
 import AdminSettings from '../pages/admin/Settings';
+import Disputes from '../pages/admin/Disputes';
+import NotFound from '../pages/NotFound';
 // A simple PrivateRoute component to protect dashboard routes
 const PrivateRoute = ({ children, allowedRolePrefix }) => {
   const { isAuthenticated, user } = useAuth();
@@ -51,6 +57,8 @@ const AppRoutes = () => {
       <Route path="/" element={<StudentLogin />} />
       <Route path="/login" element={<Navigate to="/" replace />} />
       <Route path="/outlet/login" element={<OutletLogin />} />
+      <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
       <Route path="/admin/login" element={<AdminLogin />} />
 
       {/* Protected Routes - Student */}
@@ -62,6 +70,7 @@ const AppRoutes = () => {
               <Route path="/" element={<StudentHome />} />
               <Route path="/orders" element={<StudentOrders />} />
               <Route path="/profile" element={<Profile />} />
+              <Route path="/onboarding" element={<Onboarding />} />
               <Route path="/outlet/:id" element={<OutletMenu />} />
             </Routes>
           </PrivateRoute>
@@ -92,6 +101,7 @@ const AppRoutes = () => {
               <Route path="/orders" element={<OutletAdminOrders />} />
               <Route path="/menu" element={<OutletAdminMenu />} />
               <Route path="/staff" element={<OutletAdminStaff />} />
+              <Route path="/hours" element={<OutletAdminHours />} />
             </Routes>
           </PrivateRoute>
         } 
@@ -111,10 +121,13 @@ const AppRoutes = () => {
               <Route path="/staff" element={<AdminStaff />} />
               <Route path="/profile" element={<AdminProfile />} />
               <Route path="/settings" element={<AdminSettings />} />
+              <Route path="/disputes" element={<Disputes />} />
             </Routes>
           </PrivateRoute>
         } 
       />
+      {/* 404 catch-all — any unmatched path shows the NotFound page */}
+      <Route path="*" element={<NotFound />} />
     </Routes>
   );
 };

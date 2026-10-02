@@ -1,14 +1,41 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
+import { useGoogleAuth } from '../../hooks/useGoogleAuth';
 
 const OutletLogin = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [searchParams, setSearchParams] = useSearchParams();
   
   const navigate = useNavigate();
   const { login } = useAuth();
+
+  // Google OAuth redirect flow — see useGoogleAuth.js for the full chain.
+  const { signInWithGoogle } = useGoogleAuth({
+    onSuccess: (user) => {
+      if (user?.role === 'SUPER_ADMIN') navigate('/admin');
+      else if (user?.role === 'OUTLET_ADMIN') navigate('/outlet/admin');
+      else if (user?.role === 'OUTLET_STAFF') navigate('/outlet');
+      else navigate('/student');
+    },
+  });
+
+  // Surface any Google OAuth error that came back via ?google_login=error&reason=...
+  useEffect(() => {
+    const g = searchParams.get('google_login');
+    const reason = searchParams.get('reason');
+    if (g === 'error' && reason) {
+      setError(`Google login failed: ${decodeURIComponent(reason)}`);
+      searchParams.delete('google_login');
+      searchParams.delete('reason');
+      setSearchParams(searchParams, { replace: true });
+    } else if (g === 'success') {
+      searchParams.delete('google_login');
+      setSearchParams(searchParams, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -88,7 +115,7 @@ const OutletLogin = () => {
             <span>or</span>
           </div>
 
-          <button type="button" className="google-btn">
+          <button type="button" className="google-btn" onClick={signInWithGoogle}>
             <svg width="18" height="18" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
               <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
               <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />

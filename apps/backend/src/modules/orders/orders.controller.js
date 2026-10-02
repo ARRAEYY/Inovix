@@ -188,6 +188,13 @@ async function getOutletAnalytics(req, res, next) {
       }),
     ]);
 
+        // Enhanced analytics: cancellations + refunds
+    const cancelledToday = await prisma.order.count({ where: { outletId, status: 'CANCELLED', createdAt: { gte: startOfToday } } });
+    const cancelledTotal = await prisma.order.count({ where: { outletId, status: 'CANCELLED' } });
+    const refundRows = await prisma.refund.findMany({ where: { payment: { order: { outletId } }, status: 'COMPLETED' }, select: { amount: true } });
+    const refundsCount = refundRows.length;
+    const refundsTotal = refundRows.reduce((s, r) => s + Number(r.amount), 0);
+
     const todaySales = todayOrders.reduce((acc, o) => acc + Number(o.totalAmount || 0), 0);
     const monthSales = monthOrders.reduce((acc, o) => acc + Number(o.totalAmount || 0), 0);
 

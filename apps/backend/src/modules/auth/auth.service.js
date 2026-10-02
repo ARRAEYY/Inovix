@@ -7,6 +7,7 @@
 const prisma = require('../../lib/prisma');
 const { hashPassword, comparePassword } = require('../../utils/password');
 const { USER_STATUS } = require('../../lib/constants');
+const { isCollegeEmail, COLLEGE_EMAIL_DOMAIN } = require('./google.service');
 
 // Outlet fields surfaced to the client (name/logo for the sidebar + profile).
 const OUTLET_STAFF_INCLUDE = {
@@ -23,6 +24,26 @@ async function findOrCreateGoogleUser(googleData) {
     where: { email: normalizedEmail },
     include: OUTLET_STAFF_INCLUDE,
   });
+
+  // ─── Role-aware campus-domain gate ────────────────────────────────────
+  // Only STUDENTS are restricted to @rishihood.edu.in emails. Outlet staff,
+  // outlet admins, and super admins can log in with any Google email (they
+  // might be external vendors or platform admins without a college email).
+  //
+  // This runs AFTER the user lookup so we know the role:
+  //   - User exists + role === STUDENT → enforce the domain check
+  //   - User doesn't exist (new signup → defaults to STUDENT) → enforce
+  //   - User exists + role !== STUDENT → skip (outlet/admin can use any email)
+  //
+  // ALLOW_ANY_GOOGLE_EMAIL=true (dev/test) bypasses ALL domain checks.
+  if (process.env.ALLOW_ANY_GOOGLE_EMAIL !== 'true') {
+    const isStudent = !user || user.role === 'STUDENT';
+    if (isStudent && !isCollegeEmail(normalizedEmail)) {
+      const error = new Error(`Only @${COLLEGE_EMAIL_DOMAIN} student accounts are allowed. Outlet staff + admins can use any email.`);
+      error.statusCode = 403;
+      throw error;
+    }
+  }
 
   if (!user) {
     user = await prisma.user.create({

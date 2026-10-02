@@ -14,3 +14,4 @@ backups/
 kent_portal/
 *.tsbuildinfo
 .vercel/
+.zcodeignore

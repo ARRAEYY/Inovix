@@ -20,7 +20,7 @@ generator client {
 datasource db {
   // Dev default per the provider policy above (SQLite migrations in
   // prisma/migrations target sqlite). Switch to "postgresql" for production.
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -47,6 +47,10 @@ model User {
   auditLogs           AuditLog[]
   notifications       Notification[]
   passwordResets      PasswordReset[]
+  favorites            Favorite[]
+  reviews              Review[]
+  menuItemReviews      MenuItemReview[]
+  disputes              Dispute[]
 
   @@index([email])
 }
@@ -121,6 +125,10 @@ model Outlet {
   menuItems                 MenuItem[]
   orders                    Order[]
   carts                     Cart[]
+  favorites                Favorite[]
+  reviews                  Review[]
+  menuItemReviews          MenuItemReview[]
+  disputes                Dispute[]
 
   @@index([campusId])
   @@index([status])
@@ -194,6 +202,7 @@ model MenuItem {
   updatedAt       DateTime          @updatedAt
 
   outlet          Outlet            @relation(fields: [outletId], references: [id], onDelete: Cascade)
+  menuItemReviews MenuItemReview[]
   category        MenuCategory?     @relation(fields: [categoryId], references: [id])
   customizationGroups CustomizationGroup[]
   cartItems       CartItem[]
@@ -293,8 +302,10 @@ model Order {
 
   student         User      @relation(fields: [studentId], references: [id])
   outlet          Outlet    @relation(fields: [outletId], references: [id])
+  menuItemReviews MenuItemReview[]
   items           OrderItem[]
   payment         Payment?
+  dispute          Dispute?
   notifications   Notification[]
 
   @@index([studentId, status, createdAt])
@@ -428,6 +439,82 @@ model AuditLog {
   @@index([targetType, targetId])
   @@index([actorUserId])
   @@index([createdAt])
+}
+
+
+
+// ─── 23. Dispute ───────────────────────────────────────────────────────────
+model Dispute {
+  id          String   @id @default(cuid())
+  orderId     String   @unique
+  userId      String
+  outletId    String
+  type        String   // ORDER_ISSUE | PAYMENT_ISSUE | REFUND_REQUEST | OTHER
+  description String
+  status      String   @default("OPEN") // OPEN | RESOLVED | REJECTED
+  resolution  String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  order  Order  @relation(fields: [orderId], references: [id])
+  outlet Outlet @relation(fields: [outletId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([outletId])
+  @@index([status])
+}
+
+// ─── 21. Favorite ─────────────────────────────────────────────────────────
+model Favorite {
+  id        String   @id @default(cuid())
+  userId    String
+  outletId  String
+  createdAt DateTime @default(now())
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  outlet Outlet @relation(fields: [outletId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, outletId])
+  @@index([userId])
+}
+
+// ─── 22. Review ───────────────────────────────────────────────────────────
+model Review {
+  id        String   @id @default(cuid())
+  userId    String
+  outletId  String
+  orderId   String  @unique
+  rating    Int
+  comment   String   @default("")
+  createdAt DateTime @default(now())
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  outlet Outlet @relation(fields: [outletId], references: [id], onDelete: Cascade)
+
+  @@index([outletId, createdAt])
+}
+
+// ─── MenuItemReview — food-wise review ────────────────────────────────────
+// Per-menu-item ratings, submitted alongside an order's outlet review.
+// One per (order, menu item). Outlet-level Review stays untouched.
+model MenuItemReview {
+  id         String   @id @default(cuid())
+  userId     String
+  orderId    String
+  menuItemId String
+  outletId   String
+  rating     Int
+  comment    String   @default("")
+  createdAt  DateTime @default(now())
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  order    Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItem MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  outlet   Outlet   @relation(fields: [outletId], references: [id], onDelete: Cascade)
+
+  @@unique([orderId, menuItemId])
+  @@index([menuItemId, createdAt])
 }
 
 // ─── 20. PasswordReset ─────────────────────────────────────────────────────

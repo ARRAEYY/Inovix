@@ -3,6 +3,8 @@ const authController = require('./auth.controller');
 const {
   login,
   googleLogin,
+  googleAuthStart,
+  googleCallback,
   devLogin,
   getCurrentUser,
   updateCurrentUser,
@@ -10,6 +12,7 @@ const {
   logout,
   forgotPassword,
   resetPassword,
+  changePassword,
 } = authController;
 const { protect } = require('../../middleware/auth.middleware');
 const { validateBody } = require('../../middleware/validation.middleware');
@@ -47,7 +50,15 @@ const ENABLE_DEV_LOGIN = process.env.ENABLE_DEV_LOGIN === 'true';
 const IS_DEV = process.env.NODE_ENV === 'development' || ENABLE_DEV_LOGIN;
 
 // Public routes — each gets its own per-endpoint rate limit (INO-010).
+//
+// POST /google — the GIS popup flow (frontend POSTs the ID-token credential).
+// GET  /google        — the OAuth redirect flow (kick off Google consent).
+// GET  /google/callback — Google redirects back here with ?code=...&state=...
+// Both flows share verifyGoogleCredential / findOrCreateGoogleUser, so the
+// security posture is identical.
 router.post('/google', googleLoginRateLimit, validateBody(googleLoginSchema), googleLogin);
+router.get('/google', googleLoginRateLimit, googleAuthStart);
+router.get('/google/callback', googleLoginRateLimit, googleCallback);
 router.post('/refresh', refreshRateLimit, refresh);
 
 // Password reset flow — public (no auth required)
@@ -65,6 +76,7 @@ if (IS_DEV && ENABLE_DEV_LOGIN) {
 // Authenticated routes — moderate limiter.
 router.get('/me', authEndpointsRateLimit, protect, getCurrentUser);
 router.put('/me', authEndpointsRateLimit, protect, updateCurrentUser);
+router.patch('/me/password', authEndpointsRateLimit, protect, changePassword);
 router.post('/logout', authEndpointsRateLimit, protect, logout);
 
 module.exports = router;

@@ -19,6 +19,16 @@ export const paymentService = {
     return response.data;
   },
 
+  // POST /payments/dev-confirm — dev-only mock payment confirm. The route
+  // exists on the backend ONLY when NODE_ENV=development AND
+  // ENABLE_DEV_LOGIN=true, so in production this call would 404 — and is
+  // never made: the checkout only falls back to it when the gateway order
+  // creation failed with PAYMENT_NOT_CONFIGURED AND import.meta.env.DEV.
+  devConfirm: async (orderId) => {
+    const response = await client.post('/payments/dev-confirm', { orderId });
+    return response.data;
+  },
+
   // POST /payments/razorpay/verify — verify the payment signature
   // (HMAC-SHA256 over razorpayOrderId + "|" + razorpayPaymentId, computed
   // with the outlet's keySecret). On success, Payment.status = PAID.

@@ -23,6 +23,21 @@ async function verifyPayment(req, res, next) {
   }
 }
 
+// Dev-only mock payment confirm — mirrors the devLogin controller pattern:
+// the route is only mounted behind the dev gates, and re-checked here in
+// case the controller is wired directly somewhere else.
+async function devConfirmPayment(req, res, next) {
+  if (process.env.NODE_ENV !== 'development' || process.env.ENABLE_DEV_LOGIN !== 'true') {
+    return res.status(403).json({ success: false, message: 'Dev payment confirm is disabled' });
+  }
+  try {
+    const result = await paymentsService.devConfirmPayment(req.body.orderId, req.user.id);
+    res.status(200).json({ success: true, message: 'Payment confirmed (dev mode — no gateway call)', data: result });
+  } catch (error) {
+    next(error);
+  }
+}
+
 /**
  * Razorpay webhook. This MUST be registered BEFORE body parsing middleware
  * (or use express.raw specifically for this route), because the webhook
@@ -121,4 +136,4 @@ async function webhook(req, res, next) {
   }
 }
 
-module.exports = { createRazorpayOrder, verifyPayment, webhook };
+module.exports = { createRazorpayOrder, verifyPayment, devConfirmPayment, webhook };

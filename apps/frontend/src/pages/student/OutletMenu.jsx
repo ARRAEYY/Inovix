@@ -13,6 +13,7 @@ import { orderService } from '../../services/api/orderService';
 import { paymentService } from '../../services/api/paymentService';
 import { useAuth } from '../../hooks/useAuth';
 import { toast } from 'react-hot-toast';
+import { Skeleton, SkeletonGrid } from '../../components/common/Skeleton';
 
 // Render a category icon as a self-contained CSS block — no external image
 // service. Uses the first letter (or first two letters for short words) of
@@ -121,17 +122,28 @@ const OutletMenu = () => {
     }
   });
   // Persist the cart to localStorage whenever it changes (so a refresh
-  // restores the exact cart the user had).
+  // restores the exact cart the user had) and broadcast a change event so
+  // the bottom-nav Cart tab can update its badge app-wide.
   useEffect(() => {
     try {
       localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cart));
+      window.dispatchEvent(new CustomEvent('nosh:cart-changed'));
     } catch {
       // localStorage might be full or blocked (incognito) — ignore.
     }
   }, [cart, CART_STORAGE_KEY]);
 
+  // The bottom-nav Cart tab can ask this page to open the drawer (it
+  // navigates here first, then dispatches the event).
+  useEffect(() => {
+    const openCart = () => setIsCartOpen(true);
+    window.addEventListener('nosh:open-cart', openCart);
+    return () => window.removeEventListener('nosh:open-cart', openCart);
+  }, []);
+
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const isSearching = searchQuery.trim().length > 0;
   const [activeCategory, setActiveCategory] = useState(() => initialSections[0]?.category || '');
 
   // Refs for scroll spy
@@ -299,39 +311,62 @@ const OutletMenu = () => {
     }
   };
 
-  // Setup scroll spy
+  // Scroll spy — rAF-throttled, based on viewport-relative positions so it
+  // stays correct regardless of nested offset parents. A section becomes
+  // active once its top passes the sticky header + banner line.
   useEffect(() => {
-    const handleScroll = () => {
-      const scrollPosition = window.scrollY + 100; // Offset for header/padding
+    if (isSearching || menuSections.length === 0) return undefined;
+    // Time throttle rather than rAF: rAF doesn't fire in occluded tabs,
+    // which left the highlight stale in headless/background contexts.
+    let lastRun = 0;
 
+    const SPY_LINE = 170; // sticky header (64) + banner/search area
+
+    const computeActive = () => {
+      let current = menuSections[0]?.category || '';
       for (const section of menuSections) {
-        const element = sectionRefs.current[section.category];
-        if (element) {
-          const { offsetTop, offsetHeight } = element;
-          if (scrollPosition >= offsetTop && scrollPosition < offsetTop + offsetHeight) {
-            setActiveCategory(section.category);
-            break;
-          }
+        const el = sectionRefs.current[section.category];
+        if (!el) continue;
+        if (el.getBoundingClientRect().top - SPY_LINE <= 0) {
+          current = section.category;
         }
       }
+      // Bottom of page → force the last section active
+      if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 4) {
+        current = menuSections[menuSections.length - 1]?.category || current;
+      }
+      setActiveCategory((prev) => (prev === current ? prev : current));
     };
 
-    window.addEventListener('scroll', handleScroll);
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, [menuSections]);
+    const handleScroll = () => {
+      const now = Date.now();
+      if (now - lastRun < 80) return;
+      lastRun = now;
+      computeActive();
+    };
+
+    computeActive();
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    window.addEventListener('resize', handleScroll);
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('resize', handleScroll);
+    };
+  }, [menuSections, isSearching]);
+
+  // Keep the active sidebar item visible as the user scrolls.
+  useEffect(() => {
+    const btn = document.querySelector(`.category-nav-btn[aria-label="Show ${CSS.escape(activeCategory)}"]`);
+    if (btn) btn.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [activeCategory]);
 
   const scrollToCategory = (category) => {
-    setActiveCategory(category);
     const element = sectionRefs.current[category];
     if (element) {
-      // Calculate position relative to window
-      const offset = 80;
-      const elementTop = element.getBoundingClientRect().top + window.scrollY;
-      
-      window.scrollTo({
-        top: elementTop - offset,
-        behavior: 'smooth'
-      });
+      setActiveCategory(category);
+      // Smooth-scroll so the section title lands below the sticky header.
+      const top = element.getBoundingClientRect().top + window.scrollY - 130;
+      window.scrollTo({ top, behavior: 'smooth' });
     }
   };
 
@@ -353,8 +388,6 @@ const OutletMenu = () => {
     const item = flatMenuItems.find(i => i.id === itemId);
     return total + (item ? item.price * qty : 0);
   }, 0);
-
-  const isSearching = searchQuery.trim().length > 0;
 
   // Flattened search results
   const searchResults = isSearching
@@ -410,10 +443,8 @@ const OutletMenu = () => {
         </div>
       </div>
 
-      {/* Main Menu Layout */}
+      {/* Main Menu Layout — sticky sidebar with category icon + name */}
       <div className="menu-layout-container">
-
-        {/* Sticky Sidebar */}
         {!isSearching && (
           <aside className="category-sidebar">
             <ul className="category-list">
@@ -422,6 +453,7 @@ const OutletMenu = () => {
                   <button
                     className={`category-nav-btn ${activeCategory === section.category ? 'active' : ''}`}
                     onClick={() => scrollToCategory(section.category)}
+                    aria-label={`Show ${section.category}`}
                   >
                     <div className="category-img-wrapper">
                       <CategoryIcon name={section.category} />
@@ -438,12 +470,15 @@ const OutletMenu = () => {
         <main className="menu-content" style={isSearching ? { width: '100%', flex: '1 1 100%' } : {}}>
           <div className="menu-sections">
             {loading ? (
-              <div className="empty-search">
-                <p>Loading menu…</p>
+              <div className="skeleton-row" aria-busy="true">
+                <SkeletonGrid count={4} cols={2} />
               </div>
             ) : error ? (
-              <div className="empty-search">
-                <p>{error}</p>
+              <div className="state-block">
+                <div className="state-icon">⚠️</div>
+                <p className="state-title">Something went wrong</p>
+                <p className="state-sub">{error}</p>
+                <button className="primary-btn" onClick={() => window.location.reload()}>Try Again</button>
               </div>
             ) : isSearching ? (
               <div className="menu-section">
@@ -489,7 +524,7 @@ const OutletMenu = () => {
                 ))
               ) : (
                 <div className="empty-search">
-                  <p>No items found</p>
+                  <p>No items on this menu yet — check back soon.</p>
                 </div>
               )
             )}
@@ -512,18 +547,21 @@ const OutletMenu = () => {
         placingOrder={placingOrder}
       />
 
-      {/* Sticky Mobile Cart Bar */}
+      {/* Sticky Mobile Cart Bar (§9) — whole bar tappable */}
       {cartItemsCount > 0 && (
-        <div className="mobile-sticky-cart">
-          <div className="cart-summary-info">
+        <button
+          type="button"
+          className="mobile-sticky-cart"
+          onClick={() => setIsCartOpen(true)}
+          aria-label={`View cart — ${cartItemsCount} item${cartItemsCount !== 1 ? 's' : ''}, ₹${cartTotal}`}
+        >
+          <span className="cart-summary-info">
             <span className="cart-item-count">{cartItemsCount} item{cartItemsCount !== 1 ? 's' : ''}</span>
             <span className="cart-divider">|</span>
             <span className="cart-total">₹{cartTotal}</span>
-          </div>
-          <button className="view-cart-action" onClick={() => setIsCartOpen(true)}>
-            View Cart <span>›</span>
-          </button>
-        </div>
+          </span>
+          <span className="view-cart-action">View Cart <span aria-hidden="true">›</span></span>
+        </button>
       )}
 
       <MobileBottomNav cartItemCount={cartItemsCount} onCartClick={() => setIsCartOpen(true)} />

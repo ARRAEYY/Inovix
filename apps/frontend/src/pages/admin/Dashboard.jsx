@@ -21,20 +21,40 @@ const AdminDashboard = () => {
 
   const navigate = useNavigate();
 
-  const fetchDashboard = useCallback(async () => {
-    setLoading(true);
+  const fetchDashboard = useCallback(async (isSilent = false) => {
+    if (!isSilent) setLoading(true);
     try {
       const response = await api.get('/admin/overview');
       setData(response.data.data);
+      setError(null);
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to load dashboard data');
+      if (!isSilent) setError(err.response?.data?.message || 'Failed to load dashboard data');
     } finally {
-      setLoading(false);
+      if (!isSilent) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     fetchDashboard();
+
+    // Listen to real-time socket events for platform-wide orders
+    const handleLiveOrderUpdate = () => {
+      fetchDashboard(true);
+    };
+
+    window.addEventListener('nosh:order-updated', handleLiveOrderUpdate);
+    window.addEventListener('nosh:order-new', handleLiveOrderUpdate);
+
+    // 15-second background polling fallback to guarantee fresh metrics
+    const interval = setInterval(() => {
+      fetchDashboard(true);
+    }, 15000);
+
+    return () => {
+      window.removeEventListener('nosh:order-updated', handleLiveOrderUpdate);
+      window.removeEventListener('nosh:order-new', handleLiveOrderUpdate);
+      clearInterval(interval);
+    };
   }, [fetchDashboard]);
 
   if (loading) return <AdminLayout><div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '1rem' }}><Skeleton height='80px' /><Skeleton height='80px' /><Skeleton height='80px' /></div></AdminLayout>;
@@ -50,14 +70,31 @@ const AdminDashboard = () => {
         {/* Header Section */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <div>
-            <h1 style={{ margin: '0 0 8px 0', fontSize: '1.75rem', fontWeight: '800', color: '#111827', letterSpacing: '-0.5px' }}>
-              Dashboard
-            </h1>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
+              <h1 style={{ margin: 0, fontSize: '1.75rem', fontWeight: '800', color: '#111827', letterSpacing: '-0.5px' }}>
+                Dashboard
+              </h1>
+              <span style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '3px 10px',
+                borderRadius: '16px',
+                background: '#ecfdf5',
+                color: '#059669',
+                fontSize: '0.75rem',
+                fontWeight: '700',
+                letterSpacing: '0.5px'
+              }}>
+                <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#10b981' }}></span>
+                LIVE
+              </span>
+            </div>
             <p style={{ margin: 0, color: '#4b5563', fontSize: '0.95rem' }}>
               Overview of your Nosh platform.
             </p>
           </div>
-          <button onClick={fetchDashboard} style={{ padding: '8px 16px', background: 'white', border: '1px solid #e5e7eb', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', color: '#374151', fontWeight: '500' }}>
+          <button onClick={() => fetchDashboard(false)} style={{ padding: '8px 16px', background: 'white', border: '1px solid #e5e7eb', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', color: '#374151', fontWeight: '500' }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ animation: loading ? 'spin 1s linear infinite' : 'none' }}>
               <polyline points="23 4 23 10 17 10"></polyline>
               <polyline points="1 20 1 14 7 14"></polyline>
@@ -67,57 +104,48 @@ const AdminDashboard = () => {
           </button>
         </div>
 
-        {/* Overview Stats Grid */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '20px' }}>
-          
+        {/* Primary KPIs — the four numbers that matter most */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '16px' }}>
+
           <div style={metricCardStyle}>
-            <p style={{ margin: '0 0 8px 0', color: '#6b7280', fontSize: '1rem', fontWeight: '600' }}>Gross value (Today)</p>
-            <h2 style={{ margin: '0 0 8px 0', fontSize: '2rem', fontWeight: '800', color: '#111827', letterSpacing: '-0.5px' }}>{formatCurrency(metrics.revenueToday)}</h2>
-            <p style={{ margin: 0, color: '#6b7280', fontSize: '0.85rem' }}>Today</p>
+            <p style={{ margin: '0 0 6px 0', color: '#6b7280', fontSize: '0.85rem', fontWeight: '600' }}>Gross value today</p>
+            <h2 style={{ margin: 0, fontSize: '1.7rem', fontWeight: '800', color: '#111827', letterSpacing: '-0.5px' }}>{formatCurrency(metrics.revenueToday)}</h2>
           </div>
 
           <div style={metricCardStyle}>
-            <p style={{ margin: '0 0 8px 0', color: '#6b7280', fontSize: '1rem', fontWeight: '600' }}>Gross value (This Month)</p>
-            <h2 style={{ margin: '0 0 8px 0', fontSize: '2rem', fontWeight: '800', color: '#111827', letterSpacing: '-0.5px' }}>{formatCurrency(metrics.revenueThisMonth)}</h2>
-            <p style={{ margin: 0, color: '#6b7280', fontSize: '0.85rem' }}>This month</p>
+            <p style={{ margin: '0 0 6px 0', color: '#6b7280', fontSize: '0.85rem', fontWeight: '600' }}>Orders today</p>
+            <h2 style={{ margin: 0, fontSize: '1.7rem', fontWeight: '800', color: '#111827', letterSpacing: '-0.5px' }}>{Number(metrics.ordersToday || 0).toLocaleString()}</h2>
           </div>
 
           <div style={metricCardStyle}>
-            <p style={{ margin: '0 0 8px 0', color: '#6b7280', fontSize: '1rem', fontWeight: '600' }}>Total gross value</p>
-            <h2 style={{ margin: '0 0 8px 0', fontSize: '2rem', fontWeight: '800', color: '#111827', letterSpacing: '-0.5px' }}>{formatCurrency(metrics.revenueTotal)}</h2>
-            <p style={{ margin: 0, color: '#6b7280', fontSize: '0.85rem' }}>Lifetime</p>
+            <p style={{ margin: '0 0 6px 0', color: '#6b7280', fontSize: '0.85rem', fontWeight: '600' }}>Active outlets</p>
+            <h2 style={{ margin: 0, fontSize: '1.7rem', fontWeight: '800', color: '#111827', letterSpacing: '-0.5px' }}>{metrics.activeOutlets}</h2>
           </div>
 
           <div style={metricCardStyle}>
-            <p style={{ margin: '0 0 8px 0', color: '#6b7280', fontSize: '1rem', fontWeight: '600' }}>Active outlets</p>
-            <h2 style={{ margin: '0 0 8px 0', fontSize: '2rem', fontWeight: '800', color: '#111827', letterSpacing: '-0.5px' }}>{metrics.activeOutlets}</h2>
-            <p style={{ margin: 0, color: '#6b7280', fontSize: '0.85rem' }}>Active now</p>
+            <p style={{ margin: '0 0 6px 0', color: '#6b7280', fontSize: '0.85rem', fontWeight: '600' }}>Total users</p>
+            <h2 style={{ margin: 0, fontSize: '1.7rem', fontWeight: '800', color: '#111827', letterSpacing: '-0.5px' }}>{metrics.totalUsers.toLocaleString()}</h2>
           </div>
 
-          <div style={metricCardStyle}>
-            <p style={{ margin: '0 0 8px 0', color: '#6b7280', fontSize: '1rem', fontWeight: '600' }}>Orders today</p>
-            <h2 style={{ margin: '0 0 8px 0', fontSize: '2rem', fontWeight: '800', color: '#111827', letterSpacing: '-0.5px' }}>{metrics.ordersToday.toLocaleString()}</h2>
-            <p style={{ margin: 0, color: '#6b7280', fontSize: '0.85rem' }}>Today</p>
-          </div>
+        </div>
 
-          <div style={metricCardStyle}>
-            <p style={{ margin: '0 0 8px 0', color: '#6b7280', fontSize: '1rem', fontWeight: '600' }}>Refund rate</p>
-            <h2 style={{ margin: '0 0 8px 0', fontSize: '2rem', fontWeight: '800', color: '#111827', letterSpacing: '-0.5px' }}>0.8%</h2>
-            <p style={{ margin: 0, color: '#6b7280', fontSize: '0.85rem' }}>All time</p>
-          </div>
-
-          <div style={metricCardStyle}>
-            <p style={{ margin: '0 0 8px 0', color: '#6b7280', fontSize: '1rem', fontWeight: '600' }}>Total users</p>
-            <h2 style={{ margin: '0 0 8px 0', fontSize: '2rem', fontWeight: '800', color: '#111827', letterSpacing: '-0.5px' }}>{metrics.totalUsers.toLocaleString()}</h2>
-            <p style={{ margin: 0, color: '#6b7280', fontSize: '0.85rem' }}>All users</p>
-          </div>
-
-          <div style={metricCardStyle}>
-            <p style={{ margin: '0 0 8px 0', color: '#6b7280', fontSize: '1rem', fontWeight: '600' }}>Orders this week</p>
-            <h2 style={{ margin: '0 0 8px 0', fontSize: '2rem', fontWeight: '800', color: '#111827', letterSpacing: '-0.5px' }}>{metrics.ordersThisWeek.toLocaleString()}</h2>
-            <p style={{ margin: 0, color: '#6b7280', fontSize: '0.85rem' }}>This week</p>
-          </div>
-
+        {/* Secondary metrics — compact strip, no giant cards (§16) */}
+        <div style={{
+          display: 'flex', flexWrap: 'wrap', gap: '12px 32px', alignItems: 'center',
+          background: '#f9fafb', border: '1px solid #f3f4f6', borderRadius: '12px', padding: '14px 20px',
+        }}>
+          <span style={{ fontSize: '0.85rem', color: '#6b7280' }}>
+            This month <strong style={{ color: '#111827', marginLeft: 6 }}>{formatCurrency(metrics.revenueThisMonth)}</strong>
+          </span>
+          <span style={{ fontSize: '0.85rem', color: '#6b7280' }}>
+            Lifetime <strong style={{ color: '#111827', marginLeft: 6 }}>{formatCurrency(metrics.revenueTotal)}</strong>
+          </span>
+          <span style={{ fontSize: '0.85rem', color: '#6b7280' }}>
+            Orders this week <strong style={{ color: '#111827', marginLeft: 6 }}>{metrics.ordersThisWeek.toLocaleString()}</strong>
+          </span>
+          <span style={{ fontSize: '0.85rem', color: '#6b7280' }}>
+            Refund rate <strong style={{ color: '#111827', marginLeft: 6 }}>{metrics.refundRate || '0.0%'}</strong>
+          </span>
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '24px' }}>

@@ -3,39 +3,6 @@ import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { useGoogleAuth } from '../../hooks/useGoogleAuth';
 
-// Hero highlights — small feature bullets shown on the left panel.
-const FEATURES = [
-  {
-    icon: (
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-      </svg>
-    ),
-    title: 'Skip the queue',
-    text: 'Order ahead, grab and go',
-  },
-  {
-    icon: (
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-        <circle cx="12" cy="12" r="3" />
-      </svg>
-    ),
-    title: 'Live order tracking',
-    text: 'From kitchen to pickup, in real time',
-  },
-  {
-    icon: (
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="1" y="4" width="22" height="16" rx="2" ry="2" />
-        <line x1="1" y1="10" x2="23" y2="10" />
-      </svg>
-    ),
-    title: 'Prepaid & secure',
-    text: 'Razorpay-protected checkout',
-  },
-];
-
 const StudentLogin = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -128,18 +95,6 @@ const StudentLogin = () => {
             <br />
             and pick it up when it’s ready
           </p>
-
-          <ul className="login-features">
-            {FEATURES.map((f) => (
-              <li key={f.title} className="login-feature">
-                <span className="login-feature-icon">{f.icon}</span>
-                <span className="login-feature-text">
-                  <strong>{f.title}</strong>
-                  <span>{f.text}</span>
-                </span>
-              </li>
-            ))}
-          </ul>
         </div>
       </div>
 

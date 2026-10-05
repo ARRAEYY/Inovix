@@ -49,7 +49,13 @@ export const SocketProvider = ({ children }) => {
       console.warn('[socket] connect error:', err.message);
     });
 
-    // ─── Realtime event listeners ────────────────────────────────────
+    // When a new order is placed, dispatch window events so outlet boards and admin dashboards refetch.
+    socket.on('order:new', (data) => {
+      console.log('[socket] order:new:', data);
+      window.dispatchEvent(new CustomEvent('nosh:order-new', { detail: data }));
+      window.dispatchEvent(new CustomEvent('nosh:order-updated', { detail: data }));
+    });
+
     // When an order's status changes (outlet accepts/prepares/marks ready),
     // dispatch a window event so the student Orders page can refetch.
     socket.on('order:status:changed', (data) => {

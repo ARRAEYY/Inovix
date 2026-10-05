@@ -1970,3 +1970,834 @@ img {
 
 /* Skeleton shimmer animation */
 @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+/* ==========================================================================
+   DESIGN SYSTEM v2 — Nosh UI refresh
+   Extends the existing tokens (brand #B10035, Inter, white bg) with a
+   spacing/radius/shadow scale, shared card patterns, category tabs,
+   order-progress stepper, status colors, cart-bar safe-areas and subtle
+   press feedback. Appended last so it wins the cascade over v1 blocks.
+   ========================================================================== */
+
+:root {
+  /* Spacing scale (4px base) */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  /* Radii — replace the ad-hoc 4/6/10/20/30/50 mix */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-pill: 999px;
+  /* Shadows — subtle by default */
+  --shadow-sm: 0 1px 3px rgba(18, 21, 28, 0.06);
+  --shadow-md: 0 4px 14px rgba(18, 21, 28, 0.08);
+  --shadow-primary: 0 4px 14px rgba(177, 0, 53, 0.28);
+  /* Status colors */
+  --status-green-bg: #ecfdf3;
+  --status-green: #027a48;
+  --status-red-bg: #fef3f2;
+  --status-red: #b42318;
+  --status-amber-bg: #fffaeb;
+  --status-amber: #b54708;
+  --status-blue-bg: #eff8ff;
+  --status-blue: #175cd3;
+  --status-gray-bg: #f2f4f7;
+  --status-gray: #475467;
+}
+
+/* ─── Micro-interactions: gentle press feedback on tappable controls ─── */
+.add-btn:active,
+.qty-btn:active,
+.pill:active,
+.category-tab:active,
+.view-cart-action:active,
+.checkout-btn:active,
+.primary-btn:active,
+.bottom-nav-item:active {
+  transform: scale(0.96);
+}
+
+.add-btn,
+.qty-btn,
+.pill,
+.category-tab,
+.checkout-btn,
+.primary-btn {
+  transition: transform 0.12s ease, background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+/* Quantity value pop when it changes */
+@keyframes qty-pop {
+  0% { transform: scale(1.35); }
+  100% { transform: scale(1); }
+}
+.qty-value {
+  animation: qty-pop 0.18s ease;
+}
+
+/* Slide-up for sticky bars & drawers */
+@keyframes slide-up {
+  from { transform: translateY(12px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+/* ─── Orphan classes the JSX already uses ─── */
+.empty-search {
+  padding: var(--space-8) var(--space-4);
+  text-align: center;
+  color: var(--text-light);
+  font-size: 0.95rem;
+}
+
+.loading-state {
+  padding: var(--space-8) var(--space-4);
+  text-align: center;
+  color: var(--text-light);
+  font-size: 0.95rem;
+}
+
+.bg-white { background: #fff; }
+
+.cart-badge {
+  position: absolute;
+  top: -4px;
+  right: -6px;
+  background: var(--primary);
+  color: #fff;
+  font-size: 0.62rem;
+  font-weight: 700;
+  min-width: 17px;
+  height: 17px;
+  border-radius: var(--radius-pill);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  border: 2px solid #fff;
+}
+
+/* ─── Search v2: prominent, with clear button ─── */
+.search-container {
+  position: relative;
+  flex: 1;
+}
+
+.search-clear-btn {
+  position: absolute;
+  right: 0.75rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: none;
+  background: var(--status-gray-bg);
+  color: var(--text-gray);
+  font-size: 0.85rem;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ─── Category tabs (§4): horizontally scrollable, sticky-capable ─── */
+.category-tabs {
+  display: flex;
+  gap: var(--space-2);
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  padding: var(--space-1) 0;
+  margin: var(--space-4) 0;
+  scroll-behavior: smooth;
+}
+
+.category-tabs::-webkit-scrollbar { display: none; }
+
+.category-tab {
+  flex-shrink: 0;
+  padding: 0.45rem 1rem;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-color);
+  background: #fff;
+  color: var(--text-gray);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.category-tab.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+
+/* Sticky variant used on the outlet menu page */
+.menu-category-tabs {
+  position: sticky;
+  top: 64px;
+  z-index: 20;
+  background: #fff;
+  margin: 0 calc(-1 * var(--space-4));
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--border-color);
+}
+
+/* ─── Outlet card v2 (§5): compact, whole card clickable ─── */
+.outlets-grid {
+  gap: var(--space-4);
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+}
+
+.outlet-card {
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.outlet-card:active {
+  transform: scale(0.985);
+}
+
+.outlet-card:hover {
+  box-shadow: var(--shadow-md);
+}
+
+.outlet-image-container {
+  height: auto;
+  aspect-ratio: 16 / 9;
+  background: var(--status-gray-bg);
+  position: relative;
+}
+
+.outlet-content {
+  padding: var(--space-4);
+}
+
+.outlet-name {
+  font-size: 1.1rem;
+}
+
+.outlet-description {
+  font-size: 0.875rem;
+  margin-bottom: var(--space-3);
+}
+
+.outlet-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.outlet-tag {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-gray);
+  background: var(--status-gray-bg);
+  padding: 0.2rem 0.6rem;
+  border-radius: var(--radius-pill);
+}
+
+.outlet-meta {
+  gap: var(--space-4);
+  margin-bottom: 0;
+}
+
+.meta-item svg { flex-shrink: 0; }
+
+/* Rating chip overlaid on the outlet image */
+.outlet-rating-chip {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  background: rgba(255, 255, 255, 0.95);
+  color: var(--text-dark);
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 0.25rem 0.55rem;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  box-shadow: var(--shadow-sm);
+}
+
+.outlet-rating-chip svg { color: #f59e0b; }
+
+/* Closed outlets: muted image */
+.outlet-card.is-closed .outlet-image {
+  filter: grayscale(0.9);
+  opacity: 0.75;
+}
+
+/* ─── Food card v2 (§7): uniform media, tidy footer, stepper ─── */
+.food-card {
+  border-radius: var(--radius-md);
+}
+
+.food-image-container {
+  height: auto;
+  aspect-ratio: 4 / 3;
+}
+
+.food-content {
+  padding: var(--space-3) var(--space-3) var(--space-4);
+}
+
+.food-name {
+  font-size: 0.95rem;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.food-desc {
+  font-size: 0.8rem;
+  margin-bottom: var(--space-2);
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.food-price {
+  font-size: 1rem;
+}
+
+.add-btn {
+  border-radius: var(--radius-sm);
+  padding: 0.4rem 1.1rem;
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+  min-height: 34px;
+  justify-content: center;
+}
+
+.add-btn:hover {
+  background: var(--primary-hover);
+  border-color: var(--primary-hover);
+}
+
+/* Quantity stepper: primary-tinted, 44px-class touch targets */
+.quantity-selector {
+  gap: 0;
+  border: 1px solid var(--primary);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.qty-btn {
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+  border: none;
+  background: var(--primary);
+  color: #fff;
+  font-size: 1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.qty-btn:active { background: var(--primary-hover); }
+
+.qty-value {
+  min-width: 28px;
+  text-align: center;
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: var(--primary);
+  background: #fff;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ─── Out-of-stock (§8): visible but dimmed, badge on image ─── */
+.food-card.is-unavailable {
+  opacity: 0.82;
+}
+
+.food-card.is-unavailable .food-image {
+  filter: grayscale(1);
+  opacity: 0.7;
+}
+
+.food-card.is-unavailable .food-name { color: var(--text-gray); }
+
+.food-unavailable-badge {
+  position: absolute;
+  top: var(--space-2);
+  left: var(--space-2);
+  background: rgba(18, 21, 28, 0.78);
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 0.25rem 0.6rem;
+  border-radius: var(--radius-pill);
+  text-transform: uppercase;
+}
+
+.food-unavailable {
+  font-size: 0.8rem;
+  color: var(--text-light);
+  font-weight: 600;
+}
+
+/* ─── Mobile bottom nav (§13): 4 items incl. Cart, 320px-safe ─── */
+.bottom-nav-item {
+  position: relative;
+  min-height: 48px;
+}
+
+/* ─── Sticky cart bar (§9): safe-area aware, above the nav ─── */
+.mobile-sticky-cart {
+  bottom: calc(72px + env(safe-area-inset-bottom));
+  animation: slide-up 0.22s ease;
+  max-width: 480px;
+  margin: 0 auto;
+  border: none;
+  cursor: pointer;
+}
+
+.mobile-sticky-cart:active { transform: scale(0.98); }
+
+/* ─── Cart drawer (§10): safe-area footer, item rows with line totals ─── */
+.cart-drawer {
+  display: flex;
+  flex-direction: column;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.cart-drawer-footer {
+  border-top: 1px solid var(--border-color);
+  padding-top: var(--space-3);
+  background: #fff;
+}
+
+.cart-drawer-field-label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-gray);
+  margin-bottom: var(--space-1);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.cart-drawer-input {
+  width: 100%;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--input-border);
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  margin-bottom: var(--space-3);
+  font-family: inherit;
+}
+
+.cart-item-line-total {
+  font-weight: 700;
+  color: var(--text-dark);
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+
+.cart-empty-icon {
+  font-size: 2.2rem;
+  margin-bottom: var(--space-2);
+}
+
+.checkout-btn {
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-primary);
+  min-height: 50px;
+}
+
+/* ─── Order status colors (§11): per-status instead of always-green ─── */
+.order-status {
+  background: var(--status-gray-bg);
+  color: var(--status-gray);
+}
+
+.order-status[data-status='PENDING'] {
+  background: var(--status-amber-bg);
+  color: var(--status-amber);
+}
+
+.order-status[data-status='ACCEPTED'],
+.order-status[data-status='PREPARING'] {
+  background: var(--status-blue-bg);
+  color: var(--status-blue);
+}
+
+.order-status[data-status='READY'] {
+  background: var(--status-green-bg);
+  color: var(--status-green);
+}
+
+.order-status[data-status='COMPLETED'] {
+  background: var(--status-gray-bg);
+  color: var(--status-gray);
+}
+
+.order-status[data-status='REJECTED'],
+.order-status[data-status='CANCELLED'] {
+  background: var(--status-red-bg);
+  color: var(--status-red);
+}
+
+/* ─── Order progress stepper (§11) ─── */
+.order-stepper {
+  display: flex;
+  align-items: flex-start;
+  margin: var(--space-3) 0 var(--space-2);
+}
+
+.stepper-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+  position: relative;
+}
+
+/* connector line */
+.stepper-step:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  top: 13px;
+  left: calc(50% + 12px);
+  right: calc(-50% + 12px);
+  height: 2px;
+  background: var(--border-color);
+}
+
+.stepper-step.done:not(:last-child)::after {
+  background: var(--primary);
+}
+
+.stepper-dot {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid var(--border-color);
+  color: var(--text-light);
+  font-size: 0.7rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+}
+
+.stepper-step.done .stepper-dot {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+
+.stepper-step.current .stepper-dot {
+  border-color: var(--primary);
+  color: var(--primary);
+  box-shadow: 0 0 0 4px rgba(177, 0, 53, 0.12);
+}
+
+.stepper-label {
+  margin-top: var(--space-1);
+  font-size: 0.62rem;
+  font-weight: 600;
+  color: var(--text-light);
+  text-align: center;
+}
+
+.stepper-step.done .stepper-label,
+.stepper-step.current .stepper-label {
+  color: var(--primary);
+}
+
+/* Rejected / cancelled banner */
+.order-blocked-banner {
+  background: var(--status-red-bg);
+  border: 1px solid #fecdca;
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  margin: var(--space-3) 0;
+}
+
+.order-blocked-title {
+  font-weight: 700;
+  color: var(--status-red);
+  font-size: 0.9rem;
+  margin-bottom: var(--space-1);
+}
+
+.order-blocked-reason {
+  font-size: 0.85rem;
+  color: var(--text-dark);
+}
+
+.order-blocked-next {
+  font-size: 0.8rem;
+  color: var(--text-gray);
+  margin-top: var(--space-2);
+}
+
+/* ─── Staff dashboard feedback (loading/error) ─── */
+.dashboard-feedback {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-6) 0;
+}
+
+.dashboard-feedback p {
+  color: var(--text-gray);
+  margin: 0;
+}
+
+/* ─── Menu management availability toggle (§15) ─── */
+.availability-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: var(--space-1) 0;
+}
+
+.availability-track {
+  width: 40px;
+  height: 22px;
+  border-radius: var(--radius-pill);
+  background: #d0d5dd;
+  position: relative;
+  transition: background 0.18s ease;
+  flex-shrink: 0;
+}
+
+.availability-track::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.18s ease;
+}
+
+.availability-toggle.on .availability-track { background: #12b76a; }
+.availability-toggle.on .availability-track::after { transform: translateX(18px); }
+.availability-toggle.off .availability-track { background: #d0d5dd; }
+
+.availability-toggle:disabled { opacity: 0.6; cursor: wait; }
+
+.availability-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.availability-label.on { color: var(--status-green); }
+.availability-label.off { color: var(--text-gray); }
+
+/* ─── Shared state blocks (§20) ─── */
+.state-block {
+  text-align: center;
+  padding: var(--space-8) var(--space-4);
+  color: var(--text-light);
+}
+
+.state-block .state-icon {
+  font-size: 2.4rem;
+  margin-bottom: var(--space-2);
+}
+
+.state-block .state-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text-dark);
+  margin-bottom: var(--space-1);
+}
+
+.state-block .state-sub {
+  font-size: 0.9rem;
+  margin-bottom: var(--space-4);
+}
+
+.state-block .primary-btn {
+  min-width: 140px;
+}
+
+/* Skeleton row utility for list pages */
+.skeleton-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* ─── Small-screen hardening (§12) ─── */
+@media (max-width: 380px) {
+  .outlets-grid { grid-template-columns: 1fr; }
+  .food-grid { gap: var(--space-3); }
+  .stepper-label { font-size: 0.56rem; }
+  .order-stepper { flex-wrap: nowrap; }
+}
+
+@media (min-width: 769px) {
+  /* Menu page category tabs replace the sidebar on desktop too */
+  .menu-category-tabs {
+    top: 65px;
+  }
+
+  .checkout-btn { max-width: 100%; }
+}
+
+/* ─── Menu page scroll & nav fixes ───
+   Clearance so the last category is never hidden behind the sticky cart
+   bar + bottom nav; desktop only needs nominal spacing. */
+.menu-sections {
+  padding-bottom: 48px;
+}
+
+@media (max-width: 768px) {
+  .menu-sections {
+    padding-bottom: 208px; /* bottom nav (64) + cart bar (~64) + breathing room */
+  }
+}
+
+/* ─── Narrow-card controls: keep price + ADD / stepper on one line ─── */
+@media (max-width: 480px) {
+  .food-grid {
+    gap: 0.6rem;
+  }
+
+  .food-content {
+    padding: 0.65rem 0.65rem 0.85rem;
+  }
+
+  .food-name { font-size: 0.88rem; }
+
+  .add-btn {
+    padding: 0.32rem 0.7rem;
+    font-size: 0.78rem;
+    min-height: 30px;
+  }
+
+  .qty-btn {
+    width: 29px;
+    height: 30px;
+    min-width: 29px;
+    font-size: 0.9rem;
+  }
+
+  .qty-value {
+    min-width: 22px;
+    font-size: 0.85rem;
+  }
+
+  .quantity-selector { border-radius: 8px; }
+
+  .food-footer { gap: 0.35rem; }
+  .food-price { font-size: 0.92rem; }
+}
+
+/* Price never truncates; the stepper wraps to its own right-aligned line
+   when the card is too narrow to fit both (Blinkit-style stacking). */
+.food-footer {
+  flex-wrap: wrap;
+}
+
+.food-price {
+  flex-shrink: 0;
+}
+
+.quantity-selector {
+  margin-left: auto;
+}
+
+/* ─── Outlet/admin mobile drawer (§13) ───
+   .outlet-drawer previously had NO styles: the nav rendered inline and
+   always visible below 1024px. Proper off-canvas slide-in now. */
+.outlet-drawer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: min(300px, 84vw);
+  background: #fff;
+  z-index: 1100;
+  transform: translateX(-105%);
+  transition: transform 0.22s ease;
+  display: flex;
+  flex-direction: column;
+  padding: 1rem;
+  box-shadow: var(--shadow-md);
+}
+
+.outlet-drawer.open {
+  transform: translateX(0);
+}
+
+.outlet-drawer .drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.25rem;
+}
+
+.outlet-drawer .close-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 6px;
+  color: var(--text-gray);
+}
+
+.drawer-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(18, 21, 28, 0.45);
+  z-index: 1090;
+}
+
+.outlet-drawer .drawer-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+
+.outlet-drawer .drawer-footer {
+  border-top: 1px solid var(--border-color);
+  padding-top: 0.75rem;
+}
+
+.outlet-drawer .logout-btn {
+  background: none;
+  border: none;
+  color: var(--text-gray);
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  font-size: 0.9rem;
+  padding: 0.5rem 0;
+}

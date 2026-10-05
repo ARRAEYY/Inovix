@@ -68,6 +68,56 @@ const parseTimeline = (timelineStr) => {
   }
 };
 
+// Visual order progress (§11): Placed → Accepted → Preparing → Ready →
+// Completed. The current step uses the Nosh primary color; done steps get
+// a check. Rejected/cancelled orders get an explanatory banner instead.
+const STEPS = [
+  { key: 'PENDING', label: 'Placed' },
+  { key: 'ACCEPTED', label: 'Accepted' },
+  { key: 'PREPARING', label: 'Preparing' },
+  { key: 'READY', label: 'Ready' },
+  { key: 'COMPLETED', label: 'Completed' },
+];
+
+const OrderStepper = ({ order }) => {
+  const raw = order.rawStatus;
+
+  if (raw === 'REJECTED' || raw === 'CANCELLED') {
+    const entry = (order.timeline || []).filter(t => t.status === raw).slice(-1)[0] || {};
+    const isRejected = raw === 'REJECTED';
+    const moneyBack = order.paymentStatus === 'REFUNDED' || order.paymentStatus === 'PAID';
+    return (
+      <div className="order-blocked-banner" role="status">
+        <p className="order-blocked-title">
+          {isRejected ? 'Order rejected by the outlet' : 'Order cancelled'}
+        </p>
+        {isRejected && entry.reason && <p className="order-blocked-reason">Reason: {entry.reason}</p>}
+        {!isRejected && entry.reason && <p className="order-blocked-reason">{entry.reason}</p>}
+        <p className="order-blocked-next">
+          {isRejected && moneyBack
+            ? 'Your payment will be refunded automatically — no action needed.'
+            : 'No action needed. You can place a new order anytime.'}
+        </p>
+      </div>
+    );
+  }
+
+  const idx = STEPS.findIndex(s => s.key === raw);
+  return (
+    <div className="order-stepper" aria-label={`Order progress: ${order.status}`}>
+      {STEPS.map((s, i) => (
+        <div
+          key={s.key}
+          className={`stepper-step ${i < idx || raw === 'COMPLETED' ? 'done' : ''} ${i === idx && raw !== 'COMPLETED' ? 'current' : ''}`}
+        >
+          <span className="stepper-dot" aria-hidden="true">{i < idx || raw === 'COMPLETED' ? '✓' : i + 1}</span>
+          <span className="stepper-label">{s.label}</span>
+        </div>
+      ))}
+    </div>
+  );
+};
+
 // Map a backend order onto the display fields
 const mapOrder = (o) => {
   let outletName = 'Campus outlet';
@@ -282,8 +332,11 @@ const Orders = () => {
                     <h3 className="order-outlet">{order.outletName}</h3>
                     <p className="order-date">{order.date}</p>
                   </div>
-                  <div className="order-status">{order.status}</div>
+                  <div className="order-status" data-status={order.rawStatus}>{order.status}</div>
                 </div>
+
+                {/* Visual progress: Placed → … → Completed (or blocked banner) */}
+                <OrderStepper order={order} />
 
                 {/* Pickup code — shown for confirmed orders */}
                 {showPickupCode(order.rawStatus) && order.pickupCode && (

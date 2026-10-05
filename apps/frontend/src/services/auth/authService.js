@@ -11,7 +11,10 @@ export const authService = {
       const response = await client.post('/auth/login', { email, password });
       return response.data;
     } catch (error) {
-      if (import.meta.env.DEV && error.response?.status === 404) {
+      // Dev-only fallback: the dev-login endpoint also accepts passwordless
+      // student accounts (students are Google-only in production, so in dev
+      // a passwordless login can only ever mean the local dev account).
+      if (import.meta.env.DEV && (error.response?.status === 404 || !password)) {
         try {
           const devRes = await client.post('/auth/dev-login', { email, password });
           return devRes.data;

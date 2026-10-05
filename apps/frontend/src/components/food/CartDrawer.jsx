@@ -1,5 +1,8 @@
 import React, { useState, useEffect } from 'react';
 
+// Slide-over cart / checkout (§10): order summary → items → pickup info →
+// total → place order. Kept deliberately short — prepaid via Razorpay, no
+// address needed (campus pickup).
 const CartDrawer = ({ isOpen, onClose, cart, menuItems, outletName, onUpdateQuantity, onOrderNow, placingOrder }) => {
   const [notes, setNotes] = useState('');
   const [scheduledTime, setScheduledTime] = useState('');
@@ -27,19 +30,23 @@ const CartDrawer = ({ isOpen, onClose, cart, menuItems, outletName, onUpdateQuan
   return (
     <>
       <div className="cart-drawer-overlay" onClick={onClose}></div>
-      <div className={`cart-drawer ${isOpen ? 'open' : ''}`}>
+      <div className={`cart-drawer ${isOpen ? 'open' : ''}`} role="dialog" aria-label={`Cart from ${outletName}`}>
         <div className="cart-drawer-header">
           <div className="cart-drawer-title-group">
             <h2 className="cart-drawer-title">Your cart</h2>
             <p className="cart-drawer-subtitle">From {outletName}</p>
           </div>
           <button className="cart-close-btn" onClick={onClose} aria-label="Close cart">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#4b5563" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#4b5563" strokeWidth="2" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
           </button>
         </div>
         <div className="cart-drawer-body">
           {cartEntries.length === 0 ? (
-            <div className="cart-empty-state"><p>Your cart is empty.</p></div>
+            <div className="cart-empty-state">
+              <div className="cart-empty-icon" aria-hidden="true">🛒</div>
+              <p>Your cart is empty.</p>
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-light)' }}>Add items from the menu to place an order.</p>
+            </div>
           ) : (
             <div className="cart-items-list">
               {cartEntries.map(([itemId, qty]) => {
@@ -49,12 +56,15 @@ const CartDrawer = ({ isOpen, onClose, cart, menuItems, outletName, onUpdateQuan
                   <div key={itemId} className="cart-item-card">
                     <div className="cart-item-info">
                       <span className="cart-item-name">{item.name}</span>
-                      <span className="cart-item-price">₹{item.price}</span>
+                      <span className="cart-item-price">₹{item.price} × {qty}</span>
                     </div>
-                    <div className="cart-item-qty">
-                      <button onClick={() => onUpdateQuantity(itemId, qty - 1)}>−</button>
-                      <span>{qty}</span>
-                      <button onClick={() => onUpdateQuantity(itemId, qty + 1)}>+</button>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                      <span className="cart-item-line-total">₹{item.price * qty}</span>
+                      <div className="cart-item-qty">
+                        <button onClick={() => onUpdateQuantity(itemId, qty - 1)} aria-label={`Remove one ${item.name}`}>−</button>
+                        <span aria-live="polite">{qty}</span>
+                        <button onClick={() => onUpdateQuantity(itemId, qty + 1)} aria-label={`Add one ${item.name}`}>+</button>
+                      </div>
                     </div>
                   </div>
                 );
@@ -65,18 +75,26 @@ const CartDrawer = ({ isOpen, onClose, cart, menuItems, outletName, onUpdateQuan
         {cartEntries.length > 0 && (
           <div className="cart-drawer-footer">
             {/* Order notes */}
-            <input type="text" placeholder="Order notes (e.g., less spicy, no onions)" value={notes}
+            <label className="cart-drawer-field-label" htmlFor="cart-notes">Order notes</label>
+            <input
+              id="cart-notes"
+              type="text"
+              className="cart-drawer-input"
+              placeholder="e.g., less spicy, no onions"
+              value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              style={{ width: '100%', padding: '0.5rem', border: '1px solid #e5e7eb', borderRadius: '8px', fontSize: '0.85rem', marginBottom: '0.5rem' }} />
+            />
             {/* Scheduling (optional pickup time — within 6 hours) */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
-              <label style={{ fontSize: '0.8rem', color: '#6b7280', whiteSpace: 'nowrap' }}>Pickup time:</label>
-              <input type="datetime-local" value={scheduledTime}
-                onChange={(e) => setScheduledTime(e.target.value)}
-                min={minStr} max={maxStr}
-                style={{ padding: '0.4rem', border: '1px solid #e5e7eb', borderRadius: '6px', fontSize: '0.8rem', flex: 1, minWidth: 0 }} />
-              <span style={{ fontSize: '0.7rem', color: '#9ca3af', whiteSpace: 'nowrap' }}>(optional, within 6h)</span>
-            </div>
+            <label className="cart-drawer-field-label" htmlFor="cart-pickup-time">Pickup time (optional, within 6h)</label>
+            <input
+              id="cart-pickup-time"
+              type="datetime-local"
+              className="cart-drawer-input"
+              value={scheduledTime}
+              onChange={(e) => setScheduledTime(e.target.value)}
+              min={minStr}
+              max={maxStr}
+            />
             <div className="cart-drawer-summary">
               <div className="summary-row"><span>Subtotal</span><span>₹{subtotal}</span></div>
               <div className="summary-row"><span>Platform fee</span><span>₹{platformFee}</span></div>
@@ -84,9 +102,9 @@ const CartDrawer = ({ isOpen, onClose, cart, menuItems, outletName, onUpdateQuan
             </div>
             <button className="checkout-btn" disabled={placingOrder}
               onClick={() => onOrderNow({ notes: notes.trim() || undefined, scheduledFor: scheduledTime ? new Date(scheduledTime).toISOString() : undefined })}>
-              {placingOrder ? 'Placing order…' : `Place order · ₹${total}`}
+              {placingOrder ? 'Placing order…' : `Place Order — ₹${total}`}
             </button>
-            <p className="checkout-note">Prepaid · Razorpay secured payment</p>
+            <p className="checkout-note">Prepaid · secured by Razorpay</p>
           </div>
         )}
       </div>

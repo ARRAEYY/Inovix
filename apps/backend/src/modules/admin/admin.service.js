@@ -27,13 +27,36 @@ const {
 // pulled the entire tables across the wire and looped through them — slow
 // and memory-heavy. Now we push the counts to the DB via groupBy/count
 // aggregation queries. The response shape is unchanged so the admin
-// frontend doesn't need updating.
-async function getOverview() {
+// Indian Standard Time (IST, UTC+05:30) date helpers so calculations
+// align with the physical university campus day on Render (which runs in UTC).
+function getISTDateBounds() {
   const now = new Date();
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-  const startOfWeek = new Date(startOfToday);
-  startOfWeek.setDate(startOfWeek.getDate() - 6);
+  const istOffsetMs = 5.5 * 60 * 60 * 1000;
+  const istTime = new Date(now.getTime() + istOffsetMs);
+
+  // Midnight of today in IST (represented in UTC timestamp)
+  const istMidnightUTC = new Date(Date.UTC(istTime.getUTCFullYear(), istTime.getUTCMonth(), istTime.getUTCDate()));
+  const startOfToday = new Date(istMidnightUTC.getTime() - istOffsetMs);
+
+  // 1st of current month in IST
+  const istMonthStartUTC = new Date(Date.UTC(istTime.getUTCFullYear(), istTime.getUTCMonth(), 1));
+  const startOfMonth = new Date(istMonthStartUTC.getTime() - istOffsetMs);
+
+  // 7 days ago in IST
+  const startOfWeek = new Date(startOfToday.getTime() - 6 * 24 * 60 * 60 * 1000);
+
+  return { startOfToday, startOfMonth, startOfWeek };
+}
+
+// INO-P1-31 fix: push counts to the DB via groupBy/count aggregation queries.
+// Only paid and completed/refunded orders are counted to exclude abandoned checkouts.
+async function getOverview() {
+  const { startOfToday, startOfMonth, startOfWeek } = getISTDateBounds();
+
+  // Valid orders are those that have a successful or refunded payment
+  const validPaidOrderFilter = {
+    payment: { status: { in: [PAYMENT_STATUS.PAID, PAYMENT_STATUS.REFUNDED] } },
+  };
 
   const [
     userRoleGroups,
@@ -45,8 +68,6 @@ async function getOverview() {
     outletTotal,
     orderTotal,
     menuTotal,
-    // Admin-dashboard aggregates (additive — the original users/outlets/
-    // menu/orders counts above are preserved for existing consumers).
     revenueTodayGroups,
     revenueMonthGroups,
     revenueTotalGroups,
@@ -56,22 +77,42 @@ async function getOverview() {
     suspendedUserCount,
     outletsForOverview,
     recentOrders,
+    completedRefundCount,
   ] = await Promise.all([
     prisma.user.groupBy({ by: ['role'], _count: true }),
     prisma.outlet.groupBy({ by: ['status'], _count: true }),
-    prisma.order.groupBy({ by: ['status'], _count: true }),
+    prisma.order.groupBy({
+      by: ['status'],
+      _count: true,
+      where: validPaidOrderFilter,
+    }),
     prisma.menuItem.count({ where: { isAvailable: true } }),
     prisma.menuItem.count({ where: { isAvailable: false } }),
     prisma.user.count(),
     prisma.outlet.count(),
-    prisma.order.count(),
+    prisma.order.count({ where: validPaidOrderFilter }),
     prisma.menuItem.count(),
-    prisma.payment.groupBy({ by: ['status'], _count: true, _sum: { amount: true }, where: { status: PAYMENT_STATUS.PAID, createdAt: { gte: startOfToday } } }),
-    prisma.payment.groupBy({ by: ['status'], _count: true, _sum: { amount: true }, where: { status: PAYMENT_STATUS.PAID, createdAt: { gte: startOfMonth } } }),
-    prisma.payment.groupBy({ by: ['status'], _count: true, _sum: { amount: true }, where: { status: PAYMENT_STATUS.PAID } }),
+    prisma.payment.groupBy({
+      by: ['status'],
+      _count: true,
+      _sum: { amount: true },
+      where: { status: PAYMENT_STATUS.PAID, createdAt: { gte: startOfToday } },
+    }),
+    prisma.payment.groupBy({
+      by: ['status'],
+      _count: true,
+      _sum: { amount: true },
+      where: { status: PAYMENT_STATUS.PAID, createdAt: { gte: startOfMonth } },
+    }),
+    prisma.payment.groupBy({
+      by: ['status'],
+      _count: true,
+      _sum: { amount: true },
+      where: { status: PAYMENT_STATUS.PAID },
+    }),
     prisma.outlet.count({ where: { status: { in: [OUTLET_STATUS.OPEN, OUTLET_STATUS.BUSY] } } }),
-    prisma.order.count({ where: { createdAt: { gte: startOfToday } } }),
-    prisma.order.count({ where: { createdAt: { gte: startOfWeek } } }),
+    prisma.order.count({ where: { ...validPaidOrderFilter, createdAt: { gte: startOfToday } } }),
+    prisma.order.count({ where: { ...validPaidOrderFilter, createdAt: { gte: startOfWeek } } }),
     prisma.user.count({ where: { status: USER_STATUS.SUSPENDED } }),
     prisma.outlet.findMany({
       select: {
@@ -83,8 +124,9 @@ async function getOverview() {
       orderBy: { createdAt: 'asc' },
     }),
     prisma.order.findMany({
+      where: validPaidOrderFilter,
       orderBy: { createdAt: 'desc' },
-      take: 5,
+      take: 10,
       select: {
         id: true,
         orderNumber: true,
@@ -92,9 +134,11 @@ async function getOverview() {
         totalAmount: true,
         createdAt: true,
         outletSnapshot: true,
-        student: { select: { name: true } },
+        student: { select: { name: true, email: true } },
+        outlet: { select: { name: true } },
       },
     }),
+    prisma.refund.count({ where: { status: REFUND_STATUS.COMPLETED } }),
   ]);
 
   const sumRevenue = (groups) =>
@@ -108,11 +152,11 @@ async function getOverview() {
   const ordersByStatus = {};
   for (const g of orderStatusGroups) ordersByStatus[g.status] = g._count;
 
-  // Per-outlet orders-today counts for the outletOverview table.
+  // Per-outlet orders-today counts for the outletOverview table (only paid orders).
   const ordersTodayByOutlet = await prisma.order.groupBy({
     by: ['outletId'],
     _count: true,
-    where: { createdAt: { gte: startOfToday } },
+    where: { ...validPaidOrderFilter, createdAt: { gte: startOfToday } },
   });
   const ordersTodayMap = {};
   for (const g of ordersTodayByOutlet) ordersTodayMap[g.outletId] = g._count;
@@ -151,6 +195,10 @@ async function getOverview() {
       path: '/admin',
     });
   }
+
+  const refundRate = orderTotal > 0
+    ? ((completedRefundCount / orderTotal) * 100).toFixed(1) + '%'
+    : '0.0%';
 
   return {
     users: {
@@ -192,6 +240,7 @@ async function getOverview() {
       ordersToday: ordersTodayCount,
       ordersThisWeek: ordersThisWeekCount,
       totalUsers: userTotal,
+      refundRate,
     },
     outletOverview: outletsForOverview.map((o) => ({
       id: o.id,
@@ -206,8 +255,8 @@ async function getOverview() {
       status: o.status,
       total: Number(o.totalAmount),
       createdAt: o.createdAt,
-      studentName: o.student?.name || 'Student',
-      outletName: parseSnapshotName(o.outletSnapshot),
+      studentName: o.student?.name || o.student?.email || 'Student',
+      outletName: o.outlet?.name || parseSnapshotName(o.outletSnapshot),
     })),
     attentionNeeded,
   };
@@ -270,15 +319,17 @@ async function updateUserStatus(userId, status, reqUserId) {
 }
 
 async function getOutlets() {
-  const startOfToday = new Date();
-  startOfToday.setHours(0, 0, 0, 0);
+  const { startOfToday } = getISTDateBounds();
+  const validPaidOrderFilter = {
+    payment: { status: { in: [PAYMENT_STATUS.PAID, PAYMENT_STATUS.REFUNDED] } },
+  };
 
   const [outlets, ordersTodayGroups] = await Promise.all([
     prisma.outlet.findMany({ include: { staff: true } }),
     prisma.order.groupBy({
       by: ['outletId'],
       _count: true,
-      where: { createdAt: { gte: startOfToday } },
+      where: { ...validPaidOrderFilter, createdAt: { gte: startOfToday } },
     }),
   ]);
   const ordersTodayMap = {};
@@ -367,14 +418,23 @@ async function updateOutletStatus(outletId, status) {
 }
 
 async function getOrders({ page = 1, pageSize = 100 } = {}) {
+  const validPaidOrderFilter = {
+    payment: { status: { in: [PAYMENT_STATUS.PAID, PAYMENT_STATUS.REFUNDED] } },
+  };
   const [items, total] = await Promise.all([
     prisma.order.findMany({
+      where: validPaidOrderFilter,
       orderBy: { createdAt: 'desc' },
       skip: (page - 1) * pageSize,
       take: pageSize,
-      include: { items: true, payment: true, student: { select: { id: true, email: true, name: true } }, outlet: true },
+      include: {
+        items: true,
+        payment: { include: { refunds: true } },
+        student: { select: { id: true, email: true, name: true } },
+        outlet: { select: { id: true, name: true, location: true } },
+      },
     }),
-    prisma.order.count(),
+    prisma.order.count({ where: validPaidOrderFilter }),
   ]);
   return { items, total, page, pageSize };
 }

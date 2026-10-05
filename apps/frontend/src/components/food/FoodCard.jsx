@@ -37,18 +37,21 @@ const FoodCard = ({ food, quantity, onUpdateQuantity, onShowReviews }) => {
     });
   };
 
+  const isAvailable = food.isAvailable ?? food.available;
+
   return (
-    <div className="food-card">
+    <div className={`food-card ${!isAvailable ? 'is-unavailable' : ''}`}>
       <div className="food-image-container">
         {food.image ? (
-          <img src={food.image} alt={food.name} className="food-image" />
+          <img src={food.image} alt={food.name} className="food-image" loading="lazy" />
         ) : (
           <div className="food-image-placeholder">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" opacity="0.5">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" opacity="0.5" aria-hidden="true">
               <path d="M18 8h1a4 4 0 0 1 0 8h-1"></path><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"></path>
             </svg>
           </div>
         )}
+        {!isAvailable && <span className="food-unavailable-badge">Unavailable</span>}
       </div>
       <div className="food-content">
         <div className="food-info-group">
@@ -68,22 +71,22 @@ const FoodCard = ({ food, quantity, onUpdateQuantity, onShowReviews }) => {
         </div>
         <div className="food-footer">
           <span className="food-price">₹{adjustedPrice}</span>
-          {!(food.isAvailable ?? food.available) ? (
-            <span className="food-unavailable">Unavailable</span>
+          {!isAvailable ? (
+            <span className="food-unavailable">Currently unavailable</span>
           ) : quantity > 0 ? (
-            <div className="quantity-selector">
-              <button className="qty-btn" onClick={() => onUpdateQuantity(food.id, quantity - 1)}>−</button>
-              <span className="qty-value">{quantity}</span>
-              <button className="qty-btn" onClick={() => onUpdateQuantity(food.id, quantity + 1)}>+</button>
+            <div className="quantity-selector" aria-label={`Quantity of ${food.name}`}>
+              <button className="qty-btn" aria-label={`Remove one ${food.name}`} onClick={() => onUpdateQuantity(food.id, quantity - 1)}>−</button>
+              <span className="qty-value" aria-live="polite">{quantity}</span>
+              <button className="qty-btn" aria-label={`Add one ${food.name}`} onClick={() => onUpdateQuantity(food.id, quantity + 1)}>+</button>
             </div>
           ) : (
             <div style={{ display: 'flex', gap: '0.4rem' }}>
               {hasCustomizations && (
-                <button className="add-btn" style={{ background: '#f3f4f6', color: '#374151' }} onClick={() => setShowCustomize(true)}>
+                <button className="add-btn" style={{ background: '#f3f4f6', color: '#374151', borderColor: 'var(--border-color)' }} onClick={() => setShowCustomize(true)}>
                   Customize
                 </button>
               )}
-              <button className="add-btn" onClick={handleAdd}>ADD</button>
+              <button className="add-btn" aria-label={`Add ${food.name} to cart`} onClick={handleAdd}>ADD</button>
             </div>
           )}
         </div>

@@ -4,7 +4,9 @@ import StatsGrid from '../../components/outlet/StatsGrid';
 import OrderBoard from '../../components/outlet/OrderBoard';
 import DeclineOrderModal from '../../components/outlet/DeclineOrderModal';
 import { orderService, OUTLET_DISPLAY_STATUS } from '../../services/api/orderService';
+import client from '../../services/api/client';
 import { toast } from 'react-hot-toast';
+import { Skeleton } from '../../components/common/Skeleton';
 
 const Dashboard = () => {
   const [stats, setStats] = useState({ new: 0, preparing: 0, ready: 0 });
@@ -100,6 +102,18 @@ const Dashboard = () => {
 
   const handleComplete = (orderId) => handleStatusUpdate(orderId, 'COMPLETED');
 
+  // Verify Pickup: enter the student's 4-digit pickup code → READY → COMPLETED.
+  const handleVerifyPickup = async (orderId, code) => {
+    try {
+      await client.post(`/outlet/orders/${orderId}/verify-pickup`, { pickupCode: code });
+      toast('✓ Pickup verified! Order completed.');
+      updateOrderInState(orderId, { backendStatus: 'COMPLETED', status: 'COMPLETED' });
+      fetchOrders();
+    } catch (err) {
+      toast(err.response?.data?.message || 'Invalid pickup code');
+    }
+  };
+
   const submitDeclineOrder = async (orderId, reason, note) => {
     try {
       const reasonText = note ? `${reason} — ${note}` : reason;
@@ -130,20 +144,34 @@ const Dashboard = () => {
         </button>
       </div>
 
-      <StatsGrid stats={stats} activeStatus={activeStatus} setActiveStatus={setActiveStatus} />
-      
-      <OrderBoard
-        orders={orders}
-        activeStatus={activeStatus}
-        onAccept={handleAccept}
-        onMarkReady={handleMarkReady}
-        onComplete={handleComplete}
-        onVerifyPickup={handleVerifyPickup}
-        onDecline={(id) => {
-          setOrderToDecline(id);
-          setDeclineModalOpen(true);
-        }}
-      />
+      {error ? (
+        <div className="dashboard-feedback" role="alert">
+          <p>Something went wrong loading orders.</p>
+          <button className="primary-btn" onClick={handleRefresh}>Try Again</button>
+        </div>
+      ) : loading && orders.length === 0 ? (
+        <div className="dashboard-feedback" aria-busy="true">
+          <Skeleton width="100%" height="88px" borderRadius="12px" />
+          <Skeleton width="100%" height="220px" borderRadius="12px" />
+        </div>
+      ) : (
+        <>
+          <StatsGrid stats={stats} activeStatus={activeStatus} setActiveStatus={setActiveStatus} />
+
+          <OrderBoard
+            orders={orders}
+            activeStatus={activeStatus}
+            onAccept={handleAccept}
+            onMarkReady={handleMarkReady}
+            onComplete={handleComplete}
+            onVerifyPickup={handleVerifyPickup}
+            onDecline={(id) => {
+              setOrderToDecline(id);
+              setDeclineModalOpen(true);
+            }}
+          />
+        </>
+      )}
 
       {declineModalOpen && (
         <DeclineOrderModal 

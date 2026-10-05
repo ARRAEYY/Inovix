@@ -33,7 +33,7 @@ async function findAllByOutletId(outletId) {
           minSelect: true,
           maxSelect: true,
           options: {
-            select: { id: true, name: true, price: true, isDefault: true }
+            select: { id: true, label: true, priceDelta: true }
           }
         }
       }

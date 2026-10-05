@@ -13,6 +13,9 @@ const { ERROR_CODES } = require('../lib/constants');
  * }
  */
 function errorHandler(err, req, res, next) {
+    // Ensure errors are never cached by browsers or CDNs
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+
     // Default to 500 Internal Server Error
     const statusCode = err.statusCode || err.status || 500;
 

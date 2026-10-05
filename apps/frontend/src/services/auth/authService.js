@@ -16,19 +16,35 @@ export const authService = {
   },
 
   /**
-   * Logs out — revokes the refresh token server-side (POST /auth/logout)
-   * and clears the local session.
+   * Logs out — revokes the refresh token server-side (POST /auth/logout),
+   * revokes Google OAuth credentials, and clears all local session data.
+   * @param {Object} [user] - Optional user object to revoke Google session for
    */
-  async logout() {
+  async logout(user) {
     try {
       await client.post('/auth/logout');
     } catch (error) {
-      // Logout must always succeed locally even if the server call fails
-      // (e.g. already-expired access token).
       console.error('Server logout failed:', error.response?.data?.message || error.message);
     }
+
+    // Revoke Google OAuth session and disable auto-select
+    try {
+      if (window.google?.accounts?.id) {
+        window.google.accounts.id.disableAutoSelect();
+        const email = user?.email || JSON.parse(localStorage.getItem('user') || '{}')?.email;
+        if (email) {
+          window.google.accounts.id.revoke(email, (done) => {
+            console.log('Google token revoked:', done.successful);
+          });
+        }
+      }
+    } catch (e) {
+      console.warn('Google revoke error:', e);
+    }
+
     localStorage.removeItem('accessToken');
     localStorage.removeItem('user');
+    sessionStorage.clear();
   },
 
   /**

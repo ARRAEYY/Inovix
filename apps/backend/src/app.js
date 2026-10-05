@@ -81,10 +81,12 @@ app.use(cors({
 
 // ── Health Check ─────────────────────────────────────────────────────────────
 app.get('/health', (req, res) => {
+  const { cacheStats } = require('./lib/cache');
   res.json({
     success: true,
     message: 'Campus Food API is running',
     environment: process.env.NODE_ENV || 'development',
+    cache: cacheStats ? cacheStats() : { active: false },
     timestamp: new Date().toISOString(),
   });
 });

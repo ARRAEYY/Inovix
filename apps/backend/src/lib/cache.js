@@ -161,8 +161,22 @@ async function cached(key, ttlSeconds, loader) {
   return value;
 }
 
+function cacheStats() {
+  const now = Date.now();
+  for (const [k, v] of memoryStore.entries()) {
+    if (now > v.expiresAt) memoryStore.delete(k);
+  }
+  return {
+    active: true,
+    driver: state === 'up' ? 'redis' : 'in-memory',
+    redisStatus: state,
+    memoryKeysCount: memoryStore.size,
+    cachedKeys: Array.from(memoryStore.keys()),
+  };
+}
+
 function redisStatus() {
   return state;
 }
 
-module.exports = { cacheGet, cacheSet, cacheDel, cacheDelPrefix, cached, redisStatus };
+module.exports = { cacheGet, cacheSet, cacheDel, cacheDelPrefix, cached, redisStatus, cacheStats };

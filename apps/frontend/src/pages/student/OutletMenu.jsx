@@ -209,6 +209,8 @@ const OutletMenu = () => {
     if (placingOrder) return;
     const entries = Object.entries(cart).filter(([, qty]) => qty > 0);
     if (entries.length === 0) return;
+
+    let pendingOrderId = null;
     try {
       setPlacingOrder(true);
 
@@ -223,6 +225,7 @@ const OutletMenu = () => {
       if (!order.id) {
         throw new Error(orderRes.message || 'Could not create the order');
       }
+      pendingOrderId = order.id;
 
       // Step 2: create a Razorpay gateway order. When the outlet has no
       // Razorpay credentials configured (local dev) AND the app runs in dev
@@ -247,6 +250,7 @@ const OutletMenu = () => {
         if (!confirmRes.success) {
           throw new Error(confirmRes.message || 'Dev payment confirmation failed');
         }
+        pendingOrderId = null;
         setCart({});
         try { localStorage.removeItem(CART_STORAGE_KEY); } catch {}
         setIsCartOpen(false);
@@ -256,34 +260,14 @@ const OutletMenu = () => {
       }
 
       // Step 3: open the Razorpay checkout modal
-      let paymentResponse;
-      try {
-        paymentResponse = await paymentService.openCheckout({
-          keyId: rp.keyId,
-          razorpayOrderId: rp.razorpayOrderId,
-          amount: rp.amount,
-          currency: rp.currency,
-          user,
-          outletName: outlet?.name,
-        });
-      } catch (dismissError) {
-        // Payment failed or user dismissed the checkout. The order was
-        // created (step 1) but NOT paid. Auto-cancel it so it doesn't
-        // show as "successfully placed" — the user shouldn't have a
-        // dangling unpaid order in their list.
-        try {
-          await orderService.cancelOrder(order.id);
-        } catch (cancelErr) {
-          // If cancel fails (e.g. outlet already accepted — rare for a
-          // sub-second turnaround), the order stays PENDING. The
-          // reconciliation worker or a manual cancel will handle it.
-          console.error('Auto-cancel failed:', cancelErr);
-        }
-        setIsCartOpen(false);
-        // Keep the cart intact so the user can try again immediately.
-        toast('Payment cancelled. Order was not placed — your cart is saved so you can try again.');
-        return;
-      }
+      const paymentResponse = await paymentService.openCheckout({
+        keyId: rp.keyId,
+        razorpayOrderId: rp.razorpayOrderId,
+        amount: rp.amount,
+        currency: rp.currency,
+        user,
+        outletName: outlet?.name,
+      });
 
       // Step 4: verify the payment signature
       const verifyRes = await paymentService.verifyPayment({
@@ -293,6 +277,7 @@ const OutletMenu = () => {
       });
 
       // Step 5: payment confirmed → clear cart + navigate
+      pendingOrderId = null;
       setCart({});
       try { localStorage.removeItem(CART_STORAGE_KEY); } catch {}
       setIsCartOpen(false);
@@ -300,7 +285,15 @@ const OutletMenu = () => {
       toast(`Order ${order.orderNumber || ''} placed! Payment: ${paid}. You'll get a pickup code when the outlet accepts.`);
       navigate('/student/orders');
     } catch (err) {
-      toast(err.message || 'Could not place the order. Please try again.');
+      if (pendingOrderId) {
+        try {
+          await orderService.cancelOrder(pendingOrderId);
+        } catch (cleanupErr) {
+          console.error('Failed to cleanup unpaid order:', cleanupErr);
+        }
+      }
+      setIsCartOpen(false);
+      toast(err.message || 'Payment was not completed. Your cart is preserved so you can try again.');
     } finally {
       setPlacingOrder(false);
     }

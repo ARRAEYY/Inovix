@@ -585,6 +585,15 @@ async function handlePaymentEvent(event, eventType) {
     });
     if (claimed.count !== 1) return { ignored: true };
 
+    await prisma.order.updateMany({
+      where: { id: payment.order.id, status: ORDER_STATUS.PENDING },
+      data: {
+        status: ORDER_STATUS.CANCELLED,
+        cancelReason: 'Payment failed at gateway',
+        cancelledAt: new Date(),
+      },
+    });
+
     await audit({
       actorId: null,
       action: 'PAYMENT_FAILED',

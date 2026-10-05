@@ -9,7 +9,35 @@ async function findAllByOutletId(outletId) {
   return prisma.menuItem.findMany({
     where: { outletId },
     orderBy: [{ category: { sortOrder: 'asc' } }, { name: 'asc' }],
-    include: { category: true, customizationGroups: { include: { options: true } } },
+    select: {
+      id: true,
+      outletId: true,
+      categoryId: true,
+      name: true,
+      description: true,
+      price: true,
+      imageUrl: true,
+      isAvailable: true,
+      prepTimeMins: true,
+      discount: true,
+      popular: true,
+      vegetarian: true,
+      dietaryFlags: true,
+      category: {
+        select: { id: true, name: true, sortOrder: true }
+      },
+      customizationGroups: {
+        select: {
+          id: true,
+          name: true,
+          minSelect: true,
+          maxSelect: true,
+          options: {
+            select: { id: true, name: true, price: true, isDefault: true }
+          }
+        }
+      }
+    },
   });
 }
 

@@ -6,14 +6,10 @@ import { useAuth } from '../../hooks/useAuth';
 import { toast } from 'react-hot-toast';
 import client from '../../services/api/client';
 import { catalogService } from '../../services/api/catalogService';
-import { cacheGet, cacheSet } from '../../services/cache/localCache';
+import { cacheGet, cacheSet, cacheGetStale } from '../../services/cache/localCache';
 import SkeletonGrid from '../../components/common/Skeleton';
 
 const FILTERS = ['All', 'Open now'];
-
-// How long the cached outlets list may be rendered before falling back to
-// the loading skeleton. The network refresh always runs regardless.
-const OUTLETS_MAX_AGE_MS = 5 * 60 * 1000;
 
 // Map a catalog outlet (Prisma Outlet model) onto the fields OutletCard
 // renders. Only OPEN/BUSY outlets are returned by the backend.
@@ -32,8 +28,11 @@ const Home = () => {
   const { user } = useAuth();
   const [activeFilter, setActiveFilter] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
-  const [outlets, setOutlets] = useState([]);
-  const [loading, setLoading] = useState(true);
+
+  // Instant SWR: Read from localStorage immediately so the outlets list paints with 0ms delay!
+  const initialCache = React.useMemo(() => cacheGetStale('outlets'), []);
+  const [outlets, setOutlets] = useState(() => (initialCache.data || []).map(mapOutlet));
+  const [loading, setLoading] = useState(() => !initialCache.data?.length);
   const [favorites, setFavorites] = useState(new Set());
   const [error, setError] = useState(null);
 
@@ -42,16 +41,8 @@ const Home = () => {
     client.get('/favorites').then(res => {
       setFavorites(new Set((res.data?.data || []).map(f => f.outletId)));
     }).catch(() => {});
+
     const fetchOutlets = async () => {
-      // Stale-while-revalidate: render the cached list instantly (no
-      // skeleton on repeat visits), refresh underneath, cache the result.
-      const cached = cacheGet('outlets', OUTLETS_MAX_AGE_MS);
-      if (cached) {
-        setOutlets(cached.map(mapOutlet));
-        setLoading(false);
-      } else {
-        setLoading(true);
-      }
       try {
         const res = await catalogService.getOutlets();
         const raw = res.data || [];
@@ -59,14 +50,16 @@ const Home = () => {
         setOutlets(raw.map(mapOutlet));
         setError(null);
       } catch (err) {
-        setError(err.message || 'Failed to load outlets');
+        if (!initialCache.data?.length) {
+          setError(err.message || 'Failed to load outlets');
+        }
         console.error('Failed to fetch outlets:', err);
       } finally {
         setLoading(false);
       }
     };
     fetchOutlets();
-  }, []);
+  }, [initialCache]);
 
   const toggleFavorite = async (e, outletId) => {
     e.stopPropagation();

@@ -7,7 +7,7 @@ import MobileBottomNav from '../../components/layout/MobileBottomNav';
 import BackButton from '../../components/common/BackButton';
 
 import { catalogService } from '../../services/api/catalogService';
-import { cacheGet, cacheSet } from '../../services/cache/localCache';
+import { cacheGet, cacheSet, cacheGetStale } from '../../services/cache/localCache';
 import FoodReviewsModal from '../../components/food/FoodReviewsModal';
 import { orderService } from '../../services/api/orderService';
 import { paymentService } from '../../services/api/paymentService';
@@ -56,9 +56,27 @@ const mapMenuItem = (item) => ({
   price: Number(item.price),
 });
 
-// How long a cached menu may be rendered before showing the skeleton
-// instead. The network refresh always runs regardless.
-const MENU_CACHE_MAX_AGE_MS = 5 * 60 * 1000;
+// Group flat items by category and sort Popular first
+const buildMenuSections = (items) => {
+  const grouped = (items || []).reduce((acc, item) => {
+    if (!acc[item.category]) {
+      acc[item.category] = {
+        category: item.category,
+        items: []
+      };
+    }
+    acc[item.category].items.push(item);
+    return acc;
+  }, {});
+
+  const sectionsArray = Object.values(grouped);
+  sectionsArray.sort((a, b) => {
+    if (a.category === 'Popular') return -1;
+    if (b.category === 'Popular') return 1;
+    return a.category.localeCompare(b.category);
+  });
+  return sectionsArray;
+};
 
 // Map the catalog outlet onto the banner fields.
 const mapOutletDetails = (o) => ({
@@ -74,10 +92,16 @@ const OutletMenu = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
 
-  const [outlet, setOutlet] = useState(null);
-  const [menuSections, setMenuSections] = useState([]);
-  const [flatMenuItems, setFlatMenuItems] = useState([]);
-  const [loading, setLoading] = useState(true);
+  // Instant SWR: Read from localStorage immediately so the menu paints with 0ms delay!
+  const cacheKey = `menu:${id}`;
+  const initialCache = React.useMemo(() => cacheGetStale(cacheKey), [cacheKey]);
+  const initialItems = React.useMemo(() => (initialCache.data?.items || []).map(mapMenuItem), [initialCache]);
+  const initialSections = React.useMemo(() => buildMenuSections(initialItems), [initialItems]);
+
+  const [outlet, setOutlet] = useState(() => initialCache.data?.outlet ? mapOutletDetails(initialCache.data.outlet) : null);
+  const [menuSections, setMenuSections] = useState(initialSections);
+  const [flatMenuItems, setFlatMenuItems] = useState(initialItems);
+  const [loading, setLoading] = useState(() => !initialItems.length);
   const [error, setError] = useState(null);
   const [placingOrder, setPlacingOrder] = useState(false);
   const [reviewsItem, setReviewsItem] = useState(null);
@@ -108,58 +132,32 @@ const OutletMenu = () => {
 
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeCategory, setActiveCategory] = useState('');
+  const [activeCategory, setActiveCategory] = useState(() => initialSections[0]?.category || '');
 
   // Refs for scroll spy
   const sectionRefs = useRef({});
   const menuContentRef = useRef(null);
 
   useEffect(() => {
-    // Stale-while-revalidate: paint the outlet + menu instantly from the
-    // last visit's cache, then refresh underneath (no skeleton flash).
-    const applyData = (outletRaw, itemsRaw) => {
-      setOutlet(mapOutletDetails(outletRaw || {}));
-
-      const items = (itemsRaw || []).map(mapMenuItem);
-      setFlatMenuItems(items);
-
-      // Group by category
-      const grouped = items.reduce((acc, item) => {
-        if (!acc[item.category]) {
-          acc[item.category] = {
-            category: item.category,
-            items: []
-          };
-        }
-        acc[item.category].items.push(item);
-        return acc;
-      }, {});
-
-      const sectionsArray = Object.values(grouped);
-
-      // Sort sections logically, putting 'Popular' first
-      sectionsArray.sort((a, b) => {
-        if (a.category === 'Popular') return -1;
-        if (b.category === 'Popular') return 1;
-        return a.category.localeCompare(b.category);
-      });
-
-      setMenuSections(sectionsArray);
-      // Keep the user's selected category across background refreshes.
-      setActiveCategory((prev) =>
-        sectionsArray.some((s) => s.category === prev) ? prev : (sectionsArray[0]?.category || '')
-      );
-    };
+    // Check if cache has data for current id
+    const cached = cacheGetStale(cacheKey);
+    if (cached.data) {
+      if (cached.data.outlet) setOutlet(mapOutletDetails(cached.data.outlet));
+      if (cached.data.items) {
+        const items = cached.data.items.map(mapMenuItem);
+        setFlatMenuItems(items);
+        const sections = buildMenuSections(items);
+        setMenuSections(sections);
+        setActiveCategory((prev) =>
+          sections.some((s) => s.category === prev) ? prev : (sections[0]?.category || '')
+        );
+        setLoading(false);
+      }
+    } else {
+      setLoading(true);
+    }
 
     const fetchMenu = async () => {
-      const cacheKey = `menu:${id}`;
-      const cached = cacheGet(cacheKey, MENU_CACHE_MAX_AGE_MS);
-      if (cached) {
-        applyData(cached.outlet, cached.items);
-        setLoading(false);
-      } else {
-        setLoading(true);
-      }
       try {
         const [outletRes, menuRes] = await Promise.all([
           catalogService.getOutletDetails(id),
@@ -167,19 +165,29 @@ const OutletMenu = () => {
         ]);
         const outletRaw = outletRes.data || {};
         const itemsRaw = menuRes.data || [];
+
+        // Save fresh menu in user's localStorage so next time it loads in 0ms!
         cacheSet(cacheKey, { outlet: outletRaw, items: itemsRaw });
-        applyData(outletRaw, itemsRaw);
+
+        setOutlet(mapOutletDetails(outletRaw));
+        const items = itemsRaw.map(mapMenuItem);
+        setFlatMenuItems(items);
+        const sections = buildMenuSections(items);
+        setMenuSections(sections);
+        setActiveCategory((prev) =>
+          sections.some((s) => s.category === prev) ? prev : (sections[0]?.category || '')
+        );
         setError(null);
       } catch (err) {
         console.error('Failed to fetch menu:', err);
         // Only surface the error when there was nothing cached to show.
-        if (!cached) setError(err.message || 'Failed to load this outlet\'s menu');
+        if (!cached.data) setError(err.message || 'Failed to load this outlet\'s menu');
       } finally {
         setLoading(false);
       }
     };
     fetchMenu();
-  }, [id]);
+  }, [id, cacheKey]);
 
   // ─── Outlet-wise cart ──────────────────────────────────────────────────
   // Carts are keyed per outlet (nosh:cart:{id}) and persist across visits:

@@ -47,7 +47,7 @@ router.post('/login', devLoginRateLimit, validateBody(loginSchema), login);
 // The controller re-checks the same conditions at request time as belt-and-
 // suspenders defense in case the controller is wired elsewhere.
 const ENABLE_DEV_LOGIN = process.env.ENABLE_DEV_LOGIN === 'true';
-const IS_DEV = process.env.NODE_ENV === 'development' || ENABLE_DEV_LOGIN;
+const IS_DEV = process.env.NODE_ENV === 'development';
 
 // Public routes — each gets its own per-endpoint rate limit (INO-010).
 //

@@ -15,3 +15,5 @@ kent_portal/
 *.tsbuildinfo
 .vercel/
 .zcodeignore
+.vercel
+.env*

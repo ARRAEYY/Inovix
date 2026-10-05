@@ -17,3 +17,4 @@ kent_portal/
 .zcodeignore
 .vercel
 .env*
+supabase/.temp/

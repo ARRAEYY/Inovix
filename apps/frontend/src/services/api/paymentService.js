@@ -1,5 +1,27 @@
 import client from './client';
 
+const loadRazorpayScript = () => {
+  if (typeof window !== 'undefined' && typeof window.Razorpay !== 'undefined') {
+    return Promise.resolve(true);
+  }
+  return new Promise((resolve) => {
+    const existing = document.getElementById('razorpay-checkout-script');
+    if (existing) {
+      if (typeof window.Razorpay !== 'undefined') return resolve(true);
+      existing.addEventListener('load', () => resolve(true));
+      existing.addEventListener('error', () => resolve(false));
+      return;
+    }
+    const script = document.createElement('script');
+    script.id = 'razorpay-checkout-script';
+    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+    script.async = true;
+    script.onload = () => resolve(true);
+    script.onerror = () => resolve(false);
+    document.body.appendChild(script);
+  });
+};
+
 // Payment service — wires the prepaid order flow (every order is paid via
 // Razorpay checkout BEFORE the order is considered placed).
 //
@@ -44,12 +66,13 @@ export const paymentService = {
   // Open the Razorpay checkout modal. Returns a Promise that resolves on
   // successful payment (with the Razorpay response) or rejects on dismiss
   // / failure.
-  openCheckout: ({ keyId, razorpayOrderId, amount, currency, user, outletName }) => {
+  openCheckout: async ({ keyId, razorpayOrderId, amount, currency, user, outletName }) => {
+    const loaded = await loadRazorpayScript();
+    if (!loaded || typeof window.Razorpay === 'undefined') {
+      throw new Error('Razorpay checkout script failed to load. Please check your internet connection.');
+    }
+
     return new Promise((resolve, reject) => {
-      if (typeof window.Razorpay === 'undefined') {
-        reject(new Error('Razorpay checkout script not loaded'));
-        return;
-      }
 
       const options = {
         key: keyId,

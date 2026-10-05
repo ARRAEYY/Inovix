@@ -214,9 +214,8 @@ async function googleAuthStart(req, res, next) {
 // AuthContext detects `?google_login=success` and refreshes the access
 // token via /auth/refresh.
 async function googleCallback(req, res, next) {
-  // Frontend path to redirect to after a successful login. The Inovix
-  // app is served at /inovix-app/ through the Next.js reverse-proxy.
-  const FRONTEND_PATH = process.env.GOOGLE_OAUTH_FRONTEND_PATH || '/inovix-app/';
+  const FRONTEND_PATH = process.env.GOOGLE_OAUTH_FRONTEND_PATH
+    || (process.env.FRONTEND_URL ? `${process.env.FRONTEND_URL.split(',')[0].trim()}/` : '/inovix-app/');
 
   // User cancelled or Google errored — bounce back to the login page
   // with an error flag the frontend can show.

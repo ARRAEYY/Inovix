@@ -81,7 +81,10 @@ async function createOrder(orderData) {
 }
 
 async function findByUserId(studentId, { page = 1, pageSize = 20, status } = {}) {
-  const where = { studentId };
+  const where = {
+    studentId,
+    payment: { status: { in: ['PAID', 'REFUNDED'] } },
+  };
   if (status) where.status = status;
   return prisma.order.findMany({
     where,
@@ -93,7 +96,10 @@ async function findByUserId(studentId, { page = 1, pageSize = 20, status } = {})
 }
 
 async function findByOutletId(outletId, { page = 1, pageSize = 50, status } = {}) {
-  const where = { outletId };
+  const where = {
+    outletId,
+    payment: { status: { in: ['PAID', 'REFUNDED'] } },
+  };
   if (status) where.status = status;
   return prisma.order.findMany({
     where,
@@ -144,7 +150,10 @@ async function updateStatus(orderId, expectedStatus, status, actorId, extra = {}
 async function countByStatus(outletId) {
   const grouped = await prisma.order.groupBy({
     by: ['status'],
-    where: { outletId },
+    where: {
+      outletId,
+      payment: { status: { in: ['PAID', 'REFUNDED'] } },
+    },
     _count: true,
   });
   const result = {};

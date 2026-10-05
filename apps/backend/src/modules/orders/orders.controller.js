@@ -164,7 +164,7 @@ async function getOutletAnalytics(req, res, next) {
         where: { outletId, status: 'COMPLETED', createdAt: { gte: startOfMonth } },
         select: { totalAmount: true },
       }),
-      prisma.order.count({ where: { outletId } }),
+      prisma.order.count({ where: { outletId, payment: { status: { in: ['PAID', 'REFUNDED'] } } } }),
       prisma.order.findMany({
         where: { outletId, status: 'COMPLETED' },
         orderBy: { createdAt: 'desc' },
@@ -174,7 +174,7 @@ async function getOutletAnalytics(req, res, next) {
       prisma.menuItem.count({ where: { outletId, isAvailable: false } }),
       // Recent orders (any status) for the dashboard's recent-orders table.
       prisma.order.findMany({
-        where: { outletId },
+        where: { outletId, payment: { status: { in: ['PAID', 'REFUNDED'] } } },
         orderBy: { createdAt: 'desc' },
         take: 3,
         select: {

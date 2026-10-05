@@ -5,12 +5,17 @@ export const authService = {
    * Login using the dev-login route.
    * @param {string} email
    * @param {string} password 
-   */
   async login(email, password) {
     try {
-      const response = await client.post('/auth/dev-login', { email, password });
+      const response = await client.post('/auth/login', { email, password });
       return response.data;
     } catch (error) {
+      if (import.meta.env.DEV && error.response?.status === 404) {
+        try {
+          const devRes = await client.post('/auth/dev-login', { email, password });
+          return devRes.data;
+        } catch {}
+      }
       throw error.response?.data || { message: 'Network Error' };
     }
   },

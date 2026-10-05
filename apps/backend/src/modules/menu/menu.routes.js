@@ -50,9 +50,17 @@ router.post('/categories', protect, authorizeRole(...OUTLET_ADMIN_ROLES), requir
 
 router.patch('/categories/:categoryId', protect, authorizeRole(...OUTLET_ADMIN_ROLES), requireOutletScope, async (req, res, next) => {
   try {
+    const categoryId = req.params.categoryId;
+    const existing = await prisma.menuCategory.findFirst({
+      where: { id: categoryId, outletId: req.user.outletId },
+    });
+    if (!existing) {
+      return res.status(404).json({ success: false, message: 'Category not found in this outlet' });
+    }
+
     const { name, sortOrder } = req.body;
     const cat = await prisma.menuCategory.update({
-      where: { id: req.params.categoryId },
+      where: { id: categoryId },
       data: { ...(name ? { name } : {}), ...(sortOrder !== undefined ? { sortOrder } : {}) },
     });
     res.json({ success: true, data: cat });
@@ -61,12 +69,20 @@ router.patch('/categories/:categoryId', protect, authorizeRole(...OUTLET_ADMIN_R
 
 router.delete('/categories/:categoryId', protect, authorizeRole(...OUTLET_ADMIN_ROLES), requireOutletScope, async (req, res, next) => {
   try {
+    const categoryId = req.params.categoryId;
+    const existing = await prisma.menuCategory.findFirst({
+      where: { id: categoryId, outletId: req.user.outletId },
+    });
+    if (!existing) {
+      return res.status(404).json({ success: false, message: 'Category not found in this outlet' });
+    }
+
     // Unassign items from this category before deleting
     await prisma.menuItem.updateMany({
-      where: { categoryId: req.params.categoryId },
+      where: { categoryId: categoryId, outletId: req.user.outletId },
       data: { categoryId: null },
     });
-    await prisma.menuCategory.delete({ where: { id: req.params.categoryId } });
+    await prisma.menuCategory.delete({ where: { id: categoryId } });
     res.json({ success: true, message: 'Category deleted' });
   } catch (err) { next(err); }
 });

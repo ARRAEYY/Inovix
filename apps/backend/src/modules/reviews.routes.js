@@ -44,7 +44,7 @@ router.post('/', protect, authorizeRole(ROLES.STUDENT), async (req, res, next) =
       return res.status(400).json({ success: false, message: 'Rating must be 1-5' });
     }
     // Verify the order belongs to the student + is COMPLETED
-    const order = await prisma.order.findUnique({ where: { id: orderId } });
+    const order = await prisma.order.findUnique({ where: { id: orderId }, include: { items: true } });
     if (!order || order.studentId !== req.user.id) {
       return res.status(403).json({ success: false, message: 'Not your order' });
     }
@@ -62,12 +62,7 @@ router.post('/', protect, authorizeRole(ROLES.STUDENT), async (req, res, next) =
     // updates instead of failing on the unique constraint.
     let savedItemReviews = [];
     if (Array.isArray(itemReviews) && itemReviews.length > 0) {
-      const menuItemIds = itemReviews.map((r) => r.menuItemId);
-      const ownedItems = await prisma.menuItem.findMany({
-        where: { id: { in: menuItemIds }, outletId },
-        select: { id: true },
-      });
-      const allowed = new Set(ownedItems.map((i) => i.id));
+      const allowed = new Set(order.items.map((i) => i.menuItemId));
       const valid = itemReviews.filter(
         (r) => allowed.has(r.menuItemId) && Number.isInteger(r.rating) && r.rating >= 1 && r.rating <= 5
       );

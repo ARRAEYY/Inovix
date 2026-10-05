@@ -80,6 +80,7 @@ router.post('/', async (req, res, next) => {
         outletStaff: {
           create: {
             outletId: req.user.outletId,
+            role: role === ROLES.OUTLET_ADMIN ? 'ADMIN' : 'STAFF',
           },
         },
       },

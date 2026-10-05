@@ -101,6 +101,20 @@ app.get('/health', (req, res) => {
   });
 });
 
+// ── API root ────────────────────────────────────────────────────────────────
+// Visiting the API host directly (humans, uptime pings) should not look
+// like an error — the catch-all 404 below made GET / read as a failure.
+app.get('/', (req, res) => {
+  res.json({
+    success: true,
+    message: 'Nosh API is running',
+    health: '/health',
+    api: '/api/v1',
+    environment: process.env.NODE_ENV || 'development',
+    timestamp: new Date().toISOString(),
+  });
+});
+
 // ── API Rate Limiting ─────────────────────────────────────────────────────────
 // Apply before any route mounts so every /api/v1/* request is throttled.
 app.use('/api/v1/', apiRateLimit);

@@ -22,7 +22,10 @@
  * not crash the scheduler.
  */
 
-const cron = require('node-cron');
+let cron = null;
+try {
+  cron = require('node-cron');
+} catch {}
 const prisma = require('./prisma');
 const { audit } = require('./audit');
 const { ORDER_STATUS } = require('./constants');
@@ -247,6 +250,10 @@ async function purgeExpiredCarts() {
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
 function initCron() {
+  if (!cron) {
+    console.warn('[cron] node-cron not available — skipping cron init');
+    return;
+  }
   if (!isCronEnabled()) {
     console.log('[cron] disabled (RUN_CRON=false or NODE_ENV=test)');
     return;

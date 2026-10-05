@@ -20,7 +20,10 @@
  *   4. Copy the 16-char password → set as SMTP_PASS
  */
 
-const nodemailer = require('nodemailer');
+let nodemailer = null;
+try {
+  nodemailer = require('nodemailer');
+} catch {}
 
 let transporter = null;
 
@@ -33,7 +36,7 @@ function getTransporter() {
 
   const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS } = process.env;
 
-  if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS) {
+  if (!nodemailer || !SMTP_HOST || !SMTP_USER || !SMTP_PASS) {
     return null; // Not configured — caller should fall back to console.log
   }
 

@@ -2,9 +2,10 @@ import client from '../api/client';
 
 export const authService = {
   /**
-   * Login using the dev-login route.
+   * Login using the standard production route.
    * @param {string} email
    * @param {string} password 
+   */
   async login(email, password) {
     try {
       const response = await client.post('/auth/login', { email, password });

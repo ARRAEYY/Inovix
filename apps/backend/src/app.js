@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
+const compression = require('compression');
 
 const authRoutes = require('./modules/auth/auth.routes');
 const onboardingRoutes = require('./modules/onboarding/onboarding.routes');
@@ -31,6 +32,15 @@ app.set('trust proxy', 1);
 
 // ── Security ──────────────────────────────────────────────────────────────────
 app.use(helmet());
+
+// ── Payload Compression (Gzip / Brotli) ──────────────────────────────────────
+app.use(compression({
+  filter: (req, res) => {
+    if (req.headers['x-no-compression']) return false;
+    return compression.filter(req, res);
+  },
+  threshold: 1024, // only compress responses >= 1KB
+}));
 
 // ── CORS ──────────────────────────────────────────────────────────────────────
 // INO-011 fix: in production, accept ONLY the configured FRONTEND_URL. The

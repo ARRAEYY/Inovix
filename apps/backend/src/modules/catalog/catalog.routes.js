@@ -44,6 +44,14 @@ const VISIBLE_OUTLET_STATUSES = [OUTLET_STATUS.OPEN, OUTLET_STATUS.BUSY];
 
 router.use(protect);
 
+// Edge HTTP Caching: instruct Vercel edge and browser CDN to cache catalog responses
+router.use((req, res, next) => {
+  if (req.method === 'GET') {
+    res.set('Cache-Control', 'public, max-age=30, stale-while-revalidate=120');
+  }
+  next();
+});
+
 // All outlets (list) — already filtered, kept for clarity.
 router.get('/outlets', async (req, res, next) => {
   try {

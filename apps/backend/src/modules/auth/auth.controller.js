@@ -417,14 +417,14 @@ async function refresh(req, res, next) {
 
 async function logout(req, res, next) {
   try {
-    // INO-P1-20 fix: same as /refresh — only accept the cookie, not body.
-    const refreshToken = req.cookies?.[REFRESH_COOKIE];
+    const refreshToken = req.cookies?.[REFRESH_COOKIE] || req.body?.refreshToken;
     if (refreshToken) {
       await revokeRefreshToken(refreshToken);
     }
+    if (req.user?.id) {
+      await revokeAllForUser(req.user.id);
+    }
     clearRefreshCookie(res);
-    // Optional: revoke all sessions for this user (more aggressive)
-    // await revokeAllForUser(req.user.id);
 
     await audit({
       actorId: req.user?.id,

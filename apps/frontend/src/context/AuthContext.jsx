@@ -171,9 +171,10 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = () => {
+    const currentUser = user;
     setUser(null);
     setToken(null);
-    authService.logout();
+    authService.logout(currentUser);
   };
 
   const updateProfile = async (data) => {

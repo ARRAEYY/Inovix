@@ -7,16 +7,35 @@
 
 const PREFIX = 'nosh:cache:';
 
-export function cacheGet(key, maxAgeMs = 5 * 60 * 1000) {
+export function cacheGet(key, maxAgeMs = 24 * 60 * 60 * 1000) {
   try {
     const raw = localStorage.getItem(PREFIX + key);
     if (!raw) return null;
     const entry = JSON.parse(raw);
     if (!entry || typeof entry.t !== 'number') return null;
-    if (Date.now() - entry.t > maxAgeMs) return null; // expired — caller refetches
+    if (maxAgeMs && Date.now() - entry.t > maxAgeMs) return null; // expired
     return entry.v;
   } catch {
     return null;
+  }
+}
+
+/**
+ * Returns cached data immediately regardless of expiry for instant UI rendering (SWR).
+ * @param {string} key
+ * @param {number} freshDurationMs - duration after which data is considered stale and revalidation is needed
+ * @returns {{ data: any, isStale: boolean, timestamp: number | null }}
+ */
+export function cacheGetStale(key, freshDurationMs = 15 * 60 * 1000) {
+  try {
+    const raw = localStorage.getItem(PREFIX + key);
+    if (!raw) return { data: null, isStale: true, timestamp: null };
+    const entry = JSON.parse(raw);
+    if (!entry || typeof entry.t !== 'number') return { data: null, isStale: true, timestamp: null };
+    const isStale = Date.now() - entry.t > freshDurationMs;
+    return { data: entry.v, isStale, timestamp: entry.t };
+  } catch {
+    return { data: null, isStale: true, timestamp: null };
   }
 }
 

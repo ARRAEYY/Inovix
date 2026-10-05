@@ -52,31 +52,73 @@ function getClient() {
   return client;
 }
 
+// In-memory fallback cache when Redis is not configured or unavailable
+const memoryStore = new Map();
+const MEMORY_MAX_ITEMS = 1000;
+
+function memoryGet(key) {
+  const item = memoryStore.get(key);
+  if (!item) return null;
+  if (Date.now() > item.expiresAt) {
+    memoryStore.delete(key);
+    return null;
+  }
+  return item.value;
+}
+
+function memorySet(key, value, ttlSeconds) {
+  if (memoryStore.size >= MEMORY_MAX_ITEMS) {
+    const oldestKey = memoryStore.keys().next().value;
+    memoryStore.delete(oldestKey);
+  }
+  memoryStore.set(key, { value, expiresAt: Date.now() + (ttlSeconds || TTL_DEFAULT_SECONDS) * 1000 });
+}
+
+function memoryDel(key) {
+  memoryStore.delete(key);
+}
+
+function memoryDelPrefix(prefix) {
+  let count = 0;
+  for (const k of memoryStore.keys()) {
+    if (k.startsWith(prefix)) {
+      memoryStore.delete(k);
+      count++;
+    }
+  }
+  return count;
+}
+
 async function cacheGet(key) {
   const c = getClient();
-  if (!c) return null;
+  if (!c) return memoryGet(key);
   try {
     const raw = await c.get(key);
     return raw ? JSON.parse(raw) : null;
   } catch {
-    return null;
+    return memoryGet(key);
   }
 }
 
 async function cacheSet(key, value, ttlSeconds = TTL_DEFAULT_SECONDS) {
   const c = getClient();
-  if (!c) return false;
+  if (!c) {
+    memorySet(key, value, ttlSeconds);
+    return true;
+  }
   try {
     await c.set(key, JSON.stringify(value), 'EX', ttlSeconds);
     return true;
   } catch {
+    memorySet(key, value, ttlSeconds);
     return false;
   }
 }
 
 async function cacheDel(key) {
+  memoryDel(key);
   const c = getClient();
-  if (!c) return false;
+  if (!c) return true;
   try {
     await c.del(key);
     return true;
@@ -87,9 +129,9 @@ async function cacheDel(key) {
 
 // Delete every key matching `prefix*` via SCAN (safe for production Redis).
 async function cacheDelPrefix(prefix) {
+  let deleted = memoryDelPrefix(prefix);
   const c = getClient();
-  if (!c) return 0;
-  let deleted = 0;
+  if (!c) return deleted;
   try {
     let cursor = '0';
     do {

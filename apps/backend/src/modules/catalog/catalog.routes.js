@@ -61,9 +61,9 @@ router.get('/outlets', async (req, res, next) => {
 
 router.get('/outlets/:id', async (req, res, next) => {
   try {
-    // Visibility check stays live (a newly closed outlet must 404 fast);
-    // only the outlet row itself is cached.
-    const outlet = await prisma.outlet.findUnique({ where: { id: req.params.id } });
+    const outlet = await cached(`catalog:outlet:${req.params.id}`, CATALOG_TTL, () =>
+      prisma.outlet.findUnique({ where: { id: req.params.id } })
+    );
     if (!outlet || !VISIBLE_OUTLET_STATUSES.includes(outlet.status)) {
       // Treat closed/suspended/pending outlets as "not found" from the
       // student's perspective so we don't leak their existence.
@@ -83,10 +83,12 @@ router.get('/outlets/:id', async (req, res, next) => {
 router.get('/outlets/:id/menu', async (req, res, next) => {
   try {
     // Verify the outlet is orderable before exposing its menu.
-    const outlet = await prisma.outlet.findUnique({
-      where: { id: req.params.id },
-      select: { status: true },
-    });
+    const outlet = await cached(`catalog:outlet:status:${req.params.id}`, CATALOG_TTL, () =>
+      prisma.outlet.findUnique({
+        where: { id: req.params.id },
+        select: { status: true },
+      })
+    );
     if (!outlet || !VISIBLE_OUTLET_STATUSES.includes(outlet.status)) {
       return res.status(404).json({
         success: false,

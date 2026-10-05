@@ -51,6 +51,19 @@ router.get('/outlets', async (req, res, next) => {
       prisma.outlet.findMany({
         where: { status: { in: VISIBLE_OUTLET_STATUSES } },
         orderBy: [{ featured: 'desc' }, { rating: 'desc' }],
+        select: {
+          id: true,
+          slug: true,
+          name: true,
+          description: true,
+          logoUrl: true,
+          status: true,
+          rating: true,
+          estimatedTime: true,
+          location: true,
+          tags: true,
+          featured: true,
+        },
       })
     );
     res.json({ success: true, data: outlets });
@@ -62,7 +75,27 @@ router.get('/outlets', async (req, res, next) => {
 router.get('/outlets/:id', async (req, res, next) => {
   try {
     const outlet = await cached(`catalog:outlet:${req.params.id}`, CATALOG_TTL, () =>
-      prisma.outlet.findUnique({ where: { id: req.params.id } })
+      prisma.outlet.findUnique({
+        where: { id: req.params.id },
+        select: {
+          id: true,
+          slug: true,
+          name: true,
+          description: true,
+          logoUrl: true,
+          status: true,
+          rating: true,
+          estimatedTime: true,
+          location: true,
+          tags: true,
+          featured: true,
+          defaultPrepMins: true,
+          pickupTimeoutMins: true,
+          operatingHours: {
+            select: { dayOfWeek: true, openTime: true, closeTime: true, isClosed: true }
+          },
+        },
+      })
     );
     if (!outlet || !VISIBLE_OUTLET_STATUSES.includes(outlet.status)) {
       // Treat closed/suspended/pending outlets as "not found" from the
@@ -145,6 +178,11 @@ router.get('/outlets/:id/categories', async (req, res, next) => {
       prisma.menuCategory.findMany({
         where: { outletId: req.params.id },
         orderBy: { sortOrder: 'asc' },
+        select: {
+          id: true,
+          name: true,
+          sortOrder: true,
+        },
       })
     );
     res.json({ success: true, data: categories });
@@ -165,7 +203,20 @@ router.get('/menu/popular', async (req, res, next) => {
           isAvailable: true,
           outlet: { status: { in: VISIBLE_OUTLET_STATUSES } },
         },
-        include: { outlet: { select: { id: true, name: true, slug: true } } },
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          price: true,
+          imageUrl: true,
+          isAvailable: true,
+          prepTimeMins: true,
+          discount: true,
+          popular: true,
+          vegetarian: true,
+          dietaryFlags: true,
+          outlet: { select: { id: true, name: true, slug: true } },
+        },
       })
     );
     res.json({ success: true, data: popular });
@@ -193,6 +244,19 @@ router.get('/search', async (req, res, next) => {
             { description: { contains: query } },
           ],
         },
+        select: {
+          id: true,
+          slug: true,
+          name: true,
+          description: true,
+          logoUrl: true,
+          status: true,
+          rating: true,
+          estimatedTime: true,
+          location: true,
+          tags: true,
+          featured: true,
+        },
       }),
       prisma.menuItem.findMany({
         where: {
@@ -203,7 +267,20 @@ router.get('/search', async (req, res, next) => {
             { description: { contains: query } },
           ],
         },
-        include: { outlet: { select: { id: true, name: true, status: true } } },
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          price: true,
+          imageUrl: true,
+          isAvailable: true,
+          prepTimeMins: true,
+          discount: true,
+          popular: true,
+          vegetarian: true,
+          dietaryFlags: true,
+          outlet: { select: { id: true, name: true, status: true, slug: true } },
+        },
       }),
     ]);
 

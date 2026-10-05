@@ -30,6 +30,13 @@ const Onboarding = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError(null);
+
+    const cleanPhone = formData.phone.replace(/\D/g, '').slice(-10);
+    if (cleanPhone.length !== 10) {
+      setError('Phone must be a valid 10-digit number');
+      return;
+    }
+
     if (formData.password !== formData.confirmPassword) {
       setError('Passwords do not match');
       return;
@@ -38,16 +45,29 @@ const Onboarding = () => {
       setError('Password must be at least 8 characters');
       return;
     }
+    if (!/[A-Z]/.test(formData.password)) {
+      setError('Password must contain at least one uppercase letter (A-Z)');
+      return;
+    }
+    if (!/[a-z]/.test(formData.password)) {
+      setError('Password must contain at least one lowercase letter (a-z)');
+      return;
+    }
+    if (!/[0-9]/.test(formData.password)) {
+      setError('Password must contain at least one digit (0-9)');
+      return;
+    }
+
     try {
       setLoading(true);
       const res = await client.post('/onboarding', {
         password: formData.password,
         profile: {
-          fullName: formData.fullName,
-          phone: formData.phone,
-          course: formData.course,
-          year: formData.year,
-          collegeId: formData.collegeId,
+          fullName: formData.fullName.trim(),
+          phone: cleanPhone,
+          course: formData.course.trim(),
+          year: formData.year.trim(),
+          collegeId: formData.collegeId.trim(),
         },
       });
       if (res.data?.success) {
@@ -59,7 +79,12 @@ const Onboarding = () => {
         navigate('/student');
       }
     } catch (err) {
-      setError(err.response?.data?.message || 'Onboarding failed');
+      const errList = err.response?.data?.errors;
+      if (Array.isArray(errList) && errList.length > 0) {
+        setError(errList.map((e) => e.message).join(', '));
+      } else {
+        setError(err.response?.data?.message || 'Onboarding failed');
+      }
     } finally {
       setLoading(false);
     }
@@ -108,12 +133,13 @@ const Onboarding = () => {
           </div>
           <div style={{ borderTop: '1px solid #e5e7eb', paddingTop: '1rem', marginTop: '0.5rem' }}>
             <p style={{ fontSize: '0.85rem', color: '#6b7280', marginBottom: '0.75rem' }}>
-              Set a password so you can also login with your email (optional — you can always use Google).
+              Set a password so you can also log in with email. Must have at least 8 characters, with at least one uppercase letter (A-Z), one lowercase letter (a-z), and one number (0-9).
             </p>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
               <div>
-                <label style={{ display: 'block', marginBottom: '0.3rem', fontSize: '0.85rem', fontWeight: 600 }}>Password (8+ chars)</label>
+                <label style={{ display: 'block', marginBottom: '0.3rem', fontSize: '0.85rem', fontWeight: 600 }}>Password</label>
                 <input type="password" name="password" value={formData.password} onChange={handleChange} required minLength="8"
+                  placeholder="e.g. Nosh2026Pass"
                   style={{ width: '100%', padding: '0.65rem', border: '1px solid #d1d5db', borderRadius: '8px', fontSize: '0.95rem' }} />
               </div>
               <div>

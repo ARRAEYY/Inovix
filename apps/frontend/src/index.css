@@ -2801,3 +2801,140 @@ img {
   font-size: 0.9rem;
   padding: 0.5rem 0;
 }
+
+/* ==========================================================================
+   PROPORTION PASS — bring oversized display type & media back to a sane
+   scale. Auth/marketing hero and page headers were display-sized (5.5rem
+   hero, 2.5rem page title); content apps read better with modest headers.
+   ========================================================================== */
+
+/* Login hero (was 5.5rem desktop / 3rem mobile — a billboard, not a form) */
+.hero-title {
+  font-size: 1.75rem;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  margin-bottom: 0.75rem;
+}
+
+.hero-description {
+  font-size: 0.95rem;
+  line-height: 1.55;
+  max-width: 420px;
+  font-weight: 400;
+}
+
+@media (min-width: 993px) {
+  .hero-title {
+    font-size: 2.4rem;
+    margin-bottom: 1rem;
+  }
+
+  .hero-description {
+    font-size: 1.02rem;
+  }
+}
+
+/* Page headers (was 2.5rem desktop / 1.85rem mobile) */
+.welcome-greeting {
+  font-size: 0.85rem;
+  margin-bottom: 0.3rem;
+}
+
+.page-title {
+  font-size: 1.35rem;
+  margin-bottom: 0.3rem;
+}
+
+.page-subtitle {
+  font-size: 0.9rem;
+}
+
+@media (min-width: 769px) {
+  .page-title {
+    font-size: 1.65rem;
+  }
+
+  .page-subtitle {
+    font-size: 0.95rem;
+  }
+}
+
+/* Menu page: outlet banner (was 1.75rem title) */
+.banner-title {
+  font-size: 1.3rem;
+  margin-bottom: 0.35rem;
+}
+
+.banner-desc {
+  font-size: 0.85rem;
+  margin-bottom: 0.6rem;
+}
+
+/* Menu page: section titles (was 1.5rem + 2px rule + 1.5rem gaps) */
+.section-title {
+  font-size: 1.1rem;
+  margin-bottom: 1rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.menu-sections {
+  gap: 2rem;
+}
+
+/* Orders: tighter card typography + right-sized action buttons */
+.order-outlet {
+  font-size: 1rem;
+}
+
+.order-again-btn {
+  padding: 0.5rem 1.1rem;
+  font-size: 0.85rem;
+  border-radius: 10px;
+}
+
+.total-amount {
+  font-size: 1.05rem;
+}
+
+/* Outlet cards: cap the billboard image on desktop */
+@media (min-width: 769px) {
+  .outlet-image-container {
+    max-height: 185px;
+  }
+}
+
+/* Secondary order-card action (Cancel / Rate): quiet outline button that
+   sits next to the solid "Order again" CTA without fighting it. */
+.order-secondary-btn {
+  background: #fff;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 0.5rem 1.1rem;
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.order-secondary-btn:active {
+  transform: scale(0.96);
+}
+
+.order-secondary-btn.danger {
+  color: var(--status-red);
+  border-color: #fecdca;
+}
+
+.order-secondary-btn.danger:hover {
+  background: var(--status-red-bg);
+}
+
+.order-secondary-btn.amber {
+  color: var(--status-amber);
+  border-color: #fedf89;
+}
+
+.order-secondary-btn.amber:hover {
+  background: var(--status-amber-bg);
+}

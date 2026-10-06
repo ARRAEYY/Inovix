@@ -182,7 +182,7 @@ const StudentLogin = () => {
             Continue with Google
           </button>
           <p className="login-hint">
-            New student? Continue with Google — your account is created automatically with your college email.
+            New student? Sign in with Google.
           </p>
         </div>
       </div>

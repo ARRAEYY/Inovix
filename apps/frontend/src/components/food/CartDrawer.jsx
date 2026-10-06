@@ -116,16 +116,6 @@ const CartDrawer = ({ isOpen, onClose, cart, menuItems, outletName, onUpdateQuan
         </div>
         {cartEntries.length > 0 && (
           <div className="cart-drawer-footer">
-            {/* Order notes */}
-            <label className="cart-drawer-field-label" htmlFor="cart-notes">Order notes</label>
-            <input
-              id="cart-notes"
-              type="text"
-              className="cart-drawer-input"
-              placeholder="e.g., less spicy, no onions"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-            />
             <div className="cart-drawer-summary">
               <div className="summary-row"><span>Subtotal</span><span>₹{subtotal}</span></div>
               <div className="summary-row"><span>Platform fee</span><span>₹{platformFee}</span></div>
@@ -194,6 +184,17 @@ const CartDrawer = ({ isOpen, onClose, cart, menuItems, outletName, onUpdateQuan
                     : placingOrder ? 'Placing…' : `Order now — ₹${total}`}
               </button>
             </div>
+            {/* Order notes — last field of the order */}
+            <label className="cart-drawer-field-label" htmlFor="cart-notes">Order notes</label>
+            <input
+              id="cart-notes"
+              type="text"
+              className="cart-drawer-input"
+              placeholder="e.g., less spicy, no onions"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              style={{ marginBottom: 0 }}
+            />
             <p className="checkout-note">Prepaid · secured by Razorpay</p>
           </div>
         )}

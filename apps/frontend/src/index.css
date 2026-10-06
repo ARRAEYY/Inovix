@@ -3827,3 +3827,8 @@ img {
   opacity: 0.55;
   cursor: not-allowed;
 }
+
+/* Breathing room between the order-type row and the action buttons */
+.checkout-actions {
+  margin-top: 0.7rem;
+}

@@ -104,11 +104,12 @@ const Profile = () => {
   };
 
   // ─── Shared panel styles (same visual language as the menu card) ───────
+  // No outer box — the view's sections spread directly on the page.
   const panelCard = {
-    background: 'var(--white)',
-    border: '1px solid var(--border-color)',
-    borderRadius: '12px',
-    overflow: 'hidden',
+    background: 'transparent',
+    border: 'none',
+    borderRadius: 0,
+    overflow: 'visible',
   };
   const panelRow = {
     padding: '1rem 1.25rem',
@@ -136,10 +137,9 @@ const Profile = () => {
     display: 'flex',
     alignItems: 'center',
     gap: '0.5rem',
-    padding: '1rem 1.25rem',
+    padding: '0 0 0.9rem 0',
     background: 'none',
     border: 'none',
-    borderBottom: '1px solid var(--border-color)',
     fontSize: '1rem',
     fontWeight: 600,
     color: 'var(--primary)',

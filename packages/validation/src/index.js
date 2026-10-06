@@ -76,6 +76,11 @@ const paymentStatusEnum = z.enum(['PENDING', 'PAID', 'FAILED', 'REFUNDED']);
 
 const paymentMethodEnum = z.enum(['ONLINE', 'WALLET']);
 
+// How the student wants to receive the order. Required in the checkout UI
+// (the cart blocks placing an order until one is chosen); the API default
+// keeps older clients valid.
+const orderTypeEnum = z.enum(['TAKEAWAY', 'DINE_IN']);
+
 const roleEnum = z.enum(['STUDENT', 'OUTLET_STAFF', 'OUTLET_ADMIN', 'SUPER_ADMIN']);
 
 const outletStaffRoleEnum = z.enum(['STAFF', 'ADMIN']);
@@ -152,6 +157,7 @@ const orderItemInputSchema = z.object({
 const createOrderSchema = z.object({
   outletId: z.string().min(1, { message: 'outletId is required' }),
   items: z.array(orderItemInputSchema).min(1, { message: 'items array cannot be empty' }),
+  orderType: orderTypeEnum.optional().default('TAKEAWAY'),
   paymentMethod: paymentMethodEnum,
   notes: z.string().max(500).optional(),
   // INO-AUDIT6-#3: validate scheduledFor — must be a valid ISO datetime
@@ -350,6 +356,7 @@ module.exports = {
   userStatusEnum,
   paymentStatusEnum,
   paymentMethodEnum,
+  orderTypeEnum,
   roleEnum,
   outletStaffRoleEnum,
   refundTriggerEnum,

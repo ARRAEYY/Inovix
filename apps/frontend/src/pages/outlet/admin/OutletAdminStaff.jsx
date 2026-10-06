@@ -4,7 +4,7 @@ import { getStaff, createStaff, updateStaffStatus } from '../../../services/outl
 import { toast } from 'react-hot-toast';
 
 const AddStaffModal = ({ isOpen, onClose, onAdd }) => {
-  const [formData, setFormData] = useState({ name: '', email: '', phone: '', password: '' });
+  const [formData, setFormData] = useState({ name: '', email: '', role: 'OUTLET_STAFF', password: '' });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -52,16 +52,18 @@ const AddStaffModal = ({ isOpen, onClose, onAdd }) => {
             />
           </div>
           <div>
-            <label style={{ display: 'block', marginBottom: '8px', fontSize: '0.9rem', fontWeight: '500' }}>Phone Number (Optional)</label>
-            <input 
-              type="tel" 
+            <label style={{ display: 'block', marginBottom: '8px', fontSize: '0.9rem', fontWeight: '500' }}>Role</label>
+            <select
+              value={formData.role}
+              onChange={e => setFormData({...formData, role: e.target.value})}
               style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--border-color)' }}
-              value={formData.phone}
-              onChange={e => setFormData({...formData, phone: e.target.value})}
-            />
+            >
+              <option value="OUTLET_STAFF">Staff — process orders, toggle availability</option>
+              <option value="OUTLET_ADMIN">Outlet Admin — full outlet management</option>
+            </select>
           </div>
           <div>
-            <label style={{ display: 'block', marginBottom: '8px', fontSize: '0.9rem', fontWeight: '500' }}>Password</label>
+            <label style={{ display: 'block', marginBottom: '8px', fontSize: '0.9rem', fontWeight: '500' }}>Initial password</label>
             <input 
               type="password" 
               required

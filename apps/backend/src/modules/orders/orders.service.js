@@ -46,7 +46,7 @@ function generatePickupCode() {
 }
 
 async function createOrder(studentId, payload) {
-  const { outletId, items, paymentMethod, notes, scheduledFor } = payload;
+  const { outletId, items, paymentMethod, notes, scheduledFor, orderType } = payload;
 
   if (!outletId) throw { statusCode: 400, message: 'outletId is required' };
   if (!items || !Array.isArray(items) || items.length === 0) {
@@ -135,6 +135,7 @@ async function createOrder(studentId, payload) {
     outletId,
     outletSnapshot: JSON.stringify({ id: outlet.id, name: outlet.name }),
     status: ORDER_STATUS.PENDING,
+    orderType: orderType || 'TAKEAWAY',
     subtotal: fromPaise(subtotalPaiseFinal),
     discount: fromPaise(discountPaise),
     platformFee: fromPaise(PLATFORM_FEE_PAISE),

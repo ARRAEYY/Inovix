@@ -36,30 +36,46 @@ import NotFound from '../pages/NotFound';
 // A simple PrivateRoute component to protect dashboard routes
 const PrivateRoute = ({ children, allowedRolePrefix }) => {
   const { isAuthenticated, user } = useAuth();
-  
+
   if (!isAuthenticated) {
     return <Navigate to="/" replace />;
   }
-  
+
   // Basic role check: if a specific role prefix is required
   if (allowedRolePrefix && user?.role && !user.role.startsWith(allowedRolePrefix)) {
     // If not authorized for this route, go to root (or an unauthorized page)
     return <Navigate to="/" replace />;
   }
-  
+
+  return children;
+};
+
+// Landing on a login page with a live session should never strand the user
+// on the form (e.g. after the Google callback restored the session, or a
+// back-navigation to a bookmarked login URL) — route them to their dashboard.
+const AuthRoute = ({ children }) => {
+  const { isAuthenticated, user } = useAuth();
+
+  if (isAuthenticated && user) {
+    if (user.role === 'SUPER_ADMIN') return <Navigate to="/admin" replace />;
+    if (user.role === 'OUTLET_ADMIN') return <Navigate to="/outlet/admin" replace />;
+    if (user.role === 'OUTLET_STAFF') return <Navigate to="/outlet" replace />;
+    return <Navigate to="/student" replace />;
+  }
+
   return children;
 };
 
 const AppRoutes = () => {
   return (
     <Routes>
-      {/* Public Routes - Auth */}
-      <Route path="/" element={<StudentLogin />} />
+      {/* Public Routes - Auth (redirect to the dashboard when already signed in) */}
+      <Route path="/" element={<AuthRoute><StudentLogin /></AuthRoute>} />
       <Route path="/login" element={<Navigate to="/" replace />} />
-      <Route path="/outlet/login" element={<OutletLogin />} />
+      <Route path="/outlet/login" element={<AuthRoute><OutletLogin /></AuthRoute>} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/reset-password" element={<ResetPassword />} />
-      <Route path="/admin/login" element={<AdminLogin />} />
+      <Route path="/admin/login" element={<AuthRoute><AdminLogin /></AuthRoute>} />
 
       {/* Protected Routes - Student */}
       <Route 

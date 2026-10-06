@@ -3684,3 +3684,89 @@ img {
   max-width: 240px;
   line-height: 1.5;
 }
+
+/* ─── Profile page v2 — reference-style cards with icon chips ─── */
+.profile-header-card {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  cursor: pointer;
+  transition: box-shadow 0.15s ease;
+}
+
+.profile-header-card:hover {
+  box-shadow: var(--shadow-md);
+}
+
+.profile-header-card .profile-avatar-large {
+  width: 56px;
+  height: 56px;
+  font-size: 1.05rem;
+}
+
+.profile-menu-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.7rem 0.85rem;
+  transition: background-color 0.15s ease;
+}
+
+.profile-menu-btn:hover {
+  background: #faf7f8;
+}
+
+.profile-menu-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: rgba(177, 0, 53, 0.07);
+  color: var(--primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.profile-menu-icon.danger {
+  background: var(--status-red-bg);
+  color: var(--status-red);
+}
+
+.profile-menu-label {
+  flex: 1;
+  text-align: left;
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--text-dark);
+}
+
+.profile-menu-btn.text-danger .profile-menu-label {
+  color: var(--status-red);
+}
+
+.profile-menu-chevron {
+  color: var(--text-light);
+  flex-shrink: 0;
+}
+
+/* Horizontal profile header card (reference layout) */
+.profile-header-card {
+  flex-direction: row;
+  justify-content: flex-start;
+  text-align: left;
+  gap: 0.85rem;
+}
+
+.profile-header-card .profile-info-details {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.profile-header-card .profile-name {
+  font-size: 1.05rem;
+}

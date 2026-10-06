@@ -140,6 +140,9 @@ const mapOrder = (o) => {
     timeframe: timeframeOf(o.createdAt),
     items: (o.items || []).map(i => ({ name: i.name, quantity: i.quantity, price: Number(i.price), menuItemId: i.menuItemId, image: i.imageUrl || i.image || null })),
     total: Math.round(Number(o.totalAmount)),
+    subtotal: Math.round(Number(o.subtotal || 0)),
+    discount: Math.round(Number(o.discount || 0)),
+    platformFee: Math.round(Number(o.platformFee || 0)),
     status: STATUS_LABELS[o.status] || o.status,
     rawStatus: o.status,   // for cancel/reorder logic
     orderType: o.orderType === 'DINE_IN' ? 'Dine in' : 'Takeaway',
@@ -429,7 +432,7 @@ const Orders = () => {
                           {moreCount > 0 && <div className="thumb thumb-more">+{moreCount}</div>}
                         </div>
 
-                        {/* Expanded details — stepper, pickup code, items, actions */}
+                        {/* Expanded details — order summary (§orders-v2) */}
                         {expanded && (
                           <div className="ocard-expanded">
                             <OrderStepper order={order} />
@@ -442,14 +445,58 @@ const Orders = () => {
                               </div>
                             )}
 
-                            <div className="expanded-items">
+                            <p className="osummary-heading">{order.items.length} item{order.items.length !== 1 ? 's' : ''} in this order</p>
+                            <div className="osummary-items">
                               {order.items.map((item, idx) => (
-                                <div key={idx} className="expanded-item">
-                                  <span className="item-quantity">{item.quantity} ×</span>
-                                  <span className="item-name">{item.name}</span>
-                                  <span className="expanded-item-price">₹{item.price * item.quantity}</span>
+                                <div key={idx} className="osummary-item">
+                                  <div className="osummary-thumb">
+                                    {item.image ? (
+                                      <img src={item.image} alt={item.name} loading="lazy" />
+                                    ) : (
+                                      <span className="thumb-fallback" aria-hidden="true">{item.name.charAt(0)}</span>
+                                    )}
+                                  </div>
+                                  <div className="osummary-item-info">
+                                    <p className="osummary-item-name">{item.name}</p>
+                                    <p className="osummary-item-qty">{item.quantity} × ₹{item.price}</p>
+                                  </div>
+                                  <span className="osummary-item-total">₹{item.price * item.quantity}</span>
                                 </div>
                               ))}
+                            </div>
+
+                            {/* Bill details */}
+                            <p className="osummary-heading">Bill details</p>
+                            <div className="bill-details">
+                              <div className="bill-row"><span>Item total</span><span>₹{order.subtotal}</span></div>
+                              {order.discount > 0 && (
+                                <div className="bill-row discount"><span>Discount</span><span>−₹{order.discount}</span></div>
+                              )}
+                              <div className="bill-row"><span>Platform fee</span><span>₹{order.platformFee}</span></div>
+                              <div className="bill-row total"><span>Total</span><span>₹{order.total}</span></div>
+                            </div>
+
+                            {/* Order details */}
+                            <p className="osummary-heading">Order details</p>
+                            <div className="order-meta-block">
+                              <p className="ometa-label">Order id</p>
+                              <p className="ometa-value">
+                                {order.orderNumber}
+                                <button
+                                  className="copy-btn"
+                                  title="Copy order id"
+                                  aria-label="Copy order id"
+                                  onClick={() => { navigator.clipboard?.writeText(order.orderNumber); toast.success('Order id copied'); }}
+                                >
+                                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                                </button>
+                              </p>
+                              <p className="ometa-label">Payment</p>
+                              <p className="ometa-value">{order.paymentStatus === 'PAID' ? 'Paid via Razorpay' : order.paymentStatus === 'REFUNDED' ? 'Refunded' : 'Payment pending'}</p>
+                              <p className="ometa-label">Order type</p>
+                              <p className="ometa-value">{order.orderType}</p>
+                              <p className="ometa-label">Order placed</p>
+                              <p className="ometa-value">{order.date}</p>
                             </div>
 
                             <div className="ocard-actions">

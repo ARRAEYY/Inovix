@@ -56,7 +56,7 @@ img {
   justify-content: center;
 }
 
-.brand {
+.login-left .brand {
   display: flex;
   align-items: center;
   gap: 0.75rem;
@@ -276,7 +276,7 @@ img {
     flex-direction: column;
   }
 
-  .brand {
+  .login-left .brand {
     position: relative;
     top: 0;
     left: 0;
@@ -319,6 +319,7 @@ img {
 
 .header-container .brand {
   position: static;
+  margin: 0;
 }
 
 .header-right {
@@ -2937,4 +2938,66 @@ img {
 
 .order-secondary-btn.amber:hover {
   background: var(--status-amber-bg);
+}
+
+/* ==========================================================================
+   NAV SIZING & POSITIONING PASS
+   The sticky header measured 101px tall on mobile (1rem/2rem padding around
+   a 68px container) — every page lost ~40px of content and all sticky
+   offsets (sidebar, scroll-spy, scroll-margin) were tuned to the old size.
+   Header is now ~58px mobile / ~68px desktop; dependent offsets updated.
+   ========================================================================== */
+
+.main-header {
+  padding: 0.6rem 1rem;
+}
+
+.header-right {
+  gap: 0.9rem;
+}
+
+.icon-btn {
+  width: 38px;
+  height: 38px;
+}
+
+@media (min-width: 769px) {
+  .main-header {
+    padding: 0.85rem 2rem;
+  }
+
+  .header-right {
+    gap: 1.1rem;
+  }
+}
+
+/* Category sidebar: stick just below the (new) header height */
+.category-sidebar {
+  top: 76px;
+  max-height: calc(100vh - 100px);
+}
+
+@media (max-width: 768px) {
+  .category-sidebar {
+    top: 66px;
+    height: auto;
+    max-height: calc(100vh - 84px);
+  }
+
+  .category-nav-btn {
+    padding: 0.7rem 0.25rem;
+  }
+}
+
+/* Outlet banner: breathe less on mobile (was 218px tall) */
+@media (max-width: 768px) {
+  .outlet-banner {
+    padding: 1rem 0;
+    margin-bottom: 1.25rem;
+  }
+}
+
+/* Scroll offsets that were tuned to the 101px header */
+.menu-section {
+  scroll-margin-top: 100px;
 }

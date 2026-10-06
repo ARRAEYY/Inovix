@@ -3692,6 +3692,10 @@ img {
   gap: 0.85rem;
   cursor: pointer;
   transition: box-shadow 0.15s ease;
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  box-shadow: none;
 }
 
 .profile-header-card:hover {

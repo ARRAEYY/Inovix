@@ -375,6 +375,7 @@ const Profile = () => {
       <Header title="Profile" showBack={false} />
 
       <main className="explore-container profile-container">
+        {!activeView && (
         <div
           className="profile-header-card"
           onClick={() => openView('account')}
@@ -393,6 +394,7 @@ const Profile = () => {
             <polyline points="9 18 15 12 9 6"></polyline>
           </svg>
         </div>
+        )}
 
         {!activeView && (
           <div className="profile-menu-section">

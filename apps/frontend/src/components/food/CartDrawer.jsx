@@ -126,20 +126,6 @@ const CartDrawer = ({ isOpen, onClose, cart, menuItems, outletName, onUpdateQuan
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
             />
-            {fulfillment === 'schedule' && (
-              <>
-                <label className="cart-drawer-field-label" htmlFor="cart-pickup-time">Pickup time (within 6h)</label>
-                <input
-                  id="cart-pickup-time"
-                  type="datetime-local"
-                  className="cart-drawer-input"
-                  value={scheduledTime}
-                  onChange={(e) => setScheduledTime(e.target.value)}
-                  min={minStr}
-                  max={maxStr}
-                />
-              </>
-            )}
             <div className="cart-drawer-summary">
               <div className="summary-row"><span>Subtotal</span><span>₹{subtotal}</span></div>
               <div className="summary-row"><span>Platform fee</span><span>₹{platformFee}</span></div>

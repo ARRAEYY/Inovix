@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
 import { useAuth } from '../hooks/useAuth';
+import client from '../services/api/client';
 
 // Socket.IO client — connects to the Inovix backend on Render.
 // Listens for:
@@ -14,6 +15,12 @@ const SocketContext = createContext(null);
 export const SocketProvider = ({ children }) => {
   const { user, token } = useAuth();
   const socketRef = useRef(null);
+  // One refresh-and-retry per connection sequence: the access token lives
+  // 15 minutes, so an idle tab's next socket reconnect fails with
+  // "Authentication failed". The httpOnly refresh cookie is still valid —
+  // mint a fresh access token and reconnect instead of staying dead until
+  // a full page reload. Reset on every successful connect.
+  const reauthRef = useRef(false);
 
   useEffect(() => {
     if (!token || !user) {
@@ -38,6 +45,7 @@ export const SocketProvider = ({ children }) => {
     });
 
     socket.on('connect', () => {
+      reauthRef.current = false;
       console.log('[socket] connected:', socket.id);
     });
 
@@ -45,8 +53,23 @@ export const SocketProvider = ({ children }) => {
       console.log('[socket] disconnected:', reason);
     });
 
-    socket.on('connect_error', (err) => {
+    socket.on('connect_error', async (err) => {
       console.warn('[socket] connect error:', err.message);
+      const authFailed = /authentication/i.test(err?.message || '');
+      if (!authFailed || reauthRef.current) return;
+      reauthRef.current = true;
+      try {
+        const res = await client.post('/auth/refresh');
+        const newToken = res.data?.data?.accessToken;
+        if (!newToken) return;
+        localStorage.setItem('accessToken', newToken);
+        socket.auth.token = newToken;
+        socket.connect();
+      } catch {
+        // Refresh failed — the session is genuinely over; the axios
+        // interceptor bounces to login on the next API call.
+        console.warn('[socket] re-auth failed — session expired');
+      }
     });
 
     // When a new order is placed, dispatch window events so outlet boards and admin dashboards refetch.

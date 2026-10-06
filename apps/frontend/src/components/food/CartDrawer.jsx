@@ -47,6 +47,7 @@ const CartDrawer = ({ isOpen, onClose, cart, menuItems, outletName, onUpdateQuan
         </div>
         <div className="cart-drawer-body">
           {cartEntries.length === 0 ? (
+            <>
             <div className="cart-empty-state">
               {/* Friendly empty-cart illustration — Nosh brand tints */}
               <svg className="cart-empty-illustration" viewBox="0 0 220 180" role="img" aria-label="An empty bowl illustration">
@@ -89,7 +90,9 @@ const CartDrawer = ({ isOpen, onClose, cart, menuItems, outletName, onUpdateQuan
               <p className="cart-empty-title">Your cart is empty</p>
               <p className="cart-empty-sub">Looks like you haven't added anything to your cart yet</p>
             </div>
+            </>
           ) : (
+            <>
             <div className="cart-items-list">
               {cartEntries.map(([itemId, qty]) => {
                 const item = menuItems.find(i => i.id === itemId);
@@ -125,11 +128,7 @@ const CartDrawer = ({ isOpen, onClose, cart, menuItems, outletName, onUpdateQuan
                 />
               </div>
             </div>
-          )}
-        </div>
-        {cartEntries.length > 0 && (
-          <div className="cart-drawer-footer">
-            <div className="cart-drawer-summary">
+<div className="cart-drawer-summary">
               <div className="summary-row"><span>Subtotal</span><span>₹{subtotal}</span></div>
               <div className="summary-row"><span>Platform fee</span><span>₹{platformFee}</span></div>
               <div className="summary-row total"><span>Total</span><span>₹{total}</span></div>
@@ -174,6 +173,11 @@ const CartDrawer = ({ isOpen, onClose, cart, menuItems, outletName, onUpdateQuan
                 />
               </>
             )}
+            </>
+          )}
+        </div>
+        {cartEntries.length > 0 && (
+          <div className="cart-drawer-footer">
             <div className="checkout-actions">
               <button
                 className="schedule-btn"

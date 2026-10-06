@@ -3081,3 +3081,109 @@ img {
   color: var(--status-red);
   margin: 0 0 0.35rem;
 }
+
+/* ==========================================================================
+   FOOD CARD COMPACT PASS — Blinkit-style density on the outlet menu page.
+   The old grid (minmax(280px,1fr) + tall images) fit 1-2 huge cards per
+   row; users must be able to scan many items at a glance.
+   ========================================================================== */
+
+/* Desktop: 3–4+ cards per row depending on width */
+@media (min-width: 769px) {
+  .food-grid {
+    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+    gap: 0.9rem;
+  }
+
+  .food-card {
+    border-radius: var(--radius-md);
+  }
+
+  .food-image-container {
+    height: 148px; /* compact 4:3-ish, never portrait */
+  }
+
+  .food-content {
+    padding: 0.7rem 0.75rem 0.8rem;
+  }
+
+  .food-name {
+    font-size: 0.9rem;
+    -webkit-line-clamp: 1;
+  }
+
+  .food-desc {
+    font-size: 0.76rem;
+    margin-bottom: 0.4rem;
+    -webkit-line-clamp: 1;
+  }
+
+  .food-price {
+    font-size: 0.95rem;
+  }
+
+  .add-btn {
+    padding: 0.32rem 0.85rem;
+    font-size: 0.78rem;
+    min-height: 30px;
+  }
+
+  .qty-btn {
+    width: 28px;
+    height: 28px;
+    min-width: 28px;
+    font-size: 0.85rem;
+  }
+
+  .qty-value {
+    min-width: 24px;
+    font-size: 0.82rem;
+  }
+
+  .section-title {
+    margin-bottom: 0.85rem;
+  }
+}
+
+/* Images always fill their (now short) container — no natural-size leaks */
+.food-image-container {
+  overflow: hidden;
+}
+
+.food-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.food-image-placeholder {
+  height: 100%;
+}
+
+/* Tablet: 2–3 per row */
+@media (max-width: 768px) {
+  .food-grid {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 0.65rem;
+  }
+
+  .food-image-container {
+    height: 118px;
+  }
+}
+
+/* Mobile: 2 compact cards per row */
+@media (max-width: 480px) {
+  .food-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .food-image-container {
+    height: 104px;
+  }
+
+  .food-name { font-size: 0.84rem; }
+  .food-desc { font-size: 0.72rem; }
+  .food-price { font-size: 0.88rem; }
+}

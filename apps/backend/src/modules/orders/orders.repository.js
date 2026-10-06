@@ -30,6 +30,7 @@ async function createOrder(orderData) {
             outletId: orderData.outletId,
             outletSnapshot: orderData.outletSnapshot,
             status: orderData.status,
+            orderType: orderData.orderType || 'TAKEAWAY',
             subtotal: orderData.subtotal,
             discount: orderData.discount,
             platformFee: orderData.platformFee,

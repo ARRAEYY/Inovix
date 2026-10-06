@@ -141,6 +141,7 @@ const mapOrder = (o) => {
     total: Math.round(Number(o.totalAmount)),
     status: STATUS_LABELS[o.status] || o.status,
     rawStatus: o.status,   // for cancel/reorder logic
+    orderType: o.orderType === 'DINE_IN' ? 'Dine in' : 'Takeaway',
     pickupCode: o.pickupCode,
     timeline,
     paymentStatus: o.payment?.status || 'PENDING',
@@ -330,7 +331,7 @@ const Orders = () => {
                 <div className="order-header">
                   <div>
                     <h3 className="order-outlet">{order.outletName}</h3>
-                    <p className="order-date">{order.date}</p>
+                    <p className="order-date">{order.date} · {order.orderType}</p>
                   </div>
                   <div className="order-status" data-status={order.rawStatus}>{order.status}</div>
                 </div>

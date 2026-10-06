@@ -113,6 +113,8 @@ model Outlet {
   rating                    Float    @default(4.5)
   estimatedTime             String   @default("15-20 min")
   location                  String   @default("")
+  contactEmail              String?
+  contactNumber             String?
   tags                      String   @default("") // comma-separated
   featured                  Boolean  @default(false)
   createdAt                 DateTime @default(now())
@@ -276,6 +278,7 @@ model CartItem {
 model Order {
   id              String    @id @default(cuid())
   orderNumber     String    @unique
+  orderType       String    @default("TAKEAWAY") // TAKEAWAY | DINE_IN
   studentId       String
   outletId        String
   // Snapshot at order time — never changes after creation

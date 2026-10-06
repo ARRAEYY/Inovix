@@ -23,12 +23,13 @@ export const orderService = {
     }
   },
 
-  createOrder: async ({ outletId, items, notes, scheduledFor }) => {
+  createOrder: async ({ outletId, items, notes, scheduledFor, orderType }) => {
     try {
       const response = await client.post('/orders', {
         outletId,
         items,
         paymentMethod: 'ONLINE',
+        ...(orderType ? { orderType } : {}),
         ...(notes ? { notes } : {}),
         ...(scheduledFor ? { scheduledFor } : {}),
       });

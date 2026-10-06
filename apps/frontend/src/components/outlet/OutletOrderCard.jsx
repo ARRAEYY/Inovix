@@ -8,6 +8,15 @@ const OutletOrderCard = ({ order, onAccept, onDecline, onMarkReady, onComplete, 
     <div className="outlet-order-card">
       <div className="order-card-header">
         <span className="order-id">#{String(order.id || '').slice(-4)}</span>
+        {/* Dine-in vs takeaway — the kitchen needs this at a glance */}
+        <span style={{
+          fontSize: '0.62rem', fontWeight: 700, textTransform: 'uppercase',
+          letterSpacing: '0.04em', padding: '2px 7px', borderRadius: 999,
+          background: order.orderType === 'DINE_IN' ? 'var(--status-blue-bg)' : 'var(--status-gray-bg)',
+          color: order.orderType === 'DINE_IN' ? 'var(--status-blue)' : 'var(--status-gray)',
+        }}>
+          {order.orderType === 'DINE_IN' ? 'Dine in' : 'Takeaway'}
+        </span>
         <span className="order-time">
           {order.createdAt ? new Date(order.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : ''}
         </span>

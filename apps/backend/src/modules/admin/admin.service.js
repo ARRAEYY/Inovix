@@ -349,7 +349,7 @@ async function getOutlet(outletId) {
 }
 
 async function createOutlet(data) {
-  const { name, description, location, status = 'OPEN' } = data;
+  const { name, description, location, contactEmail, contactNumber, status = 'OPEN' } = data;
   if (!name) throw { statusCode: 400, message: 'Outlet name is required' };
 
   // slug is a required unique column — derive it from the name and
@@ -362,15 +362,14 @@ async function createOutlet(data) {
     slug = `${baseSlug}-${i}`;
   }
 
-  // NOTE: the Outlet model has no contactNumber/contactEmail/openingTime/
-  // closingTime columns — those fields from the add-outlet form are
-  // accepted but not persisted (schema change deliberately avoided).
   return prisma.outlet.create({
     data: {
       name,
       slug,
       description: description || null,
       location: location || null,
+      contactEmail: contactEmail || null,
+      contactNumber: contactNumber || null,
       status: Object.values(OUTLET_STATUS).includes(status) ? status : OUTLET_STATUS.OPEN,
     },
   });

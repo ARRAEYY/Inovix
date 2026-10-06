@@ -6,6 +6,8 @@ import React, { useState, useEffect } from 'react';
 const CartDrawer = ({ isOpen, onClose, cart, menuItems, outletName, onUpdateQuantity, onOrderNow, placingOrder }) => {
   const [notes, setNotes] = useState('');
   const [scheduledTime, setScheduledTime] = useState('');
+  // Must be chosen before the order can be placed ('' = not chosen yet).
+  const [orderType, setOrderType] = useState('');
 
   useEffect(() => {
     document.body.style.overflow = isOpen ? 'hidden' : 'unset';
@@ -100,9 +102,38 @@ const CartDrawer = ({ isOpen, onClose, cart, menuItems, outletName, onUpdateQuan
               <div className="summary-row"><span>Platform fee</span><span>₹{platformFee}</span></div>
               <div className="summary-row total"><span>Total</span><span>₹{total}</span></div>
             </div>
-            <button className="checkout-btn" disabled={placingOrder}
-              onClick={() => onOrderNow({ notes: notes.trim() || undefined, scheduledFor: scheduledTime ? new Date(scheduledTime).toISOString() : undefined })}>
-              {placingOrder ? 'Placing order…' : `Place Order — ₹${total}`}
+            {/* Order type — required (§checkout): the CTA stays disabled
+                until the student picks how they'll receive the order. */}
+            <label className="cart-drawer-field-label">Order type</label>
+            <div className="order-type-toggle" role="radiogroup" aria-label="Order type">
+              <button
+                type="button"
+                role="radio"
+                aria-checked={orderType === 'TAKEAWAY'}
+                className={`order-type-option ${orderType === 'TAKEAWAY' ? 'selected' : ''}`}
+                onClick={() => setOrderType('TAKEAWAY')}
+              >
+                🥡 Takeaway
+              </button>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={orderType === 'DINE_IN'}
+                className={`order-type-option ${orderType === 'DINE_IN' ? 'selected' : ''}`}
+                onClick={() => setOrderType('DINE_IN')}
+              >
+                🍽️ Dine in
+              </button>
+            </div>
+            {orderType === '' && (
+              <p className="order-type-required">Please choose how you'll get your order.</p>
+            )}
+            <button
+              className="checkout-btn"
+              disabled={placingOrder || orderType === ''}
+              onClick={() => onOrderNow({ notes: notes.trim() || undefined, scheduledFor: scheduledTime ? new Date(scheduledTime).toISOString() : undefined, orderType })}
+            >
+              {orderType === '' ? 'Select order type to continue' : placingOrder ? 'Placing order…' : `Place Order — ₹${total}`}
             </button>
             <p className="checkout-note">Prepaid · secured by Razorpay</p>
           </div>

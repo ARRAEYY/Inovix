@@ -16,7 +16,13 @@ const MenuItemForm = ({ item, onSubmit, onCancel, isSaving, onDelete }) => {
     price: '',
     category: 'Popular',
     image: '',
-    isAvailable: true
+    isAvailable: true,
+    // Persisted by the backend menu service but previously missing from
+    // this form ( menuItemCreateSchema: discount/popular/vegetarian/preparationTime )
+    discount: '',
+    popular: false,
+    vegetarian: false,
+    preparationTime: ''
   });
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -29,7 +35,11 @@ const MenuItemForm = ({ item, onSubmit, onCancel, isSaving, onDelete }) => {
         price: item.price || '',
         category: item.category || 'Popular',
         image: item.image || '',
-        isAvailable: item.isAvailable !== false
+        isAvailable: item.isAvailable !== false,
+        discount: item.discount != null ? String(item.discount) : '',
+        popular: !!item.popular,
+        vegetarian: !!item.vegetarian,
+        preparationTime: item.prepTimeMins ? String(item.prepTimeMins) : ''
       });
     }
   }, [item]);
@@ -81,7 +91,12 @@ const MenuItemForm = ({ item, onSubmit, onCancel, isSaving, onDelete }) => {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    onSubmit({ ...formData, price: Number(formData.price) });
+    onSubmit({
+      ...formData,
+      price: Number(formData.price),
+      discount: formData.discount === '' ? undefined : Number(formData.discount),
+      preparationTime: formData.preparationTime === '' ? undefined : Number(formData.preparationTime),
+    });
   };
 
   if (showDeleteConfirm) {
@@ -120,6 +135,26 @@ const MenuItemForm = ({ item, onSubmit, onCancel, isSaving, onDelete }) => {
             {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
         </div>
+      </div>
+      <div className="form-row">
+        <div className="form-group">
+          <label>Discount (₹, optional)</label>
+          <input type="number" name="discount" value={formData.discount} onChange={handleChange} min="0" step="0.01" placeholder="0" />
+        </div>
+        <div className="form-group">
+          <label>Prep time (mins, optional)</label>
+          <input type="number" name="preparationTime" value={formData.preparationTime} onChange={handleChange} min="0" step="1" placeholder="e.g. 10" />
+        </div>
+      </div>
+      <div className="form-group" style={{ display: 'flex', gap: '1.25rem', flexWrap: 'wrap' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.9rem' }}>
+          <input type="checkbox" name="vegetarian" checked={formData.vegetarian} onChange={handleChange} />
+          🟢 Vegetarian
+        </label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.9rem' }}>
+          <input type="checkbox" name="popular" checked={formData.popular} onChange={handleChange} />
+          ⭐ Mark as popular
+        </label>
       </div>
       {/* Cloudinary image upload */}
       <div className="form-group">

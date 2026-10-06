@@ -126,28 +126,6 @@ const CartDrawer = ({ isOpen, onClose, cart, menuItems, outletName, onUpdateQuan
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
             />
-            {/* Fulfillment: order now, or schedule for a pickup time */}
-            <label className="cart-drawer-field-label">When do you want it?</label>
-            <div className="order-type-toggle" role="radiogroup" aria-label="Fulfillment">
-              <button
-                type="button"
-                role="radio"
-                aria-checked={fulfillment === 'now'}
-                className={`order-type-option ${fulfillment === 'now' ? 'selected' : ''}`}
-                onClick={() => setFulfillment('now')}
-              >
-                Order now
-              </button>
-              <button
-                type="button"
-                role="radio"
-                aria-checked={fulfillment === 'schedule'}
-                className={`order-type-option ${fulfillment === 'schedule' ? 'selected' : ''}`}
-                onClick={() => setFulfillment('schedule')}
-              >
-                Schedule
-              </button>
-            </div>
             {fulfillment === 'schedule' && (
               <>
                 <label className="cart-drawer-field-label" htmlFor="cart-pickup-time">Pickup time (within 6h)</label>
@@ -193,21 +171,46 @@ const CartDrawer = ({ isOpen, onClose, cart, menuItems, outletName, onUpdateQuan
             {orderType === '' && (
               <p className="order-type-required">Please choose how you'll get your order.</p>
             )}
-            <button
-              className="checkout-btn"
-              disabled={placingOrder || orderType === '' || (fulfillment === 'schedule' && !scheduledTime)}
-              onClick={() => onOrderNow({
-                notes: notes.trim() || undefined,
-                scheduledFor: fulfillment === 'schedule' && scheduledTime ? new Date(scheduledTime).toISOString() : undefined,
-                orderType,
-              })}
-            >
-              {orderType === ''
-                ? 'Select order type to continue'
-                : fulfillment === 'schedule' && !scheduledTime
-                  ? 'Select a pickup time'
-                  : placingOrder ? 'Placing order…' : `Place Order — ₹${total}`}
-            </button>
+            {fulfillment === 'schedule' && (
+              <>
+                <label className="cart-drawer-field-label" htmlFor="cart-pickup-time">Pickup time (within 6h)</label>
+                <input
+                  id="cart-pickup-time"
+                  type="datetime-local"
+                  className="cart-drawer-input"
+                  value={scheduledTime}
+                  onChange={(e) => setScheduledTime(e.target.value)}
+                  min={minStr}
+                  max={maxStr}
+                />
+              </>
+            )}
+            <div className="checkout-actions">
+              <button
+                className="checkout-btn order-now-btn"
+                disabled={placingOrder || orderType === ''}
+                onClick={() => onOrderNow({
+                  notes: notes.trim() || undefined,
+                  orderType,
+                })}
+              >
+                {orderType === '' ? 'Select order type' : placingOrder ? 'Placing…' : `Order now — ₹${total}`}
+              </button>
+              <button
+                className={`schedule-btn ${fulfillment === 'schedule' ? 'active' : ''}`}
+                disabled={placingOrder || (fulfillment === 'schedule' && !scheduledTime)}
+                onClick={() => {
+                  if (fulfillment !== 'schedule') { setFulfillment('schedule'); return; }
+                  onOrderNow({
+                    notes: notes.trim() || undefined,
+                    scheduledFor: scheduledTime ? new Date(scheduledTime).toISOString() : undefined,
+                    orderType,
+                  });
+                }}
+              >
+                {fulfillment === 'schedule' ? (scheduledTime ? 'Schedule order' : 'Pick a time') : 'Schedule'}
+              </button>
+            </div>
             <p className="checkout-note">Prepaid · secured by Razorpay</p>
           </div>
         )}

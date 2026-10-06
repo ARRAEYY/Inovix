@@ -3001,3 +3001,49 @@ img {
 .menu-section {
   scroll-margin-top: 100px;
 }
+
+/* ==========================================================================
+   PANELS PASS — outlet staff / outlet admin / super admin panels
+   ========================================================================== */
+
+/* Super-admin mobile bottom nav: 8 items don't fit at 390px — make the row
+   scroll cleanly (fixed-width items, hidden scrollbar, no edge clipping). */
+.admin-bottom-nav {
+  justify-content: flex-start;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+  scroll-snap-type: x proximity;
+}
+
+.admin-bottom-nav::-webkit-scrollbar { display: none; }
+
+.admin-bottom-nav .bottom-nav-item {
+  flex: 0 0 auto;
+  min-width: 76px;
+  scroll-snap-align: start;
+}
+
+.admin-bottom-nav .bottom-nav-item span:last-child {
+  white-space: nowrap;
+  font-size: 0.68rem;
+}
+
+/* The admin shell had a navigation dead zone at 769–1023px: the desktop
+   sidebar hides at ≤1023px while the mobile bottom nav hides at ≥769px.
+   Keep the mobile nav visible in that band. */
+@media (min-width: 769px) and (max-width: 1023px) {
+  .mobile-bottom-nav.mobile-only {
+    display: flex;
+  }
+}
+
+/* Admin mobile header spacing */
+.mobile-header .mobile-header-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}

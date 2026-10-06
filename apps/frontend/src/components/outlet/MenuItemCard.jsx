@@ -96,8 +96,10 @@ const MenuItemCard = ({ item, onEdit, onToggleAvailability, hideEdit = false }) 
 
         {/* Footer: Price, availability toggle, Edit */}
         <div className="food-footer" style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: '0.75rem', paddingTop: '1rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center' }}>
-            <span className="food-price" style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-dark)' }}>₹{item.price}</span>
+          {/* width:100% — the footer is a column with align-items:center from
+              the shared .food-footer style; without it the price centers. */}
+          <div style={{ display: 'flex', alignItems: 'center', width: '100%', textAlign: 'left' }}>
+            <span className="food-price" style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-dark)' }}>₹{item.price}</span>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', width: '100%', minWidth: 0 }}>

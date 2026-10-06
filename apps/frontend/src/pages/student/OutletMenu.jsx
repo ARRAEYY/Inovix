@@ -320,7 +320,7 @@ const OutletMenu = () => {
     // which left the highlight stale in headless/background contexts.
     let lastRun = 0;
 
-    const SPY_LINE = 170; // sticky header (64) + banner/search area
+    const SPY_LINE = 110; // sticky header (~58) + small buffer
 
     const computeActive = () => {
       let current = menuSections[0]?.category || '';
@@ -365,7 +365,7 @@ const OutletMenu = () => {
     if (element) {
       setActiveCategory(category);
       // Smooth-scroll so the section title lands below the sticky header.
-      const top = element.getBoundingClientRect().top + window.scrollY - 130;
+      const top = element.getBoundingClientRect().top + window.scrollY - 96;
       window.scrollTo({ top, behavior: 'smooth' });
     }
   };

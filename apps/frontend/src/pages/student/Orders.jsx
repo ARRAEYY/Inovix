@@ -346,7 +346,7 @@ const Orders = () => {
                     borderRadius: '10px', padding: '0.75rem 1rem', margin: '0.75rem 0',
                   }}>
                     <span style={{ fontSize: '0.8rem', color: '#15803d', fontWeight: 600 }}>PICKUP CODE</span>
-                    <span style={{ fontSize: '1.5rem', fontWeight: 800, color: '#15803d', letterSpacing: '0.2em' }}>
+                    <span style={{ fontSize: '1.3rem', fontWeight: 800, color: '#15803d', letterSpacing: '0.15em' }}>
                       {order.pickupCode}
                     </span>
                     <span style={{ fontSize: '0.75rem', color: '#16a34a' }}>
@@ -373,10 +373,9 @@ const Orders = () => {
                     {/* Cancel button — only for PENDING orders */}
                     {order.rawStatus === 'PENDING' && (
                       <button
-                        className="order-again-btn"
+                        className="order-secondary-btn danger"
                         onClick={() => handleCancel(order.id)}
                         disabled={cancellingId === order.id}
-                        style={{ color: '#dc2626', borderColor: '#fecaca' }}
                       >
                         {cancellingId === order.id ? 'Cancelling…' : 'Cancel'}
                       </button>
@@ -391,9 +390,10 @@ const Orders = () => {
                       </button>
                     )}
                     {order.rawStatus === 'COMPLETED' && (
-                      <button className="order-again-btn" onClick={() => setReviewingId(reviewingId === order.id ? null : order.id)}
-                        style={{ color: '#f59e0b', borderColor: '#fde68a' }}>
-                        {reviewingId === order.id ? 'Cancel' : 'Rate ⭐'}
+                      <button
+                        className="order-secondary-btn amber"
+                        onClick={() => setReviewingId(reviewingId === order.id ? null : order.id)}>
+                        {reviewingId === order.id ? 'Close' : 'Rate ⭐'}
                       </button>
                     )}
                   </div>

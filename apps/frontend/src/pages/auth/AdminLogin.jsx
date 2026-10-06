@@ -51,7 +51,7 @@ const AdminLogin = () => {
     <div className="login-container">
       <div className="login-left">
         <div className="brand">
-          <img src="/logo.png" alt="Nosh" style={{ height: '72px' }} />
+          <img src="/logo.png" alt="Nosh" style={{ height: '48px' }} />
         </div>
 
         <div className="hero-content">

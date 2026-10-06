@@ -187,17 +187,7 @@ const CartDrawer = ({ isOpen, onClose, cart, menuItems, outletName, onUpdateQuan
             )}
             <div className="checkout-actions">
               <button
-                className="checkout-btn order-now-btn"
-                disabled={placingOrder || orderType === ''}
-                onClick={() => onOrderNow({
-                  notes: notes.trim() || undefined,
-                  orderType,
-                })}
-              >
-                {orderType === '' ? 'Select order type' : placingOrder ? 'Placing…' : `Order now — ₹${total}`}
-              </button>
-              <button
-                className={`schedule-btn ${fulfillment === 'schedule' ? 'active' : ''}`}
+                className="schedule-btn"
                 disabled={placingOrder || (fulfillment === 'schedule' && !scheduledTime)}
                 onClick={() => {
                   if (fulfillment !== 'schedule') { setFulfillment('schedule'); return; }
@@ -209,6 +199,16 @@ const CartDrawer = ({ isOpen, onClose, cart, menuItems, outletName, onUpdateQuan
                 }}
               >
                 {fulfillment === 'schedule' ? (scheduledTime ? 'Schedule order' : 'Pick a time') : 'Schedule'}
+              </button>
+              <button
+                className="checkout-btn order-now-btn"
+                disabled={placingOrder || orderType === ''}
+                onClick={() => onOrderNow({
+                  notes: notes.trim() || undefined,
+                  orderType,
+                })}
+              >
+                {orderType === '' ? 'Select order type' : placingOrder ? 'Placing…' : `Order now — ₹${total}`}
               </button>
             </div>
             <p className="checkout-note">Prepaid · secured by Razorpay</p>

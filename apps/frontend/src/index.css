@@ -3652,3 +3652,35 @@ img {
 .copy-btn:hover {
   color: var(--primary);
 }
+
+/* ─── Cart drawer: illustrated empty state ─── */
+.cart-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 2rem 1.5rem 3rem;
+  min-height: 100%;
+}
+
+.cart-empty-illustration {
+  width: 200px;
+  max-width: 80%;
+  margin-bottom: 0.75rem;
+}
+
+.cart-empty-title {
+  margin: 0 0 0.3rem;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text-dark);
+}
+
+.cart-empty-sub {
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--text-light);
+  max-width: 240px;
+  line-height: 1.5;
+}

@@ -45,9 +45,46 @@ const CartDrawer = ({ isOpen, onClose, cart, menuItems, outletName, onUpdateQuan
         <div className="cart-drawer-body">
           {cartEntries.length === 0 ? (
             <div className="cart-empty-state">
-              <div className="cart-empty-icon" aria-hidden="true">🛒</div>
-              <p>Your cart is empty.</p>
-              <p style={{ fontSize: '0.85rem', color: 'var(--text-light)' }}>Add items from the menu to place an order.</p>
+              {/* Friendly empty-cart illustration — Nosh brand tints */}
+              <svg className="cart-empty-illustration" viewBox="0 0 220 180" role="img" aria-label="An empty bowl illustration">
+                {/* concentric soft circles */}
+                <circle cx="110" cy="86" r="80" fill="rgba(177, 0, 53, 0.045)" />
+                <circle cx="110" cy="86" r="54" fill="rgba(177, 0, 53, 0.06)" />
+                {/* decorative sparkles */}
+                <g stroke="rgba(177, 0, 53, 0.4)" strokeWidth="2" strokeLinecap="round">
+                  <line x1="40" y1="46" x2="47" y2="53" /><line x1="47" y1="46" x2="40" y2="53" />
+                  <line x1="176" y1="34" x2="183" y2="41" /><line x1="183" y1="34" x2="176" y2="41" />
+                  <line x1="196" y1="96" x2="203" y2="103" /><line x1="203" y1="96" x2="196" y2="103" />
+                </g>
+                <circle cx="58" cy="120" r="4" fill="none" stroke="rgba(177, 0, 53, 0.35)" strokeWidth="2" />
+                <circle cx="168" cy="128" r="4" fill="none" stroke="rgba(177, 0, 53, 0.35)" strokeWidth="2" />
+                <g stroke="rgba(177, 0, 53, 0.3)" strokeWidth="2" strokeLinecap="round">
+                  <line x1="66" y1="148" x2="71" y2="153" /><line x1="71" y1="148" x2="66" y2="153" />
+                  <line x1="148" y1="156" x2="153" y2="161" /><line x1="153" y1="156" x2="148" y2="161" />
+                </g>
+                {/* radiating dashes above the bowl */}
+                <g stroke="#12151c" strokeWidth="3.5" strokeLinecap="round">
+                  <line x1="110" y1="34" x2="110" y2="48" />
+                  <line x1="88" y1="38" x2="94" y2="51" />
+                  <line x1="132" y1="38" x2="126" y2="51" />
+                </g>
+                {/* dashed snack trail */}
+                <path d="M128 62 q16 -14 34 -10" fill="none" stroke="rgba(177, 0, 53, 0.55)" strokeWidth="2.5" strokeDasharray="5 5" strokeLinecap="round" />
+                {/* the bowl */}
+                <path d="M48 92 h124 a62 58 0 0 1 -124 0 z" fill="#F6CFDA" stroke="#12151c" strokeWidth="4" strokeLinejoin="round" />
+                <path d="M150 96 a62 58 0 0 1 -22 46" fill="none" stroke="#12151c" strokeWidth="0" />
+                {/* bowl base */}
+                <rect x="94" y="146" width="32" height="9" rx="3" fill="#F6CFDA" stroke="#12151c" strokeWidth="3.5" />
+                {/* face */}
+                <circle cx="92" cy="112" r="4" fill="#12151c" />
+                <circle cx="128" cy="112" r="4" fill="#12151c" />
+                <path d="M103 122 q7 5 14 0" fill="none" stroke="#12151c" strokeWidth="3.5" strokeLinecap="round" />
+                {/* cheeks */}
+                <circle cx="78" cy="120" r="3.5" fill="rgba(177, 0, 53, 0.35)" />
+                <circle cx="142" cy="120" r="3.5" fill="rgba(177, 0, 53, 0.35)" />
+              </svg>
+              <p className="cart-empty-title">Your cart is empty</p>
+              <p className="cart-empty-sub">Looks like you haven't added anything to your cart yet</p>
             </div>
           ) : (
             <div className="cart-items-list">

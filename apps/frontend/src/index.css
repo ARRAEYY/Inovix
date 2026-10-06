@@ -3839,3 +3839,17 @@ img {
 .cart-drawer-footer label[for="cart-notes"] {
   margin-top: 0.8rem;
 }
+
+/* Order notes — last item of the order list (scrolls with the items) */
+.cart-notes-block {
+  padding: 0.35rem 0.85rem 1rem;
+}
+
+.cart-notes-block .cart-drawer-input {
+  width: 100%;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 0.55rem 0.75rem;
+  font-size: 0.85rem;
+  font-family: inherit;
+}

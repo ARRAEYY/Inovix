@@ -3770,3 +3770,16 @@ img {
 .profile-header-card .profile-name {
   font-size: 1.05rem;
 }
+
+/* ─── Cart badge placement — corner-anchored, never covering the glyph ─── */
+.bottom-nav-badge {
+  top: -7px;
+  right: -11px;
+  min-width: 17px;
+  height: 17px;
+  font-size: 0.6rem;
+}
+
+.bottom-nav-icon {
+  position: relative;
+}

@@ -68,18 +68,20 @@ const Header = ({ cartCount, onCartClick, title, subtitle, showBack = false }) =
               {cartCount > 0 && (
                 <span className="cart-badge" style={{
                   position: 'absolute',
-                  top: '-5px',
-                  right: '-5px',
+                  top: '-4px',
+                  right: '-7px',
                   backgroundColor: 'var(--primary)',
                   color: 'white',
-                  fontSize: '0.65rem',
+                  fontSize: '0.62rem',
                   fontWeight: 'bold',
-                  width: '18px',
-                  height: '18px',
+                  minWidth: '17px',
+                  height: '17px',
                   borderRadius: '50%',
                   display: 'flex',
                   alignItems: 'center',
-                  justifyContent: 'center'
+                  justifyContent: 'center',
+                  border: '2px solid #fff',
+                  padding: '0 2px'
                 }}>
                   {cartCount}
                 </span>

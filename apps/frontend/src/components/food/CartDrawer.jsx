@@ -173,10 +173,10 @@ const CartDrawer = ({ isOpen, onClose, cart, menuItems, outletName, onUpdateQuan
             )}
             <div className="checkout-actions">
               <button
-                className={`schedule-btn ${fulfillment === 'schedule' ? 'active' : ''}`}
+                className="schedule-btn"
                 onClick={() => setFulfillment(f => (f === 'schedule' ? 'now' : 'schedule'))}
               >
-                Schedule
+                {fulfillment === 'schedule' ? 'Order now' : 'Schedule'}
               </button>
               <button
                 className="checkout-btn order-now-btn"

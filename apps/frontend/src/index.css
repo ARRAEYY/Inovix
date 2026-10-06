@@ -3828,7 +3828,9 @@ img {
   cursor: not-allowed;
 }
 
-/* Breathing room between the order-type row and the action buttons */
+/* Fine divider between the order-type row and the action buttons */
 .checkout-actions {
   margin-top: 0.7rem;
+  border-top: 1px solid var(--border-color);
+  padding-top: 0.7rem;
 }

@@ -173,28 +173,25 @@ const CartDrawer = ({ isOpen, onClose, cart, menuItems, outletName, onUpdateQuan
             )}
             <div className="checkout-actions">
               <button
-                className="schedule-btn"
-                disabled={placingOrder || (fulfillment === 'schedule' && !scheduledTime)}
-                onClick={() => {
-                  if (fulfillment !== 'schedule') { setFulfillment('schedule'); return; }
-                  onOrderNow({
-                    notes: notes.trim() || undefined,
-                    scheduledFor: scheduledTime ? new Date(scheduledTime).toISOString() : undefined,
-                    orderType,
-                  });
-                }}
+                className={`schedule-btn ${fulfillment === 'schedule' ? 'active' : ''}`}
+                onClick={() => setFulfillment(f => (f === 'schedule' ? 'now' : 'schedule'))}
               >
-                {fulfillment === 'schedule' ? (scheduledTime ? 'Schedule order' : 'Pick a time') : 'Schedule'}
+                Schedule
               </button>
               <button
                 className="checkout-btn order-now-btn"
-                disabled={placingOrder || orderType === ''}
+                disabled={placingOrder || orderType === '' || (fulfillment === 'schedule' && !scheduledTime)}
                 onClick={() => onOrderNow({
                   notes: notes.trim() || undefined,
+                  scheduledFor: fulfillment === 'schedule' && scheduledTime ? new Date(scheduledTime).toISOString() : undefined,
                   orderType,
                 })}
               >
-                {orderType === '' ? 'Select order type' : placingOrder ? 'Placing…' : `Order now — ₹${total}`}
+                {orderType === ''
+                  ? 'Select order type'
+                  : fulfillment === 'schedule'
+                    ? (scheduledTime ? `Schedule order — ₹${total}` : 'Pick a time')
+                    : placingOrder ? 'Placing…' : `Order now — ₹${total}`}
               </button>
             </div>
             <p className="checkout-note">Prepaid · secured by Razorpay</p>

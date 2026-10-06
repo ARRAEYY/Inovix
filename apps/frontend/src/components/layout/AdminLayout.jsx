@@ -12,7 +12,7 @@ const AdminLayout = ({ children }) => {
         {/* Mobile Header */}
         <header className="mobile-header mobile-only">
           <div className="mobile-header-content">
-            <h1 style={{ fontSize: '1.25rem', fontWeight: '800', margin: 0, color: '#111827' }}>Nosh</h1>
+            <img src="/logo.png" alt="Nosh" style={{ height: '30px' }} />
             <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#b10035', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', fontWeight: '700' }}>
               SA
             </div>
@@ -24,8 +24,10 @@ const AdminLayout = ({ children }) => {
         </main>
       </div>
 
-      {/* Mobile Bottom Nav — scrollable so all 8 admin pages are reachable on mobile */}
-      <nav className="mobile-bottom-nav mobile-only" style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+      {/* Mobile Bottom Nav — horizontally scrollable so all 8 admin pages
+          are reachable on mobile. Items get a fixed width and the scrollbar
+          is hidden (see .admin-bottom-nav in index.css). */}
+      <nav className="mobile-bottom-nav mobile-only admin-bottom-nav">
         <NavLink to="/admin" end className={({ isActive }) => `bottom-nav-item ${isActive ? 'active' : ''}`}>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <rect x="3" y="3" width="7" height="7"></rect>

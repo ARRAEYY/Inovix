@@ -53,8 +53,8 @@ const OutletAdminDashboard = () => {
           </p>
         </div>
 
-        {/* 4 Stat Cards Grid */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '24px' }}>
+        {/* 4 Stat Cards Grid — 2-up on mobile instead of giant single column */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '14px' }}>
           <div className="stat-card" style={cardStyle}>
             <p style={statLabelStyle}>Today's sales</p>
             <h2 style={statValueStyle}>{formatCurrency(stats.todaySales)}</h2>

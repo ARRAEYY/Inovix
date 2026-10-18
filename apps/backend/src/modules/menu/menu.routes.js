@@ -36,10 +36,15 @@ router.get('/categories', protect, authorizeRole(...OUTLET_ROLES), requireOutlet
 
 router.post('/categories', protect, authorizeRole(...OUTLET_ADMIN_ROLES), requireOutletScope, async (req, res, next) => {
   try {
-    const { name, sortOrder } = req.body;
-    if (!name) return res.status(400).json({ success: false, message: 'Category name is required' });
+    const { name, sortOrder, imageUrl } = req.body;
+    if (!name || !name.trim()) return res.status(400).json({ success: false, message: 'Category name is required' });
     const cat = await prisma.menuCategory.create({
-      data: { outletId: req.user.outletId, name, sortOrder: sortOrder || 0 },
+      data: {
+        outletId: req.user.outletId,
+        name: name.trim(),
+        sortOrder: sortOrder || 0,
+        imageUrl: imageUrl ? imageUrl.trim() : null,
+      },
     });
     res.status(201).json({ success: true, data: cat });
   } catch (err) {
@@ -58,10 +63,14 @@ router.patch('/categories/:categoryId', protect, authorizeRole(...OUTLET_ADMIN_R
       return res.status(404).json({ success: false, message: 'Category not found in this outlet' });
     }
 
-    const { name, sortOrder } = req.body;
+    const { name, sortOrder, imageUrl } = req.body;
     const cat = await prisma.menuCategory.update({
       where: { id: categoryId },
-      data: { ...(name ? { name } : {}), ...(sortOrder !== undefined ? { sortOrder } : {}) },
+      data: {
+        ...(name ? { name: name.trim() } : {}),
+        ...(sortOrder !== undefined ? { sortOrder } : {}),
+        ...(imageUrl !== undefined ? { imageUrl: imageUrl ? imageUrl.trim() : null } : {}),
+      },
     });
     res.json({ success: true, data: cat });
   } catch (err) { next(err); }

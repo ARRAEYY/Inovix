@@ -4,6 +4,7 @@ import MenuSearch from '../../../components/outlet/MenuSearch';
 import MenuFilters from '../../../components/outlet/MenuFilters';
 import MenuItemCard from '../../../components/outlet/MenuItemCard';
 import MenuItemForm from '../../../components/outlet/MenuItemForm';
+import CategoryForm from '../../../components/outlet/CategoryForm';
 import client from '../../../services/api/client';
 import { getMenu, createMenuItem, updateMenuItem, deleteMenuItem, updateMenuAvailability } from '../../../services/outletAdminService';
 import '../../../styles/outlet-menu.css';
@@ -35,6 +36,11 @@ const OutletAdminMenu = () => {
   const [editingItem, setEditingItem] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
 
+  // Category modal state
+  const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
+  const [editingCategory, setEditingCategory] = useState(null);
+  const [isCategorySaving, setIsCategorySaving] = useState(false);
+
   useEffect(() => {
     fetchMenu();
   }, []);
@@ -56,6 +62,12 @@ const OutletAdminMenu = () => {
       setLoading(false);
     }
   };
+
+  const filterCategories = useMemo(() => {
+    const fromOutlet = categories.map((c) => c.name).filter(Boolean);
+    const set = new Set([...fromOutlet, ...CATEGORIES]);
+    return Array.from(set);
+  }, [categories]);
 
   const filteredItems = useMemo(() => {
     return items.filter(item => {
@@ -79,6 +91,58 @@ const OutletAdminMenu = () => {
   const handleCloseForm = () => {
     setIsFormOpen(false);
     setEditingItem(null);
+  };
+
+  // Category handlers
+  const handleOpenAddCategory = () => {
+    setEditingCategory(null);
+    setIsCategoryModalOpen(true);
+  };
+
+  const handleOpenEditCategory = (cat) => {
+    setEditingCategory(cat);
+    setIsCategoryModalOpen(true);
+  };
+
+  const handleCloseCategoryModal = () => {
+    setIsCategoryModalOpen(false);
+    setEditingCategory(null);
+  };
+
+  const handleCategorySubmit = async (catData) => {
+    try {
+      setIsCategorySaving(true);
+      if (editingCategory) {
+        await client.patch(`/outlet/menu/categories/${editingCategory.id}`, catData);
+        toast.success(`Category "${catData.name}" updated`);
+      } else {
+        await client.post('/outlet/menu/categories', catData);
+        toast.success(`Category "${catData.name}" created`);
+      }
+      await fetchMenu();
+      handleCloseCategoryModal();
+    } catch (err) {
+      console.error('Failed to save category', err);
+      toast.error(err.response?.data?.message || err.message || 'Failed to save category');
+    } finally {
+      setIsCategorySaving(false);
+    }
+  };
+
+  const handleCategoryDelete = async () => {
+    if (!editingCategory?.id) return;
+    try {
+      setIsCategorySaving(true);
+      await client.delete(`/outlet/menu/categories/${editingCategory.id}`);
+      toast.success('Category deleted');
+      await fetchMenu();
+      handleCloseCategoryModal();
+    } catch (err) {
+      console.error('Failed to delete category', err);
+      toast.error(err.response?.data?.message || err.message || 'Failed to delete category');
+    } finally {
+      setIsCategorySaving(false);
+    }
   };
 
   const handleToggleAvailability = async (item) => {
@@ -151,37 +215,139 @@ const OutletAdminMenu = () => {
         </div>
 
         {/* Category Management */}
-      <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap', marginBottom: '1rem', padding: '0.75rem', background: '#f9fafb', borderRadius: '10px' }}>
-        <span style={{ fontWeight: 700, fontSize: '0.9rem' }}>Categories:</span>
-        {categories.map(cat => (
-          <span key={cat.id} style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', background: 'white', padding: '0.2rem 0.5rem', borderRadius: '6px', border: '1px solid #e5e7eb', fontSize: '0.8rem' }}>
-            {cat.name} <span style={{ color: '#9ca3af' }}>({cat._count?.items || 0})</span>
-            <button onClick={async () => {
-              const name = prompt('Rename category:', cat.name);
-              if (name && name !== cat.name) {
-                try { await client.patch(`/outlet/menu/categories/${cat.id}`, { name }); fetchMenu(); toast.success('Category renamed'); }
-                catch (e) { toast('Failed to rename'); }
-              }
-            }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#3b82f6', fontSize: '0.7rem' }}>✎</button>
-            <button onClick={async () => {
-              if (!confirm(`Delete "${cat.name}"? Items will be uncategorized.`)) return;
-              try { await client.delete(`/outlet/menu/categories/${cat.id}`); fetchMenu(); toast.success('Category deleted'); }
-              catch (e) { toast('Failed to delete'); }
-            }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#dc2626', fontSize: '0.7rem' }}>×</button>
-          </span>
-        ))}
-        <button onClick={async () => {
-          const name = prompt('New category name:');
-          if (!name) return;
-          try { await client.post('/outlet/menu/categories', { name }); fetchMenu(); toast.success('Category created'); }
-          catch (e) { toast(e.response?.data?.message || 'Failed to create'); }
-        }} style={{ background: '#b10035', color: 'white', border: 'none', borderRadius: '6px', padding: '0.2rem 0.6rem', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600 }}>+ Add Category</button>
-      </div>
+        <div
+          style={{
+            background: '#ffffff',
+            border: '1px solid #e5e7eb',
+            borderRadius: '12px',
+            padding: '0.85rem 1.1rem',
+            marginBottom: '1.25rem',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.03)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '0.75rem',
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <span style={{ fontWeight: 700, fontSize: '0.95rem', color: '#111827' }}>Categories</span>
+              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#6b7280', background: '#f3f4f6', padding: '0.15rem 0.5rem', borderRadius: '12px' }}>
+                {categories.length}
+              </span>
+              <span style={{ fontSize: '0.78rem', color: '#9ca3af', marginLeft: '0.25rem' }}>
+                • Click any category to edit name & image
+              </span>
+            </div>
+            <button
+              onClick={handleOpenAddCategory}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.35rem',
+                background: '#b10035',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                padding: '0.45rem 0.9rem',
+                cursor: 'pointer',
+                fontSize: '0.82rem',
+                fontWeight: 600,
+                boxShadow: '0 1px 2px rgba(177, 0, 53, 0.2)',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              <span>+</span> Add Category
+            </button>
+          </div>
 
-      <div className="menu-controls">
+          <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center', flexWrap: 'wrap' }}>
+            {categories.length === 0 ? (
+              <span style={{ fontSize: '0.85rem', color: '#9ca3af', fontStyle: 'italic' }}>
+                No categories yet. Click "+ Add Category" to create one with name and image.
+              </span>
+            ) : (
+              categories.map((cat) => (
+                <div
+                  key={cat.id}
+                  onClick={() => handleOpenEditCategory(cat)}
+                  title={`Click to edit "${cat.name}"`}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    background: '#ffffff',
+                    padding: '0.3rem 0.65rem 0.3rem 0.35rem',
+                    borderRadius: '8px',
+                    border: '1px solid #e5e7eb',
+                    fontSize: '0.85rem',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                    boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = '#b10035';
+                    e.currentTarget.style.boxShadow = '0 2px 6px rgba(177, 0, 53, 0.12)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = '#e5e7eb';
+                    e.currentTarget.style.boxShadow = '0 1px 2px rgba(0,0,0,0.03)';
+                  }}
+                >
+                  {cat.imageUrl ? (
+                    <img
+                      src={cat.imageUrl}
+                      alt={cat.name}
+                      style={{
+                        width: 28,
+                        height: 28,
+                        borderRadius: '6px',
+                        objectFit: 'cover',
+                        border: '1px solid #f3f4f6',
+                        flexShrink: 0,
+                      }}
+                    />
+                  ) : (
+                    <span
+                      style={{
+                        width: 28,
+                        height: 28,
+                        borderRadius: '6px',
+                        background: '#f9fafb',
+                        border: '1px solid #f3f4f6',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '0.85rem',
+                        flexShrink: 0,
+                      }}
+                    >
+                      🍽️
+                    </span>
+                  )}
+                  <span style={{ fontWeight: 600, color: '#1f2937' }}>{cat.name}</span>
+                  <span style={{ fontSize: '0.75rem', color: '#9ca3af', fontWeight: 500 }}>
+                    ({cat._count?.items || 0})
+                  </span>
+                  <span
+                    style={{
+                      color: '#b10035',
+                      fontSize: '0.75rem',
+                      marginLeft: '0.15rem',
+                      opacity: 0.7,
+                    }}
+                  >
+                    ✎
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        <div className="menu-controls">
           <MenuSearch searchTerm={searchTerm} setSearchTerm={setSearchTerm} />
           <MenuFilters 
-            categories={CATEGORIES} 
+            categories={filterCategories} 
             activeCategory={activeCategory} 
             setActiveCategory={setActiveCategory} 
           />
@@ -209,13 +375,42 @@ const OutletAdminMenu = () => {
           </div>
         )}
 
-        {/* Modal overlays */}
+        {/* Item Modal overlay */}
         {isFormOpen && (
-          <div className="modal-overlay">
-            <div className="modal-content form-modal">
-              <div className="modal-header">
-                <h2>{editingItem ? 'Edit Item' : 'Add New Item'}</h2>
-                <button className="close-btn" onClick={handleCloseForm}>&times;</button>
+          <div className="modal-overlay" onClick={handleCloseForm}>
+            <div
+              className="modal-content form-modal"
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                maxWidth: '520px',
+                width: '100%',
+                background: 'white',
+                borderRadius: '14px',
+                padding: '1.5rem',
+                boxShadow: '0 20px 40px rgba(0,0,0,0.15)',
+              }}
+            >
+              <div
+                className="modal-header"
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  marginBottom: '1.25rem',
+                  paddingBottom: '0.75rem',
+                  borderBottom: '1px solid #e5e7eb',
+                }}
+              >
+                <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700 }}>
+                  {editingItem ? 'Edit Item' : 'Add New Item'}
+                </h2>
+                <button
+                  className="close-btn"
+                  onClick={handleCloseForm}
+                  style={{ background: 'none', border: 'none', fontSize: '1.5rem', cursor: 'pointer', color: '#6b7280' }}
+                >
+                  &times;
+                </button>
               </div>
               <MenuItemForm 
                 item={editingItem} 
@@ -223,6 +418,55 @@ const OutletAdminMenu = () => {
                 onCancel={handleCloseForm}
                 isSaving={isSaving}
                 onDelete={editingItem ? handleDeleteItem : undefined}
+                availableCategories={categories}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Category Modal overlay */}
+        {isCategoryModalOpen && (
+          <div className="modal-overlay" onClick={handleCloseCategoryModal}>
+            <div
+              className="modal-content form-modal"
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                maxWidth: '440px',
+                width: '100%',
+                background: 'white',
+                borderRadius: '14px',
+                padding: '1.5rem',
+                boxShadow: '0 20px 40px rgba(0,0,0,0.15)',
+              }}
+            >
+              <div
+                className="modal-header"
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  marginBottom: '1.25rem',
+                  paddingBottom: '0.75rem',
+                  borderBottom: '1px solid #e5e7eb',
+                }}
+              >
+                <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 700 }}>
+                  {editingCategory ? 'Edit Category' : 'Add New Category'}
+                </h2>
+                <button
+                  className="close-btn"
+                  onClick={handleCloseCategoryModal}
+                  style={{ background: 'none', border: 'none', fontSize: '1.5rem', cursor: 'pointer', color: '#6b7280' }}
+                >
+                  &times;
+                </button>
+              </div>
+              <CategoryForm
+                category={editingCategory}
+                onSubmit={handleCategorySubmit}
+                onCancel={handleCloseCategoryModal}
+                isSaving={isCategorySaving}
+                onDelete={editingCategory ? handleCategoryDelete : undefined}
               />
             </div>
           </div>

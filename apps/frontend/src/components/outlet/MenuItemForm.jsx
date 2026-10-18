@@ -2,19 +2,27 @@ import React, { useState, useEffect } from 'react';
 import { toast } from 'react-hot-toast';
 import client from '../../services/api/client';
 
-const CATEGORIES = [
+const DEFAULT_CATEGORIES = [
   'Popular', 'Meals', 'Snacks', 'Beverages', 'Desserts', 'Healthy',
   'Burgers', 'Fries', 'Sandwiches', 'Wraps', 'Maggi', 'Shakes'
 ];
 
-const MenuItemForm = ({ item, onSubmit, onCancel, isSaving, onDelete }) => {
+const MenuItemForm = ({ item, onSubmit, onCancel, isSaving, onDelete, availableCategories = [] }) => {
   const isEditMode = !!item;
+  
+  const categoryOptions = React.useMemo(() => {
+    const fromOutlet = (availableCategories || [])
+      .map(c => typeof c === 'string' ? c : c.name)
+      .filter(Boolean);
+    const set = new Set([...fromOutlet, ...DEFAULT_CATEGORIES]);
+    return Array.from(set);
+  }, [availableCategories]);
   
   const [formData, setFormData] = useState({
     name: '',
     description: '',
     price: '',
-    category: 'Popular',
+    category: categoryOptions[0] || 'Popular',
     image: '',
     isAvailable: true,
     // Persisted by the backend menu service but previously missing from
@@ -132,7 +140,7 @@ const MenuItemForm = ({ item, onSubmit, onCancel, isSaving, onDelete }) => {
         <div className="form-group">
           <label>Category</label>
           <select name="category" value={formData.category} onChange={handleChange}>
-            {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+            {categoryOptions.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
         </div>
       </div>

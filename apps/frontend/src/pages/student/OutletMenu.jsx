@@ -53,6 +53,7 @@ const CategoryIcon = ({ name }) => {
 const mapMenuItem = (item) => ({
   ...item,
   category: item.category?.name || 'Other',
+  categoryImage: item.category?.imageUrl || null,
   image: item.imageUrl || null,
   price: Number(item.price),
 });
@@ -63,8 +64,11 @@ const buildMenuSections = (items) => {
     if (!acc[item.category]) {
       acc[item.category] = {
         category: item.category,
+        categoryImage: item.categoryImage || null,
         items: []
       };
+    } else if (!acc[item.category].categoryImage && item.categoryImage) {
+      acc[item.category].categoryImage = item.categoryImage;
     }
     acc[item.category].items.push(item);
     return acc;
@@ -501,7 +505,15 @@ const OutletMenu = () => {
                     aria-label={`Show ${section.category}`}
                   >
                     <div className="category-img-wrapper">
-                      <CategoryIcon name={section.category} />
+                      {section.categoryImage ? (
+                        <img
+                          src={section.categoryImage}
+                          alt={section.category}
+                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                        />
+                      ) : (
+                        <CategoryIcon name={section.category} />
+                      )}
                     </div>
                     <span className="category-name">{section.category}</span>
                   </button>
@@ -553,7 +565,23 @@ const OutletMenu = () => {
                     className="menu-section"
                     ref={el => sectionRefs.current[section.category] = el}
                   >
-                    <h2 className="section-title">{section.category}</h2>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
+                      {section.categoryImage && (
+                        <img
+                          src={section.categoryImage}
+                          alt={section.category}
+                          style={{
+                            width: 34,
+                            height: 34,
+                            borderRadius: 8,
+                            objectFit: 'cover',
+                            border: '1px solid #f3f4f6',
+                            flexShrink: 0,
+                          }}
+                        />
+                      )}
+                      <h2 className="section-title" style={{ margin: 0 }}>{section.category}</h2>
+                    </div>
                     <div className="food-grid">
                       {section.items.map(item => (
                         <FoodCard

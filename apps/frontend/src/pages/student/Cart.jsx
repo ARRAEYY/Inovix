@@ -132,9 +132,11 @@ const Cart = () => {
 
   return (
     <div className="page-wrapper cart-page-wrapper">
-      <Header title="Your Cart" subtitle="Campus Pickup" showBack={true} />
+      <Header showBack={true} />
 
       <main className="cart-page-main" style={{ maxWidth: '800px', margin: '0 auto', padding: '1.5rem 1rem 6rem', minHeight: 'calc(100vh - 140px)' }}>
+        <h1 className="page-title" style={{ marginBottom: '1.25rem' }}>Your Cart</h1>
+
         {totalCartCount === 0 ? (
           <div className="cart-page-empty-card" style={{
             background: '#ffffff',

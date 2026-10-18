@@ -39,14 +39,13 @@ const server = http.createServer(app);
 // Initialize Socket.IO on the same HTTP server
 initSocketServer(server);
 
-// Self-healing database schema check (adds missing columns if any migration was skipped in prod)
-ensureSchema().finally(() => {
-  server.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
-    console.log(`Socket.IO listening on the same port (transports: websocket, polling)`);
-    // Initialize cron jobs (audit purge, refresh purge, pickup-timeout auto-complete)
-    initCron();
-  });
+server.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
+  console.log(`Socket.IO listening on the same port (transports: websocket, polling)`);
+  // Self-healing database schema check (adds missing columns if any migration was skipped in prod)
+  ensureSchema().catch((err) => console.warn('[db] ensureSchema error:', err.message));
+  // Initialize cron jobs (audit purge, refresh purge, pickup-timeout auto-complete)
+  initCron();
 });
 
 // Graceful shutdown — stop the cron + close the HTTP server cleanly

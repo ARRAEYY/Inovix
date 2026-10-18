@@ -98,60 +98,62 @@ const Home = () => {
       <Header />
 
       <main className="explore-container">
-        <div className="home-header-row">
-          <div className="page-header">
-            <p className="welcome-greeting">Welcome back, {user?.name || 'Student'}</p>
-            <h1 className="page-title">Explore Outlets</h1>
-            <p className="page-subtitle">Order from your favorite campus outlets</p>
+        <div className="home-hero-row">
+          <div className="home-hero-left">
+            <div className="page-header">
+              <p className="welcome-greeting">Welcome back, {user?.name || 'Student'}</p>
+              <h1 className="page-title">Explore Outlets</h1>
+              <p className="page-subtitle">Order from your favorite campus outlets</p>
+            </div>
+
+            <div className="controls-row">
+              <div className="search-container">
+                <svg className="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <circle cx="11" cy="11" r="8"></circle>
+                  <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+                <input
+                  type="text"
+                  className="search-input"
+                  placeholder="Search for food, drinks or outlets"
+                  aria-label="Search for food, drinks or outlets"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    className="search-clear-btn"
+                    aria-label="Clear search"
+                    onClick={() => setSearchQuery('')}
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Food-category discovery — derived from outlet tags */}
+            {!loading && categories.length > 1 && (
+              <div className="category-tabs" role="tablist" aria-label="Food categories">
+                {categories.map(cat => (
+                  <button
+                    key={cat}
+                    role="tab"
+                    aria-selected={activeCategory === cat}
+                    className={`category-tab ${activeCategory === cat ? 'active' : ''}`}
+                    onClick={() => setActiveCategory(cat)}
+                  >
+                    {cat}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Live Active Order Status & Quick OTP (Square box on the right) */}
           <ActiveOrderBanner />
         </div>
-
-        <div className="controls-row">
-          <div className="search-container">
-            <svg className="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <circle cx="11" cy="11" r="8"></circle>
-              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-            </svg>
-            <input
-              type="text"
-              className="search-input"
-              placeholder="Search for food, drinks or outlets"
-              aria-label="Search for food, drinks or outlets"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-            {searchQuery && (
-              <button
-                type="button"
-                className="search-clear-btn"
-                aria-label="Clear search"
-                onClick={() => setSearchQuery('')}
-              >
-                ×
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Food-category discovery — derived from outlet tags */}
-        {!loading && categories.length > 1 && (
-          <div className="category-tabs" role="tablist" aria-label="Food categories">
-            {categories.map(cat => (
-              <button
-                key={cat}
-                role="tab"
-                aria-selected={activeCategory === cat}
-                className={`category-tab ${activeCategory === cat ? 'active' : ''}`}
-                onClick={() => setActiveCategory(cat)}
-              >
-                {cat}
-              </button>
-            ))}
-          </div>
-        )}
 
         {loading ? (
           <SkeletonGrid count={6} cols={3} />

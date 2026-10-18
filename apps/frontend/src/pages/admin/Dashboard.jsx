@@ -109,7 +109,7 @@ const AdminDashboard = () => {
 
           <div style={metricCardStyle}>
             <p style={{ margin: '0 0 6px 0', color: '#6b7280', fontSize: '0.85rem', fontWeight: '600' }}>Gross value today</p>
-            <h2 style={{ margin: 0, fontSize: '1.7rem', fontWeight: '800', color: '#111827', letterSpacing: '-0.5px' }}>{formatCurrency(metrics.revenueToday)}</h2>
+            <h2 style={{ margin: 0, fontSize: '1.7rem', fontWeight: '800', color: '#111827', letterSpacing: '-0.5px' }}>{formatCurrency(metrics.revenueToday || 0)}</h2>
           </div>
 
           <div style={metricCardStyle}>
@@ -119,12 +119,12 @@ const AdminDashboard = () => {
 
           <div style={metricCardStyle}>
             <p style={{ margin: '0 0 6px 0', color: '#6b7280', fontSize: '0.85rem', fontWeight: '600' }}>Active outlets</p>
-            <h2 style={{ margin: 0, fontSize: '1.7rem', fontWeight: '800', color: '#111827', letterSpacing: '-0.5px' }}>{metrics.activeOutlets}</h2>
+            <h2 style={{ margin: 0, fontSize: '1.7rem', fontWeight: '800', color: '#111827', letterSpacing: '-0.5px' }}>{metrics.activeOutlets || 0}</h2>
           </div>
 
           <div style={metricCardStyle}>
             <p style={{ margin: '0 0 6px 0', color: '#6b7280', fontSize: '0.85rem', fontWeight: '600' }}>Total users</p>
-            <h2 style={{ margin: 0, fontSize: '1.7rem', fontWeight: '800', color: '#111827', letterSpacing: '-0.5px' }}>{metrics.totalUsers.toLocaleString()}</h2>
+            <h2 style={{ margin: 0, fontSize: '1.7rem', fontWeight: '800', color: '#111827', letterSpacing: '-0.5px' }}>{Number(metrics.totalUsers || 0).toLocaleString()}</h2>
           </div>
 
         </div>
@@ -135,13 +135,13 @@ const AdminDashboard = () => {
           background: '#f9fafb', border: '1px solid #f3f4f6', borderRadius: '12px', padding: '14px 20px',
         }}>
           <span style={{ fontSize: '0.85rem', color: '#6b7280' }}>
-            This month <strong style={{ color: '#111827', marginLeft: 6 }}>{formatCurrency(metrics.revenueThisMonth)}</strong>
+            This month <strong style={{ color: '#111827', marginLeft: 6 }}>{formatCurrency(metrics.revenueThisMonth || 0)}</strong>
           </span>
           <span style={{ fontSize: '0.85rem', color: '#6b7280' }}>
-            Lifetime <strong style={{ color: '#111827', marginLeft: 6 }}>{formatCurrency(metrics.revenueTotal)}</strong>
+            Lifetime <strong style={{ color: '#111827', marginLeft: 6 }}>{formatCurrency(metrics.revenueTotal || 0)}</strong>
           </span>
           <span style={{ fontSize: '0.85rem', color: '#6b7280' }}>
-            Orders this week <strong style={{ color: '#111827', marginLeft: 6 }}>{metrics.ordersThisWeek.toLocaleString()}</strong>
+            Orders this week <strong style={{ color: '#111827', marginLeft: 6 }}>{Number(metrics.ordersThisWeek || 0).toLocaleString()}</strong>
           </span>
           <span style={{ fontSize: '0.85rem', color: '#6b7280' }}>
             Refund rate <strong style={{ color: '#111827', marginLeft: 6 }}>{metrics.refundRate || '0.0%'}</strong>
@@ -155,19 +155,19 @@ const AdminDashboard = () => {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div style={userRowStyle}>
                 <span style={userLabelStyle}>Students</span>
-                <span style={userValueStyle}>{users.students.toLocaleString()}</span>
+                <span style={userValueStyle}>{Number(users.students || 0).toLocaleString()}</span>
               </div>
               <div style={userRowStyle}>
                 <span style={userLabelStyle}>Outlet Staff</span>
-                <span style={userValueStyle}>{users.outletStaff.toLocaleString()}</span>
+                <span style={userValueStyle}>{Number(users.outletStaff || 0).toLocaleString()}</span>
               </div>
               <div style={userRowStyle}>
                 <span style={userLabelStyle}>Outlet Admins</span>
-                <span style={userValueStyle}>{users.outletAdmins.toLocaleString()}</span>
+                <span style={userValueStyle}>{Number(users.outletAdmins || 0).toLocaleString()}</span>
               </div>
               <div style={userRowStyle}>
                 <span style={userLabelStyle}>Super Admins</span>
-                <span style={userValueStyle}>{users.superAdmins.toLocaleString()}</span>
+                <span style={userValueStyle}>{Number(users.superAdmins || 0).toLocaleString()}</span>
               </div>
             </div>
           </div>
@@ -272,7 +272,7 @@ const AdminDashboard = () => {
                   return (
                     <tr key={order.id} style={{ borderBottom: idx !== recentOrders.length - 1 ? '1px solid #f3f4f6' : 'none' }}>
                       <td style={{ padding: '16px 24px', fontWeight: '700', color: '#111827', fontSize: '0.9rem' }}>
-                        #{order.id.split('_')[1] || order.id}
+                        #{order.orderNumber || (order.id.includes('_') ? order.id.split('_')[1] : order.id.slice(-6))}
                       </td>
                       <td style={{ padding: '16px 24px', color: '#374151' }}>{order.studentName}</td>
                       <td style={{ padding: '16px 24px', color: '#374151' }}>{order.outletName}</td>

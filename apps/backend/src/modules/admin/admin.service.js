@@ -4,6 +4,8 @@
  * All endpoints require SUPER_ADMIN role (enforced in routes).
  */
 
+const fs = require('fs');
+const path = require('path');
 const prisma = require('../../lib/prisma');
 const menuRepo = require('../menu/menu.repository');
 const ordersRepo = require('../orders/orders.repository');
@@ -11,6 +13,7 @@ const { getOutletRazorpayClient, markPaymentRefundedIfFullyRefunded } = require(
 const { audit } = require('../../lib/audit');
 const { toPaise, remainingRefundable } = require('../../lib/money');
 const { isPostgres } = require('../../lib/distributedLock');
+const { hashPassword } = require('../../utils/password');
 const {
   ROLES,
   OUTLET_STATUS,
@@ -688,59 +691,229 @@ async function issueManualRefund(orderId, { amount, reason }, actorId) {
   return { refund, retried: false };
 }
 
-// ─── General update (Edit) functions ────────────────────────────────────
+// ─── General update (Edit), Create & Delete functions ────────────────────
+async function createUser(data) {
+  const { name, email, password, role = ROLES.STUDENT, outletId } = data;
+  const normalizedEmail = email.toLowerCase().trim();
+  const existing = await prisma.user.findUnique({ where: { email: normalizedEmail } });
+  if (existing) {
+    throw { statusCode: 409, message: 'A user with this email already exists' };
+  }
+  const passwordHash = await hashPassword(password || 'Admin@123');
+  const user = await prisma.user.create({
+    data: {
+      name: name.trim(),
+      email: normalizedEmail,
+      passwordHash,
+      role,
+      status: USER_STATUS.ACTIVE,
+      onboardingCompleted: true,
+    },
+    include: {
+      outletStaff: { include: { outlet: { select: { id: true, name: true, logoUrl: true, location: true, status: true } } } },
+      studentProfile: true,
+    },
+  });
+
+  if (outletId && (role === ROLES.OUTLET_STAFF || role === ROLES.OUTLET_ADMIN)) {
+    const outletStaff = await prisma.outletStaff.create({
+      data: {
+        userId: user.id,
+        outletId,
+        role: role === ROLES.OUTLET_ADMIN ? 'ADMIN' : 'STAFF',
+      },
+      include: { outlet: { select: { id: true, name: true, logoUrl: true, location: true, status: true } } },
+    });
+    user.outletStaff = outletStaff;
+  }
+
+  const { passwordHash: _, ...safe } = user;
+  return safe;
+}
+
 async function updateUser(userId, data, reqUserId) {
-  const user = await prisma.user.findUnique({ where: { id: userId } });
+  const user = await prisma.user.findUnique({ where: { id: userId }, include: { outletStaff: true } });
   if (!user) throw { statusCode: 404, message: 'User not found' };
   const before = { name: user.name, email: user.email, role: user.role };
   const updateData = {};
-  if (data.name !== undefined) updateData.name = data.name;
-  if (data.email !== undefined) updateData.email = data.email.toLowerCase();
+  if (data.name !== undefined) updateData.name = data.name.trim();
+  if (data.email !== undefined) updateData.email = data.email.toLowerCase().trim();
   if (data.role !== undefined) updateData.role = data.role;
+
+  const effectiveRole = data.role !== undefined ? data.role : user.role;
+
+  // Handle outlet assignment
+  if (data.outletId !== undefined) {
+    if (data.outletId && (effectiveRole === ROLES.OUTLET_STAFF || effectiveRole === ROLES.OUTLET_ADMIN)) {
+      await prisma.outletStaff.upsert({
+        where: { userId },
+        create: {
+          userId,
+          outletId: data.outletId,
+          role: effectiveRole === ROLES.OUTLET_ADMIN ? 'ADMIN' : 'STAFF',
+        },
+        update: {
+          outletId: data.outletId,
+          role: effectiveRole === ROLES.OUTLET_ADMIN ? 'ADMIN' : 'STAFF',
+        },
+      });
+    } else if (data.outletId === null || effectiveRole === ROLES.STUDENT || effectiveRole === ROLES.SUPER_ADMIN) {
+      await prisma.outletStaff.deleteMany({ where: { userId } });
+    }
+  } else if (effectiveRole === ROLES.STUDENT || effectiveRole === ROLES.SUPER_ADMIN) {
+    // Role changed away from outlet staff/admin
+    await prisma.outletStaff.deleteMany({ where: { userId } });
+  }
+
   const updated = await prisma.user.update({
     where: { id: userId },
     data: updateData,
-    include: { outletStaff: { include: { outlet: { select: { id: true, name: true, logoUrl: true, location: true, status: true } } } }, studentProfile: true },
+    include: {
+      outletStaff: { include: { outlet: { select: { id: true, name: true, logoUrl: true, location: true, status: true } } } },
+      studentProfile: true,
+    },
   });
-  return { user: updated, before };
+
+  const { passwordHash, ...safe } = updated;
+  return { user: safe, before };
+}
+
+async function deleteUser(userId, reqUserId) {
+  if (userId === reqUserId) {
+    throw { statusCode: 400, message: 'Super Admins cannot delete their own account' };
+  }
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) throw { statusCode: 404, message: 'User not found' };
+  await prisma.user.delete({ where: { id: userId } });
+  return { deleted: true, name: user.name, email: user.email };
 }
 
 async function updateOutlet(outletId, data) {
   const outlet = await prisma.outlet.findUnique({ where: { id: outletId } });
   if (!outlet) throw { statusCode: 404, message: 'Outlet not found' };
-  const before = { name: outlet.name, description: outlet.description, location: outlet.location };
-  const updated = await prisma.outlet.update({ where: { id: outletId }, data });
+  const before = {
+    name: outlet.name,
+    description: outlet.description,
+    location: outlet.location,
+    status: outlet.status,
+    contactEmail: outlet.contactEmail,
+    contactNumber: outlet.contactNumber,
+  };
+  const updateData = {};
+  if (data.name !== undefined) updateData.name = data.name.trim();
+  if (data.description !== undefined) updateData.description = data.description || null;
+  if (data.location !== undefined) updateData.location = data.location || null;
+  if (data.contactEmail !== undefined) updateData.contactEmail = data.contactEmail || null;
+  if (data.contactNumber !== undefined) updateData.contactNumber = data.contactNumber || null;
+  if (data.status !== undefined) updateData.status = data.status;
+
+  const updated = await prisma.outlet.update({ where: { id: outletId }, data: updateData });
   return { outlet: updated, before };
+}
+
+async function createMenuItem(data) {
+  const { outletId, name, price, description = '', imageUrl = null, isAvailable = true, vegetarian = false, categoryId = null } = data;
+  const outlet = await prisma.outlet.findUnique({ where: { id: outletId } });
+  if (!outlet) throw { statusCode: 404, message: 'Outlet not found' };
+
+  return prisma.menuItem.create({
+    data: {
+      outletId,
+      name: name.trim(),
+      price,
+      description: description || '',
+      imageUrl: imageUrl || null,
+      isAvailable: Boolean(isAvailable),
+      vegetarian: Boolean(vegetarian),
+      categoryId: categoryId || null,
+    },
+    include: {
+      outlet: { select: { id: true, name: true } },
+      category: { select: { id: true, name: true } },
+    },
+  });
 }
 
 async function updateMenuItem(itemId, data) {
   const item = await prisma.menuItem.findUnique({ where: { id: itemId } });
   if (!item) throw { statusCode: 404, message: 'Menu item not found' };
-  const before = { name: item.name, price: item.price, description: item.description };
+  const before = {
+    name: item.name,
+    price: item.price,
+    description: item.description,
+    isAvailable: item.isAvailable,
+    vegetarian: item.vegetarian,
+  };
+  const updateData = {};
+  if (data.name !== undefined) updateData.name = data.name.trim();
+  if (data.price !== undefined) updateData.price = data.price;
+  if (data.description !== undefined) updateData.description = data.description || '';
+  if (data.imageUrl !== undefined) updateData.imageUrl = data.imageUrl || null;
+  if (data.isAvailable !== undefined) updateData.isAvailable = Boolean(data.isAvailable);
+  if (data.vegetarian !== undefined) updateData.vegetarian = Boolean(data.vegetarian);
+  if (data.categoryId !== undefined) updateData.categoryId = data.categoryId || null;
+
   const updated = await prisma.menuItem.update({
     where: { id: itemId },
-    data,
+    data: updateData,
     include: { outlet: { select: { id: true, name: true } }, category: { select: { id: true, name: true } } },
   });
   return { item: updated, before };
 }
 
+async function deleteMenuItem(itemId) {
+  const item = await prisma.menuItem.findUnique({ where: { id: itemId } });
+  if (!item) throw { statusCode: 404, message: 'Menu item not found' };
+  await prisma.menuItem.delete({ where: { id: itemId } });
+  return { deleted: true, name: item.name };
+}
 
 async function deleteOutlet(outletId) {
   const outlet = await prisma.outlet.findUnique({ where: { id: outletId } });
   if (!outlet) throw { statusCode: 404, message: 'Outlet not found' };
-  // Cascade delete: the schema has onDelete: Cascade on OutletStaff,
-  // OperatingHours, MenuCategory, MenuItem, Cart, Orders (via outletId).
   await prisma.outlet.delete({ where: { id: outletId } });
   return { deleted: true, name: outlet.name };
 }
 
+// ─── Settings Persistence ───────────────────────────────────────────────
+const SETTINGS_FILE = path.join(__dirname, '../../data/platform-settings.json');
+const DEFAULT_SETTINGS = {
+  maintenanceMode: false,
+  platformFeePct: 2,
+  requireInstitutionalEmail: true,
+};
+
+function getSettings() {
+  try {
+    if (fs.existsSync(SETTINGS_FILE)) {
+      return { ...DEFAULT_SETTINGS, ...JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8')) };
+    }
+  } catch (err) {
+    console.warn('[admin:settings] failed to read settings file:', err.message);
+  }
+  return DEFAULT_SETTINGS;
+}
+
+function updateSettings(patch) {
+  const current = getSettings();
+  const updated = { ...current, ...patch };
+  try {
+    const dir = path.dirname(SETTINGS_FILE);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(SETTINGS_FILE, JSON.stringify(updated, null, 2), 'utf8');
+  } catch (err) {
+    console.warn('[admin:settings] failed to persist settings file:', err.message);
+  }
+  return updated;
+}
 
 module.exports = {
   getOverview,
   getUsers,
   getUser,
+  createUser,
   updateUserStatus,
+  deleteUser,
   getOutlets,
   getOutlet,
   createOutlet,
@@ -750,10 +923,14 @@ module.exports = {
   getOrder,
   getMenu,
   getMenuItem,
+  createMenuItem,
   updateMenuItemStatus,
+  deleteMenuItem,
   issueManualRefund,
   updateUser,
   updateOutlet,
   updateMenuItem,
   deleteOutlet,
+  getSettings,
+  updateSettings,
 };

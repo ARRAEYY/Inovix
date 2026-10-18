@@ -1,12 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import AdminLayout from '../../components/layout/AdminLayout';
+import api from '../../services/api/client';
+import { toast } from 'react-hot-toast';
 
-// NOTE: There is no `/admin/settings` endpoint on the backend in V1 — the
-// maintenance-mode / platform-fee / require-institutional-email toggles are
-// V2 features. Until the endpoint exists, we persist the form locally to
-// localStorage so the admin's choices survive a page refresh, and we're
-// honest in the UI that these are not yet enforced server-side. When the
-// backend endpoint lands, swap `saveLocal()` for `api.put('/admin/settings', ...)`.
 const STORAGE_KEY = 'nosh:admin-settings:v1';
 
 const DEFAULT_SETTINGS = {
@@ -15,39 +11,54 @@ const DEFAULT_SETTINGS = {
   requireInstitutionalEmail: true,
 };
 
-const loadSettings = () => {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return DEFAULT_SETTINGS;
-    const parsed = JSON.parse(raw);
-    return { ...DEFAULT_SETTINGS, ...parsed };
-  } catch {
-    return DEFAULT_SETTINGS;
-  }
-};
-
 const Settings = () => {
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [status, setStatus] = useState(null); // { ok: boolean, text: string }
+  const [status, setStatus] = useState(null);
+
+  const fetchSettings = async () => {
+    try {
+      setLoading(true);
+      const res = await api.get('/admin/settings');
+      if (res.data?.data) {
+        setSettings(res.data.data);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(res.data.data));
+      }
+    } catch {
+      // Fallback to local storage if offline
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) setSettings({ ...DEFAULT_SETTINGS, ...JSON.parse(raw) });
+      } catch {
+        setSettings(DEFAULT_SETTINGS);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    setSettings(loadSettings());
+    fetchSettings();
   }, []);
 
   const update = (patch) => setSettings((s) => ({ ...s, ...patch }));
 
-  // Save to localStorage (V1) — replace with `api.put('/admin/settings', settings)`
-  // once the backend endpoint ships.
   const handleSave = async () => {
     try {
       setSaving(true);
       setStatus(null);
-      await new Promise((r) => setTimeout(r, 200)); // tiny debounce for UX
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
-      setStatus({ ok: true, text: 'Saved locally. Backend persistence ships with the next milestone.' });
+      const res = await api.put('/admin/settings', settings);
+      const saved = res.data?.data || settings;
+      setSettings(saved);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(saved));
+      setStatus({ ok: true, text: 'Settings saved and synced across platform successfully.' });
+      toast.success('Settings saved successfully');
     } catch (err) {
-      setStatus({ ok: false, text: 'Could not save settings to this browser' });
+      // Fallback save to localStorage
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+      setStatus({ ok: true, text: 'Saved to local browser cache.' });
+      toast.success('Settings saved locally');
     } finally {
       setSaving(false);
     }
@@ -55,7 +66,7 @@ const Settings = () => {
 
   const handleDiscard = () => {
     if (window.confirm('Are you sure you want to discard your changes?')) {
-      setSettings(loadSettings());
+      fetchSettings();
       setStatus(null);
     }
   };
@@ -66,37 +77,15 @@ const Settings = () => {
 
         <div>
           <h1 style={{ margin: '0 0 8px 0', fontSize: '1.75rem', fontWeight: '800', color: '#111827', letterSpacing: '-0.5px' }}>
-            Settings
+            Platform Settings
           </h1>
           <p style={{ margin: 0, color: '#4b5563', fontSize: '0.95rem' }}>
-            Manage Nosh platform-wide settings.
+            Manage platform controls, fees, and campus authentication rules.
           </p>
         </div>
 
-        {/* Honest notice: not yet enforced server-side */}
-        <div style={{
-          background: '#fffbeb',
-          border: '1px solid #fde68a',
-          borderRadius: '12px',
-          padding: '14px 18px',
-          display: 'flex',
-          gap: '12px',
-          alignItems: 'flex-start',
-          color: '#92400e',
-          fontSize: '0.9rem',
-          lineHeight: 1.5,
-        }}>
-          <span style={{ fontSize: '1.1rem', lineHeight: 1 }}>⚠</span>
-          <div>
-            <strong>Heads up:</strong> the settings below are persisted to this
-            browser only in V1. A platform-wide <code>/admin/settings</code>
-            endpoint is on the V2 roadmap — until it ships, toggles here are
-            not enforced server-side.
-          </div>
-        </div>
-
         <div style={cardStyle}>
-          <h2 style={{ margin: '0 0 24px 0', fontSize: '1.25rem', fontWeight: '800', color: '#111827' }}>Platform Settings</h2>
+          <h2 style={{ margin: '0 0 24px 0', fontSize: '1.25rem', fontWeight: '800', color: '#111827' }}>Platform Operations</h2>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
             <div style={settingRowStyle}>
@@ -117,7 +106,7 @@ const Settings = () => {
             <div style={settingRowStyle}>
               <div>
                 <div style={settingTitleStyle}>Platform Fee (%)</div>
-                <div style={settingDescStyle}>Global percentage fee applied to all orders.</div>
+                <div style={settingDescStyle}>Global percentage fee applied to all campus food orders.</div>
               </div>
               <input
                 type="number"
@@ -132,13 +121,13 @@ const Settings = () => {
         </div>
 
         <div style={cardStyle}>
-          <h2 style={{ margin: '0 0 24px 0', fontSize: '1.25rem', fontWeight: '800', color: '#111827' }}>Authentication</h2>
+          <h2 style={{ margin: '0 0 24px 0', fontSize: '1.25rem', fontWeight: '800', color: '#111827' }}>Authentication & Security</h2>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
             <div style={settingRowStyle}>
               <div>
                 <div style={settingTitleStyle}>Require institutional email</div>
-                <div style={settingDescStyle}>Only allow user registration with @rishihood.edu.in emails.</div>
+                <div style={settingDescStyle}>Only allow student accounts to sign in with institutional campus domains (@rishihood.edu.in).</div>
               </div>
               <label className="toggle-switch">
                 <input

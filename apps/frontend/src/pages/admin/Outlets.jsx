@@ -45,19 +45,21 @@ const Outlets = () => {
       setOutlets([...outlets, { ...response.data.data, ordersToday: 0, staffCount: 0 }]);
       setShowAddModal(false);
       setNewOutlet({ name: '', description: '', location: '', contactEmail: '', contactNumber: '', status: 'OPEN' });
+      toast.success('Outlet created successfully');
     } catch (err) {
-      toast(err.response?.data?.message || 'Failed to add outlet');
+      toast.error(err.response?.data?.message || 'Failed to add outlet');
     }
   };
 
-  const handleSuspend = async (outletId) => {
-    if (window.confirm('Are you sure you want to suspend this outlet? This will immediately stop new orders.')) {
+  const handleStatusChange = async (outletId, newStatus) => {
+    const actionLabel = newStatus === 'OPEN' ? 'reopen' : newStatus === 'BUSY' ? 'mark busy' : 'close/suspend';
+    if (window.confirm(`Are you sure you want to ${actionLabel} this outlet?`)) {
       try {
-        await api.patch(`/admin/outlets/${outletId}/status`, { status: 'CLOSED' });
-        // Update local state
-        setOutlets(outlets.map(o => o.id === outletId ? { ...o, status: 'CLOSED' } : o));
+        await api.patch(`/admin/outlets/${outletId}/status`, { status: newStatus });
+        setOutlets(outlets.map(o => o.id === outletId ? { ...o, status: newStatus } : o));
+        toast.success(`Outlet status updated to ${newStatus}`);
       } catch (err) {
-        toast('Failed to suspend outlet');
+        toast.error(err.response?.data?.message || 'Failed to update outlet status');
       }
     }
   };
@@ -65,15 +67,19 @@ const Outlets = () => {
   const handleEditSubmit = async (e) => {
     e.preventDefault();
     try {
-      await api.patch(`/admin/outlets/${selectedEditOutlet.id}`, {
+      const res = await api.patch(`/admin/outlets/${selectedEditOutlet.id}`, {
         name: selectedEditOutlet.name,
-        description: selectedEditOutlet.description,
-        location: selectedEditOutlet.location,
+        description: selectedEditOutlet.description || null,
+        location: selectedEditOutlet.location || null,
+        contactEmail: selectedEditOutlet.contactEmail || null,
+        contactNumber: selectedEditOutlet.contactNumber || null,
+        status: selectedEditOutlet.status,
       });
-      setOutlets(outlets.map(o => o.id === selectedEditOutlet.id ? { ...o, ...selectedEditOutlet } : o));
+      setOutlets(outlets.map(o => o.id === selectedEditOutlet.id ? { ...o, ...selectedEditOutlet, ...res.data.data } : o));
       setSelectedEditOutlet(null);
+      toast.success('Outlet updated successfully');
     } catch (err) {
-      toast(err.response?.data?.message || 'Failed to update outlet');
+      toast.error(err.response?.data?.message || 'Failed to update outlet');
     }
   };
 
@@ -187,20 +193,22 @@ const Outlets = () => {
                     <td style={{ padding: '16px 24px', color: '#4b5563' }}>{outlet.staffCount}</td>
                     <td style={{ padding: '16px 24px', color: '#4b5563' }}>{outlet.ordersToday}</td>
                     <td style={{ padding: '16px 24px' }}>
-                      <div style={{ display: 'flex', gap: '12px' }}>
+                      <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
                         <button onClick={() => setSelectedViewOutlet(outlet)} style={{ background: 'none', border: 'none', color: '#b10035', fontWeight: '500', cursor: 'pointer', fontSize: '0.85rem' }}>View</button>
                         <button onClick={() => setSelectedEditOutlet(outlet)} style={{ background: 'none', border: 'none', color: '#3b82f6', fontWeight: '500', cursor: 'pointer', fontSize: '0.85rem' }}>Edit</button>
-                        {outlet.status !== 'CLOSED' && (
-                          <button onClick={() => handleSuspend(outlet.id)} style={{ background: 'none', border: 'none', color: '#b10035', fontWeight: '500', cursor: 'pointer', fontSize: '0.85rem' }}>Suspend</button>
+                        {outlet.status === 'CLOSED' || outlet.status === 'SUSPENDED' ? (
+                          <button onClick={() => handleStatusChange(outlet.id, 'OPEN')} style={{ background: 'none', border: 'none', color: '#10b981', fontWeight: '600', cursor: 'pointer', fontSize: '0.85rem' }}>Reopen</button>
+                        ) : (
+                          <button onClick={() => handleStatusChange(outlet.id, 'CLOSED')} style={{ background: 'none', border: 'none', color: '#f59e0b', fontWeight: '500', cursor: 'pointer', fontSize: '0.85rem' }}>Close</button>
                         )}
                         <button onClick={async () => {
                           if (!window.confirm(`Delete "${outlet.name}"? This permanently removes the outlet, its menu, staff, and orders.`)) return;
                           try {
                             await api.delete(`/admin/outlets/${outlet.id}`);
                             setOutlets(outlets.filter(o => o.id !== outlet.id));
-                            toast('Outlet deleted');
+                            toast.success('Outlet deleted successfully');
                           } catch (err) {
-                            toast(err.response?.data?.message || 'Failed to delete outlet');
+                            toast.error(err.response?.data?.message || 'Failed to delete outlet');
                           }
                         }} style={{ background: 'none', border: 'none', color: '#dc2626', fontWeight: '500', cursor: 'pointer', fontSize: '0.85rem' }}>Delete</button>
                       </div>
@@ -240,6 +248,14 @@ const Outlets = () => {
                   <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', fontSize: '0.9rem', color: '#374151' }}>Contact Number</label>
                   <input required type="text" value={newOutlet.contactNumber} onChange={e => setNewOutlet({...newOutlet, contactNumber: e.target.value})} style={inputStyle} />
                 </div>
+              </div>
+              <div>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', fontSize: '0.9rem', color: '#374151' }}>Initial Status</label>
+                <select value={newOutlet.status} onChange={e => setNewOutlet({...newOutlet, status: e.target.value})} style={{...inputStyle, background: 'white'}}>
+                  <option value="OPEN">OPEN (Accepting Orders)</option>
+                  <option value="BUSY">BUSY (High Wait Time)</option>
+                  <option value="CLOSED">CLOSED (Not Accepting Orders)</option>
+                </select>
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '16px' }}>
                 <button type="button" onClick={() => setShowAddModal(false)} style={{ padding: '10px 20px', background: '#f3f4f6', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: '600', color: '#374151' }}>Cancel</button>
@@ -309,6 +325,15 @@ const Outlets = () => {
                   <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', fontSize: '0.9rem', color: '#374151' }}>Contact Number</label>
                   <input required type="text" value={selectedEditOutlet.contactNumber || ''} onChange={e => setSelectedEditOutlet({...selectedEditOutlet, contactNumber: e.target.value})} style={inputStyle} />
                 </div>
+              </div>
+              <div>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', fontSize: '0.9rem', color: '#374151' }}>Status</label>
+                <select value={selectedEditOutlet.status || 'OPEN'} onChange={e => setSelectedEditOutlet({...selectedEditOutlet, status: e.target.value})} style={{...inputStyle, background: 'white'}}>
+                  <option value="OPEN">OPEN (Accepting Orders)</option>
+                  <option value="BUSY">BUSY (High Wait Time)</option>
+                  <option value="CLOSED">CLOSED (Not Accepting Orders)</option>
+                  <option value="SUSPENDED">SUSPENDED</option>
+                </select>
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '16px' }}>
                 <button type="button" onClick={() => setSelectedEditOutlet(null)} style={{ padding: '10px 20px', background: '#f3f4f6', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: '600', color: '#374151' }}>Cancel</button>

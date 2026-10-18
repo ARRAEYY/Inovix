@@ -82,39 +82,6 @@ const OutletAdminDashboard = () => {
           </div>
         </div>
 
-        {/* Orders this week (Chart) */}
-        <div style={{...cardStyle, paddingBottom: 0}}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px' }}>
-            <div>
-              <h3 style={{ margin: '0 0 4px 0', fontSize: '1.15rem', fontWeight: '800' }}>Orders this week</h3>
-              <p style={{ margin: 0, color: '#6b7280', fontSize: '0.9rem' }}>Peak demand between 1-2 PM</p>
-            </div>
-            <button style={{ padding: '6px 12px', border: '1px solid #e5e7eb', borderRadius: '8px', background: 'white', color: '#111827', fontSize: '0.85rem', fontWeight: '500', cursor: 'pointer' }}>Last 7 days</button>
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', height: '220px', marginTop: '20px', gap: '8px' }}>
-            {stats.weeklyOrders?.map((item, idx) => {
-               const maxVal = Math.max(...stats.weeklyOrders.map(o => o.value));
-               const heightPercent = Math.max((item.value / maxVal) * 100, 10);
-               const isHighlighted = item.day === 'F' && idx === 4; 
-               return (
-                 <div key={idx} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', flex: 1, height: '100%' }}>
-                   <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'center', width: '100%', height: '100%' }}>
-                     <div style={{ 
-                       width: '100%', 
-                       maxWidth: '56px',
-                       height: `${heightPercent}%`, 
-                       background: isHighlighted ? '#b10035' : '#faf5f6', 
-                       borderRadius: '8px 8px 0 0',
-                       transition: 'height 0.3s ease'
-                     }}></div>
-                   </div>
-                   <div style={{ fontSize: '0.8rem', color: '#6b7280', fontWeight: '500', paddingBottom: '16px' }}>{item.day}</div>
-                 </div>
-               )
-            })}
-          </div>
-        </div>
 
         {/* Attention needed */}
         <div style={cardStyle}>

@@ -1,7 +1,12 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
+import useKeyboardStatus from '../../hooks/useKeyboardStatus';
 
 const OutletAdminBottomNav = () => {
+  const isKeyboardOpen = useKeyboardStatus();
+
+  if (isKeyboardOpen) return null;
+
   return (
     <nav className="outlet-bottom-nav mobile-only" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)' }}>
       <NavLink 

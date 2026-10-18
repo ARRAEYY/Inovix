@@ -270,6 +270,8 @@ const OutletAdminMenu = () => {
               style={{
                 maxWidth: '520px',
                 width: '100%',
+                maxHeight: '90vh',
+                overflowY: 'auto',
                 background: 'white',
                 borderRadius: '14px',
                 padding: '1.5rem',
@@ -319,6 +321,8 @@ const OutletAdminMenu = () => {
               style={{
                 maxWidth: '440px',
                 width: '100%',
+                maxHeight: '90vh',
+                overflowY: 'auto',
                 background: 'white',
                 borderRadius: '14px',
                 padding: '1.5rem',

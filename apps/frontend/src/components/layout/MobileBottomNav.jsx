@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import useKeyboardStatus from '../../hooks/useKeyboardStatus';
 
 // Total items across every outlet cart in localStorage (carts are keyed
 // per outlet: nosh:cart:<outletId>).
@@ -35,6 +36,7 @@ const MobileBottomNav = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [cartInfo, setCartInfo] = useState(readCartTotals);
+  const isKeyboardOpen = useKeyboardStatus();
 
   // Keep the cart badge fresh: our own cart writes dispatch
   // 'nosh:cart-changed'; other tabs fire the native 'storage' event.
@@ -109,6 +111,8 @@ const MobileBottomNav = () => {
       action: () => navigate('/student/profile'),
     },
   ];
+
+  if (isKeyboardOpen) return null;
 
   return (
     <nav className="mobile-bottom-nav" aria-label="Main navigation">

@@ -642,6 +642,14 @@ img {
   margin-bottom: 0;
 }
 
+.home-hero-left .welcome-greeting {
+  font-size: 1.55rem;
+  font-weight: 750;
+  color: var(--primary);
+  margin-bottom: 0.25rem;
+  letter-spacing: -0.015em;
+}
+
 .home-hero-left .page-title {
   font-size: 2.3rem;
   margin-bottom: 0.35rem;
@@ -3106,7 +3114,9 @@ img {
 
 /* Page headers (was 2.5rem desktop / 1.85rem mobile) */
 .welcome-greeting {
-  font-size: 0.85rem;
+  font-size: 1.45rem;
+  font-weight: 750;
+  color: var(--primary);
   margin-bottom: 0.3rem;
 }
 

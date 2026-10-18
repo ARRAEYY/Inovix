@@ -426,35 +426,27 @@ const Orders = () => {
 
           {/* Main content on the right: Orders / Account / Settings / Help */}
           <section className="orders-main">
-            {/* Mobile sub-nav pills */}
-            <div className="mobile-only" style={{ display: 'flex', gap: '0.4rem', overflowX: 'auto', marginBottom: '1.25rem', paddingBottom: '0.25rem', scrollbarWidth: 'none' }}>
-              {[
-                { id: 'orders', label: 'My Orders' },
-                { id: 'account', label: 'Account' },
-                { id: 'settings', label: 'Settings' },
-                { id: 'help', label: 'Help' },
-              ].map(tab => (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => setTab(tab.id)}
-                  style={{
-                    padding: '0.45rem 0.95rem',
-                    borderRadius: '20px',
-                    border: '1px solid var(--border-color)',
-                    background: activeTab === tab.id ? 'var(--primary)' : '#ffffff',
-                    color: activeTab === tab.id ? '#ffffff' : 'var(--text-dark)',
-                    fontWeight: 600,
-                    fontSize: '0.85rem',
-                    whiteSpace: 'nowrap',
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease',
-                  }}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
+            {activeTab !== 'orders' && (
+              <button
+                type="button"
+                className="mobile-only"
+                onClick={() => setTab('orders')}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--primary)',
+                  fontWeight: 600,
+                  fontSize: '0.9rem',
+                  cursor: 'pointer',
+                  padding: '0 0 1rem 0',
+                }}
+              >
+                ← Back to Orders
+              </button>
+            )}
 
             {activeTab === 'orders' && (
               <>

@@ -320,6 +320,8 @@ img {
 .header-container .brand {
   position: static;
   margin: 0;
+  display: flex;
+  align-items: center;
 }
 
 .header-right {

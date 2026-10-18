@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { toast } from 'react-hot-toast';
 
 // Total items across every outlet cart in localStorage (carts are keyed
 // per outlet: nosh:cart:<outletId>).
@@ -11,6 +10,9 @@ const readCartTotals = () => {
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
       if (!key || !key.startsWith('nosh:cart:')) continue;
+      const raw = localStorage.getItem(key);
+      if (!raw) continue;
+      const parsed = JSON.parse(raw);
       const count = Object.values(parsed).reduce((sum, qty) => {
         const q = typeof qty === 'object' && qty !== null ? qty.quantity : Number(qty);
         return sum + (Number(q) || 0);
@@ -27,8 +29,8 @@ const readCartTotals = () => {
 };
 
 // Student bottom navigation (§13): Home | Orders | Cart | Profile.
-// The Cart tab aggregates every outlet cart, shows a badge, and jumps to
-// the outlet menu with the drawer open.
+// The Cart tab navigates to the dedicated student Cart page, showing
+// either active carts or the empty cart experience.
 const MobileBottomNav = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -50,16 +52,8 @@ const MobileBottomNav = () => {
   }, [location.pathname]);
 
   const openCart = useCallback(() => {
-    if (cartInfo.total === 0) {
-      navigate('/student');
-      toast('Your cart is empty — explore outlets to add items');
-      return;
-    }
-    // Jump to the outlet whose cart is active; OutletMenu listens for
-    // 'nosh:open-cart' and opens the drawer on arrival.
-    navigate(`/student/outlet/${cartInfo.carts[0].outletId}`);
-    setTimeout(() => window.dispatchEvent(new CustomEvent('nosh:open-cart')), 350);
-  }, [cartInfo, navigate]);
+    navigate('/student/cart');
+  }, [navigate]);
 
   const navItems = [
     {
@@ -99,6 +93,7 @@ const MobileBottomNav = () => {
           <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path>
         </svg>
       ),
+      path: '/student/cart',
       action: openCart,
     },
     {

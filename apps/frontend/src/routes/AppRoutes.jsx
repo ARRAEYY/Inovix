@@ -13,6 +13,7 @@ import Onboarding from '../pages/student/Onboarding';
 // Dashboards (Dummy)
 import StudentHome from '../pages/student/Home';
 import StudentOrders from '../pages/student/Orders';
+import StudentCart from '../pages/student/Cart';
 import OutletMenu from '../pages/student/OutletMenu';
 import Profile from '../pages/student/Profile';
 import OutletDashboard from '../pages/outlet/Dashboard';
@@ -85,6 +86,7 @@ const AppRoutes = () => {
             <Routes>
               <Route path="/" element={<StudentHome />} />
               <Route path="/orders" element={<StudentOrders />} />
+              <Route path="/cart" element={<StudentCart />} />
               <Route path="/profile" element={<Profile />} />
               <Route path="/onboarding" element={<Onboarding />} />
               <Route path="/outlet/:id" element={<OutletMenu />} />

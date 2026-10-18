@@ -87,13 +87,12 @@ async function getOverview() {
     prisma.order.groupBy({
       by: ['status'],
       _count: true,
-      where: validPaidOrderFilter,
     }),
     prisma.menuItem.count({ where: { isAvailable: true } }),
     prisma.menuItem.count({ where: { isAvailable: false } }),
     prisma.user.count(),
     prisma.outlet.count(),
-    prisma.order.count({ where: validPaidOrderFilter }),
+    prisma.order.count(),
     prisma.menuItem.count(),
     prisma.payment.groupBy({
       by: ['status'],
@@ -114,8 +113,8 @@ async function getOverview() {
       where: { status: PAYMENT_STATUS.PAID },
     }),
     prisma.outlet.count({ where: { status: { in: [OUTLET_STATUS.OPEN, OUTLET_STATUS.BUSY] } } }),
-    prisma.order.count({ where: { ...validPaidOrderFilter, createdAt: { gte: startOfToday } } }),
-    prisma.order.count({ where: { ...validPaidOrderFilter, createdAt: { gte: startOfWeek } } }),
+    prisma.order.count({ where: { createdAt: { gte: startOfToday } } }),
+    prisma.order.count({ where: { createdAt: { gte: startOfWeek } } }),
     prisma.user.count({ where: { status: USER_STATUS.SUSPENDED } }),
     prisma.outlet.findMany({
       select: {
@@ -127,7 +126,6 @@ async function getOverview() {
       orderBy: { createdAt: 'asc' },
     }),
     prisma.order.findMany({
-      where: validPaidOrderFilter,
       orderBy: { createdAt: 'desc' },
       take: 10,
       select: {
@@ -271,7 +269,14 @@ async function getUsers({ page = 1, pageSize = 50 } = {}) {
       orderBy: { createdAt: 'desc' },
       skip: (page - 1) * pageSize,
       take: pageSize,
-      include: { outletStaff: true, studentProfile: true },
+      include: {
+        outletStaff: {
+          include: {
+            outlet: { select: { id: true, name: true, location: true, status: true } },
+          },
+        },
+        studentProfile: true,
+      },
     }),
     prisma.user.count(),
   ]);
@@ -420,12 +425,8 @@ async function updateOutletStatus(outletId, status) {
 }
 
 async function getOrders({ page = 1, pageSize = 100 } = {}) {
-  const validPaidOrderFilter = {
-    payment: { status: { in: [PAYMENT_STATUS.PAID, PAYMENT_STATUS.REFUNDED] } },
-  };
   const [items, total] = await Promise.all([
     prisma.order.findMany({
-      where: validPaidOrderFilter,
       orderBy: { createdAt: 'desc' },
       skip: (page - 1) * pageSize,
       take: pageSize,
@@ -436,7 +437,7 @@ async function getOrders({ page = 1, pageSize = 100 } = {}) {
         outlet: { select: { id: true, name: true, location: true } },
       },
     }),
-    prisma.order.count({ where: validPaidOrderFilter }),
+    prisma.order.count(),
   ]);
   return { items, total, page, pageSize };
 }

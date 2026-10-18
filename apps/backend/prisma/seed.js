@@ -282,6 +282,41 @@ async function main() {
   }
   console.log('  ✓ 2 sample orders + payments');
 
+  // ─── 7. Sample Disputes ──────────────────────────────────────────────
+  const sampleOrder1 = await prisma.order.findUnique({ where: { orderNumber: 'NOSH-0001' } });
+  if (sampleOrder1) {
+    await prisma.dispute.upsert({
+      where: { orderId: sampleOrder1.id },
+      update: {},
+      create: {
+        orderId: sampleOrder1.id,
+        userId: sampleOrder1.studentId,
+        outletId: sampleOrder1.outletId,
+        type: 'REFUND_REQUEST',
+        description: 'Order was missing the extra beverage item that was charged.',
+        status: 'OPEN',
+      },
+    });
+  }
+
+  const sampleOrder2 = await prisma.order.findUnique({ where: { orderNumber: 'NOSH-0002' } });
+  if (sampleOrder2) {
+    await prisma.dispute.upsert({
+      where: { orderId: sampleOrder2.id },
+      update: {},
+      create: {
+        orderId: sampleOrder2.id,
+        userId: sampleOrder2.studentId,
+        outletId: sampleOrder2.outletId,
+        type: 'ORDER_ISSUE',
+        description: 'Container lid was loose during delivery.',
+        status: 'RESOLVED',
+        resolution: 'Student was contacted and complimentary coupon was provided.',
+      },
+    });
+  }
+  console.log('  ✓ Sample disputes (OPEN + RESOLVED)');
+
   console.log('\n✓ Seed complete.');
   console.log('  Dev test accounts (dev-login only, NON-production):');
   console.log('    SUPER_ADMIN:   adilreyaz.admin@nosh.local  / NoshAdmin@123');

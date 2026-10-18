@@ -1,15 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import OutletLayout from '../../components/layout/OutletLayout';
-import StatsGrid from '../../components/outlet/StatsGrid';
 import OrderBoard from '../../components/outlet/OrderBoard';
 import DeclineOrderModal from '../../components/outlet/DeclineOrderModal';
 import { orderService, OUTLET_DISPLAY_STATUS } from '../../services/api/orderService';
 import client from '../../services/api/client';
 import { toast } from 'react-hot-toast';
-import { Skeleton } from '../../components/common/Skeleton';
 
 const Dashboard = () => {
-  const [stats, setStats] = useState({ new: 0, preparing: 0, ready: 0 });
   const [orders, setOrders] = useState([]);
   const [activeStatus, setActiveStatus] = useState('NEW');
   const [loading, setLoading] = useState(true);
@@ -27,16 +24,6 @@ const Dashboard = () => {
     return () => clearInterval(interval);
   }, []);
 
-  const updateStats = (currentOrders) => {
-    const newStats = { new: 0, preparing: 0, ready: 0 };
-    currentOrders.forEach(order => {
-      if (order.status === 'NEW') newStats.new += 1;
-      else if (order.status === 'PREPARING') newStats.preparing += 1;
-      else if (order.status === 'READY') newStats.ready += 1;
-    });
-    setStats(newStats);
-  };
-
   const fetchOrders = async () => {
     try {
       setLoading(true);
@@ -49,7 +36,6 @@ const Dashboard = () => {
         status: OUTLET_DISPLAY_STATUS[o.status] || o.status,
       }));
       setOrders(fetchedOrders);
-      updateStats(fetchedOrders);
       setError(null);
     } catch (err) {
       setError('Failed to fetch orders');
@@ -61,9 +47,7 @@ const Dashboard = () => {
 
   const updateOrderInState = (orderId, patch) => {
     setOrders(prev => {
-      const updated = prev.map(o => o.id === orderId ? { ...o, ...patch } : o);
-      updateStats(updated);
-      return updated;
+      return prev.map(o => o.id === orderId ? { ...o, ...patch } : o);
     });
   };
 
@@ -122,19 +106,19 @@ const Dashboard = () => {
       setDeclineModalOpen(false);
       setOrderToDecline(null);
     } catch (err) {
+      toast(err.message || 'Failed to decline order');
       throw err;
     }
   };
 
-  const handleRefresh = () => {
-    fetchOrders();
-  };
-
   return (
     <OutletLayout>
-      <div className="dashboard-header-row">
-        <h1 className="dashboard-title">Dashboard</h1>
-        <button className="refresh-btn" onClick={handleRefresh}>
+      <div className="dashboard-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <h1 className="dashboard-title">Orders</h1>
+          <p className="dashboard-subtitle">Manage and track live orders.</p>
+        </div>
+        <button className="btn btn-primary" onClick={fetchOrders} style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', cursor: 'pointer', background: 'var(--primary)', color: 'white', display: 'flex', alignItems: 'center', gap: '8px' }}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="23 4 23 10 17 10"></polyline>
             <polyline points="1 20 1 14 7 14"></polyline>
@@ -144,33 +128,45 @@ const Dashboard = () => {
         </button>
       </div>
 
-      {error ? (
-        <div className="dashboard-feedback" role="alert">
-          <p>Something went wrong loading orders.</p>
-          <button className="primary-btn" onClick={handleRefresh}>Try Again</button>
-        </div>
-      ) : loading && orders.length === 0 ? (
-        <div className="dashboard-feedback" aria-busy="true">
-          <Skeleton width="100%" height="88px" borderRadius="12px" />
-          <Skeleton width="100%" height="220px" borderRadius="12px" />
-        </div>
-      ) : (
-        <>
-          <StatsGrid stats={stats} activeStatus={activeStatus} setActiveStatus={setActiveStatus} />
-
-          <OrderBoard
-            orders={orders}
-            activeStatus={activeStatus}
-            onAccept={handleAccept}
-            onMarkReady={handleMarkReady}
-            onComplete={handleComplete}
-            onVerifyPickup={handleVerifyPickup}
-            onDecline={(id) => {
-              setOrderToDecline(id);
-              setDeclineModalOpen(true);
+      {/* Status tabs for mobile (Kanban columns are responsive) */}
+      <div className="filters-row mobile-only" style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '16px', marginBottom: '16px' }}>
+        {['NEW', 'PREPARING', 'READY'].map(status => (
+          <button 
+            key={status}
+            onClick={() => setActiveStatus(status)}
+            style={{
+              padding: '6px 16px',
+              borderRadius: '20px',
+              border: activeStatus === status ? '1px solid var(--primary)' : '1px solid var(--border-color)',
+              background: activeStatus === status ? 'var(--primary)' : 'white',
+              color: activeStatus === status ? 'white' : 'var(--text-secondary)',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+              fontSize: '0.9rem'
             }}
-          />
-        </>
+          >
+            {status}
+          </button>
+        ))}
+      </div>
+
+      {loading && orders.length === 0 ? (
+        <p>Loading orders...</p>
+      ) : error ? (
+        <div className="error-message">{error}</div>
+      ) : (
+        <OrderBoard
+          orders={orders}
+          activeStatus={activeStatus}
+          onAccept={handleAccept}
+          onMarkReady={handleMarkReady}
+          onComplete={handleComplete}
+          onVerifyPickup={handleVerifyPickup}
+          onDecline={(id) => {
+            setOrderToDecline(id);
+            setDeclineModalOpen(true);
+          }}
+        />
       )}
 
       {declineModalOpen && (

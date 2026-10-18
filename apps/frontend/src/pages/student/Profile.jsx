@@ -176,6 +176,7 @@ const Profile = () => {
           {/* ─── ACCOUNT ─── */}
           {activeView === 'account' && (
             <div style={{ padding: '1.25rem' }}>
+              <h1 className="page-title" style={{ marginBottom: '1.25rem' }}>Account Details</h1>
               {profileLoading ? (
                 <p style={{ color: 'var(--text-gray)' }}>Loading account…</p>
               ) : (
@@ -283,7 +284,7 @@ const Profile = () => {
           {/* ─── SETTINGS ─── */}
           {activeView === 'settings' && (
             <div style={{ padding: '1.25rem' }}>
-              <h3 style={panelTitle}>Settings</h3>
+              <h1 className="page-title" style={{ marginBottom: '0.35rem' }}>Settings</h1>
               <p style={panelIntro}>Session details for this device.</p>
               <div style={{ border: '1px solid var(--border-color)', borderRadius: '12px', overflow: 'hidden', marginBottom: '1.25rem' }}>
                 <div style={panelRow}>
@@ -321,7 +322,7 @@ const Profile = () => {
           {/* ─── HELP ─── */}
           {activeView === 'help' && (
             <div style={{ padding: '1.25rem' }}>
-              <h3 style={panelTitle}>Help</h3>
+              <h1 className="page-title" style={{ marginBottom: '0.35rem' }}>Help & Support</h1>
               <p style={panelIntro}>How ordering on Nosh works:</p>
               <div style={{ border: '1px solid var(--border-color)', borderRadius: '12px', overflow: 'hidden' }}>
                 <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid var(--border-color)' }}>
@@ -376,9 +377,12 @@ const Profile = () => {
 
   return (
     <div className="page-wrapper bg-white">
-      <Header title="Profile" showBack={false} />
+      <Header showBack={false} />
 
       <main className="explore-container profile-container">
+        {!activeView && (
+          <h1 className="page-title" style={{ marginBottom: '1.25rem' }}>Profile</h1>
+        )}
         {!activeView && (
         <div
           className="profile-header-card"

@@ -8,7 +8,7 @@ const OutletAdminBottomNav = () => {
   if (isKeyboardOpen) return null;
 
   return (
-    <nav className="outlet-bottom-nav mobile-only" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)' }}>
+    <nav className="outlet-bottom-nav mobile-only" style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)' }}>
       <NavLink 
         to="/outlet/admin" 
         end
@@ -32,6 +32,17 @@ const OutletAdminBottomNav = () => {
           <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
         </svg>
         <span className="nav-label" style={{ fontSize: '0.7rem' }}>Orders</span>
+      </NavLink>
+
+      <NavLink 
+        to="/outlet/admin/history" 
+        className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+      >
+        <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="10"></circle>
+          <polyline points="12 6 12 12 16 14"></polyline>
+        </svg>
+        <span className="nav-label" style={{ fontSize: '0.7rem' }}>History</span>
       </NavLink>
 
       <NavLink 

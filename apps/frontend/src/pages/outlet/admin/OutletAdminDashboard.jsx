@@ -148,7 +148,7 @@ const OutletAdminDashboard = () => {
             <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: '800' }}>Recent orders</h3>
             <button 
               type="button"
-              onClick={() => navigate('/outlet/admin/orders')}
+              onClick={() => navigate('/outlet/admin/history')}
               style={{ background: 'none', border: 'none', color: '#b10035', fontWeight: '600', cursor: 'pointer', fontSize: '0.9rem' }}
             >
               View all

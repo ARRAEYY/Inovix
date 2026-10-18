@@ -69,8 +69,8 @@ const Outlets = () => {
     try {
       const res = await api.patch(`/admin/outlets/${selectedEditOutlet.id}`, {
         name: selectedEditOutlet.name,
-        description: selectedEditOutlet.description || null,
-        location: selectedEditOutlet.location || null,
+        description: selectedEditOutlet.description || '',
+        location: selectedEditOutlet.location || '',
         contactEmail: selectedEditOutlet.contactEmail || null,
         contactNumber: selectedEditOutlet.contactNumber || null,
         status: selectedEditOutlet.status,

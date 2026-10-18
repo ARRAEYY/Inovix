@@ -122,8 +122,8 @@ const ActiveOrderBanner = () => {
         gap: '1rem',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
           <span
             style={{
               width: '9px',
@@ -136,8 +136,23 @@ const ActiveOrderBanner = () => {
             }}
           />
           <h2 style={{ fontSize: '1.1rem', fontWeight: 800, margin: 0, color: '#111827' }}>
-            Live Order Status {activeOrders.length > 1 && `(${activeOrders.length})`}
+            Live Order Status
           </h2>
+          {activeOrders.length > 1 && (
+            <span
+              style={{
+                fontSize: '0.78rem',
+                fontWeight: 600,
+                color: '#b10035',
+                background: '#fff1f2',
+                border: '1px solid #fecdd3',
+                padding: '0.2rem 0.6rem',
+                borderRadius: '9999px',
+              }}
+            >
+              +{activeOrders.length - 1} more active
+            </span>
+          )}
         </div>
         <button
           onClick={() => navigate('/student/orders')}
@@ -154,12 +169,12 @@ const ActiveOrderBanner = () => {
             gap: '0.25rem',
           }}
         >
-          View all orders →
+          {activeOrders.length > 1 ? `View all (${activeOrders.length}) →` : 'View all orders →'}
         </button>
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-        {activeOrders.map((order) => {
+        {activeOrders.slice(0, 1).map((order) => {
           const config = STATUS_CONFIG[order.status] || STATUS_CONFIG.PENDING;
           const outletName = parseOutletName(order);
           const isReady = order.status === 'READY';

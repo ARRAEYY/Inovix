@@ -739,6 +739,16 @@ async function updateUser(userId, data, reqUserId) {
   if (data.name !== undefined) updateData.name = data.name.trim();
   if (data.email !== undefined) updateData.email = data.email.toLowerCase().trim();
   if (data.role !== undefined) updateData.role = data.role;
+  if (data.status !== undefined) {
+    if (userId === reqUserId && data.status === USER_STATUS.SUSPENDED) {
+      throw { statusCode: 400, message: 'Super Admins cannot suspend themselves' };
+    }
+    updateData.status = data.status;
+    if (data.status === USER_STATUS.SUSPENDED) {
+      const { revokeAllForUser } = require('../../lib/tokens');
+      await revokeAllForUser(userId);
+    }
+  }
 
   const effectiveRole = data.role !== undefined ? data.role : user.role;
 

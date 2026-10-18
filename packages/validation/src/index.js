@@ -328,6 +328,7 @@ const updateUserSchema = z.object({
   email: z.string().email().optional(),
   role: z.enum(['STUDENT', 'OUTLET_STAFF', 'OUTLET_ADMIN', 'SUPER_ADMIN']).optional(),
   outletId: z.string().nullable().optional(),
+  status: userStatusEnum.optional(),
 }).strict();
 
 const createUserSchema = z.object({
@@ -336,6 +337,7 @@ const createUserSchema = z.object({
   password: z.string().min(6).optional(),
   role: z.enum(['STUDENT', 'OUTLET_STAFF', 'OUTLET_ADMIN', 'SUPER_ADMIN']).default('STUDENT'),
   outletId: z.string().nullable().optional(),
+  status: userStatusEnum.optional(),
 }).strict();
 
 const updateOutletSchema = z.object({
@@ -345,13 +347,15 @@ const updateOutletSchema = z.object({
   contactEmail: z.string().email().nullable().optional().or(z.literal('')),
   contactNumber: z.string().nullable().optional().or(z.literal('')),
   status: z.enum(['OPEN', 'BUSY', 'CLOSED', 'PENDING', 'SUSPENDED']).optional(),
+  logoUrl: z.string().nullable().optional().or(z.literal('')),
+  bannerUrl: z.string().nullable().optional().or(z.literal('')),
 }).strict();
 
 const updateMenuItemSchema = z.object({
   name: z.string().trim().min(1).optional(),
   description: z.string().nullable().optional(),
   price: z.number().positive().optional(),
-  imageUrl: z.string().url().nullable().optional().or(z.literal('')),
+  imageUrl: z.string().nullable().optional(),
   isAvailable: z.boolean().optional(),
   vegetarian: z.boolean().optional(),
   categoryId: z.string().nullable().optional(),
@@ -362,7 +366,7 @@ const createMenuItemSchema = z.object({
   name: z.string().trim().min(1),
   description: z.string().nullable().optional(),
   price: z.number().positive(),
-  imageUrl: z.string().url().nullable().optional().or(z.literal('')),
+  imageUrl: z.string().nullable().optional(),
   isAvailable: z.boolean().optional().default(true),
   vegetarian: z.boolean().optional().default(false),
   categoryId: z.string().nullable().optional(),

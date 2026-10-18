@@ -236,7 +236,6 @@ const Orders = () => {
   const ORDERS_MAX_AGE_MS = 60 * 1000;
   const [error, setError] = useState(null);
   const [expandedId, setExpandedId] = useState(null);
-  const [cancellingId, setCancellingId] = useState(null);
 
   const fetchOrders = async () => {
     if (!ORDERS_CACHE_KEY) return;
@@ -262,20 +261,6 @@ const Orders = () => {
   };
 
   useEffect(() => { fetchOrders(); }, [ORDERS_CACHE_KEY]);
-
-  const handleCancel = async (orderId) => {
-    if (!window.confirm('Cancel this order? You\'ll get a full refund.')) return;
-    try {
-      setCancellingId(orderId);
-      await orderService.cancelOrder(orderId);
-      toast('Order cancelled. Refund will be processed automatically.');
-      fetchOrders();
-    } catch (err) {
-      toast(err.message || 'Could not cancel the order');
-    } finally {
-      setCancellingId(null);
-    }
-  };
 
   const handleReorder = (order) => {
     if (!order.outletId) {
@@ -621,15 +606,6 @@ const Orders = () => {
                             </div>
 
                             <div className="ocard-actions">
-                              {order.rawStatus === 'PENDING' && (
-                                <button
-                                  className="order-secondary-btn danger"
-                                  onClick={() => handleCancel(order.id)}
-                                  disabled={cancellingId === order.id}
-                                >
-                                  {cancellingId === order.id ? 'Cancelling…' : 'Cancel'}
-                                </button>
-                              )}
                               {order.outletId && (
                                 <button
                                   className="order-again-btn"

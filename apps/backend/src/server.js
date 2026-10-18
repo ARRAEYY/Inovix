@@ -30,6 +30,8 @@ const app = require('./app');
 const { initSocketServer } = require('./lib/socket');
 const { initCron } = require('./lib/cron');
 
+const { ensureSchema } = require('./lib/ensureSchema');
+
 const PORT = process.env.PORT || 3000;
 
 const server = http.createServer(app);
@@ -37,11 +39,14 @@ const server = http.createServer(app);
 // Initialize Socket.IO on the same HTTP server
 initSocketServer(server);
 
-server.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
-  console.log(`Socket.IO listening on the same port (transports: websocket, polling)`);
-  // Initialize cron jobs (audit purge, refresh purge, pickup-timeout auto-complete)
-  initCron();
+// Self-healing database schema check (adds missing columns if any migration was skipped in prod)
+ensureSchema().finally(() => {
+  server.listen(PORT, () => {
+    console.log(`Server is running on port ${PORT}`);
+    console.log(`Socket.IO listening on the same port (transports: websocket, polling)`);
+    // Initialize cron jobs (audit purge, refresh purge, pickup-timeout auto-complete)
+    initCron();
+  });
 });
 
 // Graceful shutdown — stop the cron + close the HTTP server cleanly

@@ -5,12 +5,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 // address needed (campus pickup).
 const CartDrawer = ({ isOpen, onClose, cart = {}, menuItems = [], outletName, onUpdateQuantity, onOrderNow, placingOrder }) => {
   const [notes, setNotes] = useState('');
-  const [scheduledTime, setScheduledTime] = useState('');
   // Must be chosen before the order can be placed ('' = not chosen yet).
   const [orderType, setOrderType] = useState('');
-  // 'now' places the order for ASAP pickup; 'schedule' reveals the pickup
-  // time picker (otherwise the time field isn't shown at all).
-  const [fulfillment, setFulfillment] = useState('now');
 
   useEffect(() => {
     document.body.style.overflow = isOpen ? 'hidden' : 'unset';
@@ -54,12 +50,6 @@ const CartDrawer = ({ isOpen, onClose, cart = {}, menuItems = [], outletName, on
   const total = subtotal + platformFee;
 
   if (!isOpen) return null;
-
-  // Min datetime for the picker: now; max: 6 hours forward
-  const now = new Date();
-  const maxTime = new Date(now.getTime() + 6 * 60 * 60 * 1000);
-  const minStr = now.toISOString().slice(0, 16);
-  const maxStr = maxTime.toISOString().slice(0, 16);
 
   return (
     <>
@@ -173,48 +163,23 @@ const CartDrawer = ({ isOpen, onClose, cart = {}, menuItems = [], outletName, on
               {orderType === '' && (
                 <p className="order-type-required">Please choose how you'll get your order.</p>
               )}
-              {fulfillment === 'schedule' && (
-                <>
-                  <label className="cart-drawer-field-label" htmlFor="cart-pickup-time">Pickup time (within 6h)</label>
-                  <input
-                    id="cart-pickup-time"
-                    type="datetime-local"
-                    className="cart-drawer-input"
-                    value={scheduledTime}
-                    onChange={(e) => setScheduledTime(e.target.value)}
-                    min={minStr}
-                    max={maxStr}
-                  />
-                </>
-              )}
             </>
           )}
         </div>
         {resolvedItems.length > 0 && (
           <div className="cart-drawer-footer">
-            <div className="checkout-actions">
-              <button
-                className="schedule-btn"
-                onClick={() => setFulfillment(f => (f === 'schedule' ? 'now' : 'schedule'))}
-              >
-                {fulfillment === 'schedule' ? 'Order now' : 'Schedule'}
-              </button>
-              <button
-                className="checkout-btn order-now-btn"
-                disabled={placingOrder || orderType === '' || (fulfillment === 'schedule' && !scheduledTime) || subtotal <= 0}
-                onClick={() => onOrderNow({
-                  notes: notes.trim() || undefined,
-                  scheduledFor: fulfillment === 'schedule' && scheduledTime ? new Date(scheduledTime).toISOString() : undefined,
-                  orderType,
-                })}
-              >
-                {orderType === ''
-                  ? 'Select order type'
-                  : fulfillment === 'schedule'
-                    ? (scheduledTime ? `Schedule order — ₹${total}` : 'Pick a time')
-                    : placingOrder ? 'Placing…' : `Order now — ₹${total}`}
-              </button>
-            </div>
+            <button
+              className="checkout-btn order-now-btn"
+              disabled={placingOrder || orderType === '' || subtotal <= 0}
+              onClick={() => onOrderNow({
+                notes: notes.trim() || undefined,
+                orderType,
+              })}
+            >
+              {orderType === ''
+                ? 'Select order type'
+                : placingOrder ? 'Placing…' : `Order now — ₹${total}`}
+            </button>
             <p className="checkout-note">Prepaid · secured by Razorpay</p>
           </div>
         )}

@@ -3982,51 +3982,15 @@ img {
   position: relative;
 }
 
-/* ─── Checkout: Order now + Schedule buttons at the CTA position ─── */
-.checkout-actions {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.checkout-actions .order-now-btn {
-  flex: 1.15;
-  min-width: 0;
-  padding: 0.85rem 0.5rem;
-  font-size: 0.92rem;
-}
-
-.schedule-btn {
-  flex: 0.85;
-  min-width: 0;
-  min-height: 50px;
-  border-radius: var(--radius-md);
-  border: 1.5px solid var(--primary);
-  background: #fff;
-  color: var(--primary);
+/* ─── Checkout: Order now button in CartDrawer ─── */
+.cart-drawer-footer .order-now-btn {
+  width: 100%;
+  min-height: 48px;
+  font-size: 0.95rem;
   font-weight: 700;
-  font-size: 0.92rem;
-  cursor: pointer;
-  transition: background-color 0.15s ease, color 0.15s ease, opacity 0.15s ease;
-}
-
-.schedule-btn:hover { background: rgba(177, 0, 53, 0.05); }
-
-.schedule-btn.active {
-  background: var(--primary);
-  color: #fff;
-  box-shadow: var(--shadow-primary);
-}
-
-.schedule-btn:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
-/* Fine divider between the order-type row and the action buttons */
-.checkout-actions {
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius-md);
   margin-top: 0.7rem;
-  border-top: 1px solid var(--border-color);
-  padding-top: 0.7rem;
 }
 
 /* Order notes sit last — separated from the action buttons */

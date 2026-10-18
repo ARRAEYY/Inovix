@@ -127,49 +127,67 @@ const OutletAdminOrders = () => {
       </div>
 
       {/* View Switcher Tabs: Live Orders vs History */}
-      <div style={{ display: 'flex', borderBottom: '1px solid #e5e7eb', gap: '8px', marginBottom: '20px' }}>
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: '1fr 1fr',
+        background: '#f3f4f6',
+        padding: '4px',
+        borderRadius: '12px',
+        gap: '4px',
+        maxWidth: '360px',
+        width: '100%',
+        marginBottom: '20px'
+      }}>
         <NavLink
           to="/outlet/admin/orders"
-          style={{
-            padding: '10px 20px',
-            fontWeight: '700',
-            fontSize: '0.95rem',
-            color: '#b10035',
+          style={({ isActive }) => ({
+            padding: '8px 16px',
+            fontWeight: isActive ? '700' : '600',
+            fontSize: '0.88rem',
+            color: isActive ? '#111827' : '#6b7280',
+            background: isActive ? 'white' : 'transparent',
+            borderRadius: '9px',
             textDecoration: 'none',
-            borderBottom: '2px solid #b10035',
             display: 'flex',
             alignItems: 'center',
-            gap: '8px'
-          }}
+            justifyContent: 'center',
+            gap: '6px',
+            boxShadow: isActive ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+            transition: 'all 0.15s ease'
+          })}
         >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <rect x="3" y="3" width="7" height="7"></rect>
             <rect x="14" y="3" width="7" height="7"></rect>
             <rect x="14" y="14" width="7" height="7"></rect>
             <rect x="3" y="14" width="7" height="7"></rect>
           </svg>
-          Live Orders (Kanban)
+          Live Orders
         </NavLink>
 
         <NavLink
           to="/outlet/admin/history"
-          style={{
-            padding: '10px 20px',
-            fontWeight: '600',
-            fontSize: '0.95rem',
-            color: '#6b7280',
+          style={({ isActive }) => ({
+            padding: '8px 16px',
+            fontWeight: isActive ? '700' : '600',
+            fontSize: '0.88rem',
+            color: isActive ? '#111827' : '#6b7280',
+            background: isActive ? 'white' : 'transparent',
+            borderRadius: '9px',
             textDecoration: 'none',
-            borderBottom: '2px solid transparent',
             display: 'flex',
             alignItems: 'center',
-            gap: '8px'
-          }}
+            justifyContent: 'center',
+            gap: '6px',
+            boxShadow: isActive ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+            transition: 'all 0.15s ease'
+          })}
         >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <circle cx="12" cy="12" r="10"></circle>
             <polyline points="12 6 12 12 16 14"></polyline>
           </svg>
-          Order History
+          History
         </NavLink>
       </div>
 

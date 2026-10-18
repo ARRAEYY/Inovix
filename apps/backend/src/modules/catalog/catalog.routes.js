@@ -189,6 +189,7 @@ router.get('/outlets/:id/categories', async (req, res, next) => {
         select: {
           id: true,
           name: true,
+          imageUrl: true,
           sortOrder: true,
         },
       })

@@ -17,6 +17,7 @@ const { audit } = require('../../lib/audit');
 const FOLDER_POLICY = {
   'menu-items': { roles: [ROLES.OUTLET_ADMIN, ROLES.SUPER_ADMIN] },
   'outlet-logos': { roles: [ROLES.OUTLET_ADMIN, ROLES.SUPER_ADMIN] },
+  'categories': { roles: [ROLES.OUTLET_ADMIN, ROLES.SUPER_ADMIN] },
   'students': { roles: [ROLES.STUDENT, ROLES.SUPER_ADMIN] }, // profile pictures
 };
 

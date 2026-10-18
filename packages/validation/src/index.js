@@ -313,7 +313,7 @@ const razorpayCredentialsSchema = z.object({
 // ─── 12. Cloudinary signed-upload (M2 stretch) ───────────────────────────
 
 const uploadSignSchema = z.object({
-  folder: z.enum(['menu-items', 'outlet-logos', 'students']),
+  folder: z.enum(['menu-items', 'outlet-logos', 'categories', 'students']),
   publicId: z.string().trim().min(1).max(120)
     .regex(/^[a-zA-Z0-9_-]+$/, { message: 'publicId may only contain [a-zA-Z0-9_-]' })
     .optional(),

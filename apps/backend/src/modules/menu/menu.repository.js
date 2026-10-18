@@ -24,7 +24,7 @@ async function findAllByOutletId(outletId) {
       vegetarian: true,
       dietaryFlags: true,
       category: {
-        select: { id: true, name: true, sortOrder: true }
+        select: { id: true, name: true, imageUrl: true, sortOrder: true }
       },
       customizationGroups: {
         select: {

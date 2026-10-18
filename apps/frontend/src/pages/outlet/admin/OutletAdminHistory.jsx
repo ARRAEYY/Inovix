@@ -570,23 +570,25 @@ const OutletAdminHistory = () => {
           </div>
         </div>
 
-        {/* Single Stat Card: Orders on day */}
-        <div>
-          <div style={{
-            background: 'white',
-            borderRadius: '14px',
-            border: '1px solid #e5e7eb',
-            padding: '16px 20px',
-            boxShadow: '0 1px 2px rgba(0,0,0,0.02)',
-            display: 'inline-block',
-            minWidth: '150px'
-          }}>
-            <span style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', color: '#6b7280', marginBottom: '4px' }}>
-              Orders on day
-            </span>
-            <strong style={{ fontSize: '1.6rem', fontWeight: '800', color: '#111827', letterSpacing: '-0.5px' }}>
-              {summaryStats.totalCount}
+        {/* Stats Strip for Selected Period */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '10px' }}>
+          <div style={statMiniCardStyle}>
+            <span style={statMiniLabelStyle}>Orders on day</span>
+            <strong style={statMiniValueStyle}>{summaryStats.totalCount}</strong>
+          </div>
+          <div style={statMiniCardStyle}>
+            <span style={statMiniLabelStyle}>Gross sales</span>
+            <strong style={{ ...statMiniValueStyle, color: '#16a34a' }}>{formatCurrency(summaryStats.revenue)}</strong>
+          </div>
+          <div style={statMiniCardStyle}>
+            <span style={statMiniLabelStyle}>Cancelled / Rejected</span>
+            <strong style={{ ...statMiniValueStyle, color: summaryStats.cancelled > 0 ? '#b10035' : '#111827' }}>
+              {summaryStats.cancelled}
             </strong>
+          </div>
+          <div style={statMiniCardStyle}>
+            <span style={statMiniLabelStyle}>Avg order value</span>
+            <strong style={statMiniValueStyle}>{formatCurrency(summaryStats.avgOrder)}</strong>
           </div>
         </div>
 

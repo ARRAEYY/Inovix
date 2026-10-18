@@ -11,8 +11,10 @@ const readCartTotals = () => {
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
       if (!key || !key.startsWith('nosh:cart:')) continue;
-      const parsed = JSON.parse(localStorage.getItem(key) || '{}');
-      const count = Object.values(parsed).reduce((sum, qty) => sum + (Number(qty) || 0), 0);
+      const count = Object.values(parsed).reduce((sum, qty) => {
+        const q = typeof qty === 'object' && qty !== null ? qty.quantity : Number(qty);
+        return sum + (Number(q) || 0);
+      }, 0);
       if (count > 0) {
         carts.push({ outletId: key.replace('nosh:cart:', ''), count });
         total += count;

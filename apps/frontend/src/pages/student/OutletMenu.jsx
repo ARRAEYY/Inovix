@@ -189,6 +189,23 @@ const OutletMenu = () => {
         setActiveCategory((prev) =>
           sections.some((s) => s.category === prev) ? prev : (sections[0]?.category || '')
         );
+
+        // Auto-cleanup dead/stale IDs in cart that don't belong to this outlet
+        setCart((prev) => {
+          const cleaned = {};
+          let changed = false;
+          for (const [k, v] of Object.entries(prev || {})) {
+            const exists = items.some((i) => String(i.id) === String(k));
+            const hasDetails = typeof v === 'object' && v !== null && v.name && v.price != null;
+            if (exists || hasDetails) {
+              cleaned[k] = v;
+            } else {
+              changed = true;
+            }
+          }
+          return changed ? cleaned : prev;
+        });
+
         setError(null);
       } catch (err) {
         console.error('Failed to fetch menu:', err);
@@ -219,7 +236,12 @@ const OutletMenu = () => {
   //      button (or auto-cancels after the pickup timeout).
   const handleOrderNow = async ({ notes, scheduledFor, orderType } = {}) => {
     if (placingOrder) return;
-    const entries = Object.entries(cart).filter(([, qty]) => qty > 0);
+    const entries = Object.entries(cart)
+      .map(([menuItemId, val]) => ({
+        menuItemId,
+        quantity: typeof val === 'object' && val !== null ? val.quantity : Number(val),
+      }))
+      .filter((i) => i.quantity > 0);
     if (entries.length === 0) return;
     if (!orderType) {
       toast('Please choose Takeaway or Dine in before placing the order.');
@@ -233,7 +255,7 @@ const OutletMenu = () => {
       // Step 1: create the order
       const orderRes = await orderService.createOrder({
         outletId: id,
-        items: entries.map(([menuItemId, quantity]) => ({ menuItemId, quantity })),
+        items: entries.map(({ menuItemId, quantity }) => ({ menuItemId, quantity })),
         orderType,
         ...(notes ? { notes } : {}),
         ...(scheduledFor ? { scheduledFor } : {}),
@@ -375,23 +397,41 @@ const OutletMenu = () => {
     }
   };
 
-  const handleUpdateQuantity = (itemId, newQuantity) => {
-    setCart(prev => {
+  const getQuantity = (itemId) => {
+    const entry = cart[itemId];
+    if (!entry) return 0;
+    return typeof entry === 'object' && entry !== null ? (Number(entry.quantity) || 0) : (Number(entry) || 0);
+  };
+
+  const handleUpdateQuantity = (itemId, newQuantity, itemData) => {
+    const item = itemData || flatMenuItems.find((i) => String(i.id) === String(itemId));
+    setCart((prev) => {
       const updated = { ...prev };
       if (newQuantity <= 0) {
         delete updated[itemId];
       } else {
-        updated[itemId] = newQuantity;
+        updated[itemId] = {
+          id: String(itemId),
+          name: item?.name || (typeof prev[itemId] === 'object' ? prev[itemId]?.name : 'Item'),
+          price: item ? Number(item.price) : (typeof prev[itemId] === 'object' ? Number(prev[itemId]?.price) : 0),
+          image: item?.image || item?.imageUrl || (typeof prev[itemId] === 'object' ? prev[itemId]?.image : null),
+          quantity: newQuantity,
+        };
       }
       return updated;
     });
   };
 
   // Calculate cart summary
-  const cartItemsCount = Object.values(cart).reduce((a, b) => a + b, 0);
-  const cartTotal = Object.entries(cart).reduce((total, [itemId, qty]) => {
-    const item = flatMenuItems.find(i => i.id === itemId);
-    return total + (item ? item.price * qty : 0);
+  const cartItemsCount = Object.values(cart).reduce((sum, val) => {
+    const q = typeof val === 'object' && val !== null ? val.quantity : Number(val);
+    return sum + (Number(q) || 0);
+  }, 0);
+
+  const cartTotal = Object.entries(cart).reduce((total, [itemId, val]) => {
+    const qty = typeof val === 'object' && val !== null ? val.quantity : Number(val);
+    const item = flatMenuItems.find((i) => String(i.id) === String(itemId)) || (typeof val === 'object' ? val : null);
+    return total + (item ? (Number(item.price) || 0) * qty : 0);
   }, 0);
 
   // Flattened search results
@@ -494,8 +534,8 @@ const OutletMenu = () => {
                       <FoodCard
                         key={item.id}
                         food={item}
-                        quantity={cart[item.id] || 0}
-                        onUpdateQuantity={handleUpdateQuantity}
+                        quantity={getQuantity(item.id)}
+                        onUpdateQuantity={(itemId, qty) => handleUpdateQuantity(itemId, qty, item)}
                       />
                     ))}
                   </div>
@@ -519,8 +559,8 @@ const OutletMenu = () => {
                         <FoodCard
                           key={item.id}
                           food={item}
-                          quantity={cart[item.id] || 0}
-                          onUpdateQuantity={handleUpdateQuantity}
+                          quantity={getQuantity(item.id)}
+                          onUpdateQuantity={(itemId, qty) => handleUpdateQuantity(itemId, qty, item)}
                           onShowReviews={setReviewsItem}
                         />
                       ))}

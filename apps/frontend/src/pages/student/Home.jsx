@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import Header from '../../components/layout/Header';
 import OutletCard from '../../components/food/OutletCard';
+import ActiveOrderBanner from '../../components/food/ActiveOrderBanner';
 import MobileBottomNav from '../../components/layout/MobileBottomNav';
 import { useAuth } from '../../hooks/useAuth';
 import { toast } from 'react-hot-toast';
@@ -102,6 +103,9 @@ const Home = () => {
           <h1 className="page-title">Explore Outlets</h1>
           <p className="page-subtitle">Order from your favorite campus outlets</p>
         </div>
+
+        {/* Live Active Order Status & Quick OTP */}
+        <ActiveOrderBanner />
 
         <div className="controls-row">
           <div className="search-container">

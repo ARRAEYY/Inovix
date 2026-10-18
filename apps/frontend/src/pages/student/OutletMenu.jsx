@@ -58,27 +58,43 @@ const mapMenuItem = (item) => ({
   price: Number(item.price),
 });
 
-// Group flat items by category and sort Popular first
-const buildMenuSections = (items) => {
-  const grouped = (items || []).reduce((acc, item) => {
-    if (!acc[item.category]) {
-      acc[item.category] = {
-        category: item.category,
+// Group flat items by category, preserving outlet categories and sort Popular first
+const buildMenuSections = (items, categories = []) => {
+  const categoryMap = new Map();
+
+  // 1. Add all outlet categories in order (preserves sortOrder and custom image)
+  (categories || []).forEach((cat) => {
+    if (cat?.name) {
+      categoryMap.set(cat.name, {
+        category: cat.name,
+        categoryImage: cat.imageUrl || null,
+        items: []
+      });
+    }
+  });
+
+  // 2. Group items into categories
+  (items || []).forEach((item) => {
+    const catName = item.category || 'Other';
+    if (!categoryMap.has(catName)) {
+      categoryMap.set(catName, {
+        category: catName,
         categoryImage: item.categoryImage || null,
         items: []
-      };
-    } else if (!acc[item.category].categoryImage && item.categoryImage) {
-      acc[item.category].categoryImage = item.categoryImage;
+      });
     }
-    acc[item.category].items.push(item);
-    return acc;
-  }, {});
+    const section = categoryMap.get(catName);
+    if (!section.categoryImage && item.categoryImage) {
+      section.categoryImage = item.categoryImage;
+    }
+    section.items.push(item);
+  });
 
-  const sectionsArray = Object.values(grouped);
+  const sectionsArray = Array.from(categoryMap.values());
   sectionsArray.sort((a, b) => {
     if (a.category === 'Popular') return -1;
     if (b.category === 'Popular') return 1;
-    return a.category.localeCompare(b.category);
+    return 0;
   });
   return sectionsArray;
 };
@@ -101,7 +117,8 @@ const OutletMenu = () => {
   const cacheKey = `menu:${id}`;
   const initialCache = React.useMemo(() => cacheGetStale(cacheKey), [cacheKey]);
   const initialItems = React.useMemo(() => (initialCache.data?.items || []).map(mapMenuItem), [initialCache]);
-  const initialSections = React.useMemo(() => buildMenuSections(initialItems), [initialItems]);
+  const initialCategories = React.useMemo(() => initialCache.data?.categories || [], [initialCache]);
+  const initialSections = React.useMemo(() => buildMenuSections(initialItems, initialCategories), [initialItems, initialCategories]);
 
   const [outlet, setOutlet] = useState(() => initialCache.data?.outlet ? mapOutletDetails(initialCache.data.outlet) : null);
   const [menuSections, setMenuSections] = useState(initialSections);
@@ -159,10 +176,10 @@ const OutletMenu = () => {
     const cached = cacheGetStale(cacheKey);
     if (cached.data) {
       if (cached.data.outlet) setOutlet(mapOutletDetails(cached.data.outlet));
-      if (cached.data.items) {
-        const items = cached.data.items.map(mapMenuItem);
+      if (cached.data.items || cached.data.categories) {
+        const items = (cached.data.items || []).map(mapMenuItem);
         setFlatMenuItems(items);
-        const sections = buildMenuSections(items);
+        const sections = buildMenuSections(items, cached.data.categories || []);
         setMenuSections(sections);
         setActiveCategory((prev) =>
           sections.some((s) => s.category === prev) ? prev : (sections[0]?.category || '')
@@ -175,20 +192,22 @@ const OutletMenu = () => {
 
     const fetchMenu = async () => {
       try {
-        const [outletRes, menuRes] = await Promise.all([
+        const [outletRes, menuRes, categoriesRes] = await Promise.all([
           catalogService.getOutletDetails(id),
           catalogService.getOutletMenu(id),
+          catalogService.getOutletCategories(id).catch(() => ({ data: [] })),
         ]);
         const outletRaw = outletRes.data || {};
         const itemsRaw = menuRes.data || [];
+        const categoriesRaw = categoriesRes.data || [];
 
         // Save fresh menu in user's localStorage so next time it loads in 0ms!
-        cacheSet(cacheKey, { outlet: outletRaw, items: itemsRaw });
+        cacheSet(cacheKey, { outlet: outletRaw, items: itemsRaw, categories: categoriesRaw });
 
         setOutlet(mapOutletDetails(outletRaw));
         const items = itemsRaw.map(mapMenuItem);
         setFlatMenuItems(items);
-        const sections = buildMenuSections(items);
+        const sections = buildMenuSections(items, categoriesRaw);
         setMenuSections(sections);
         setActiveCategory((prev) =>
           sections.some((s) => s.category === prev) ? prev : (sections[0]?.category || '')
@@ -453,7 +472,7 @@ const OutletMenu = () => {
       (item.name || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
       (item.description && (item.description || "").toLowerCase().includes(searchQuery.toLowerCase()))
     )
-  })).filter(section => section.items.length > 0);
+  })).filter(section => !isSearching || section.items.length > 0);
 
   return (
     <div className="page-wrapper bg-white">
@@ -582,17 +601,23 @@ const OutletMenu = () => {
                       )}
                       <h2 className="section-title" style={{ margin: 0 }}>{section.category}</h2>
                     </div>
-                    <div className="food-grid">
-                      {section.items.map(item => (
-                        <FoodCard
-                          key={item.id}
-                          food={item}
-                          quantity={getQuantity(item.id)}
-                          onUpdateQuantity={(itemId, qty) => handleUpdateQuantity(itemId, qty, item)}
-                          onShowReviews={setReviewsItem}
-                        />
-                      ))}
-                    </div>
+                    {section.items.length > 0 ? (
+                      <div className="food-grid">
+                        {section.items.map(item => (
+                          <FoodCard
+                            key={item.id}
+                            food={item}
+                            quantity={getQuantity(item.id)}
+                            onUpdateQuantity={(itemId, qty) => handleUpdateQuantity(itemId, qty, item)}
+                            onShowReviews={setReviewsItem}
+                          />
+                        ))}
+                      </div>
+                    ) : (
+                      <p style={{ color: '#9ca3af', fontSize: '0.85rem', fontStyle: 'italic', margin: '0.25rem 0 1.25rem' }}>
+                        No items in this category yet.
+                      </p>
+                    )}
                   </div>
                 ))
               ) : (

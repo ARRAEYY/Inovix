@@ -26,5 +26,14 @@ export const catalogService = {
     } catch (error) {
       throw error.response?.data || { message: 'Network Error' };
     }
+  },
+
+  getOutletCategories: async (outletId) => {
+    try {
+      const response = await client.get(`/catalog/outlets/${outletId}/categories`);
+      return response.data;
+    } catch (error) {
+      return { data: [] };
+    }
   }
 };

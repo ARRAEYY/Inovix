@@ -30,6 +30,32 @@
   font-size: 0.9rem;
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.add-category-btn {
+  background-color: #ffffff;
+  color: var(--primary);
+  border: 1.5px solid var(--primary);
+  border-radius: 8px;
+  padding: 0.7rem 1.15rem;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.add-category-btn:hover {
+  background-color: #fff1f2;
+}
+
 .add-item-btn {
   background-color: var(--primary);
   color: var(--white);

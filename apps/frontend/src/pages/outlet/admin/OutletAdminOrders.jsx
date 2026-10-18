@@ -112,7 +112,7 @@ const OutletAdminOrders = () => {
     <OutletAdminLayout>
       <div className="dashboard-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
-          <h1 className="dashboard-title">Orders Kanban</h1>
+          <h1 className="dashboard-title">Orders</h1>
           <p className="dashboard-subtitle">Manage and track live orders.</p>
         </div>
         <button className="btn btn-primary" onClick={fetchOrders} style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', cursor: 'pointer', background: 'var(--primary)', color: 'white', display: 'flex', alignItems: 'center', gap: '8px' }}>

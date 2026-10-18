@@ -19,10 +19,13 @@ function validateBody(schema) {
                 field: (e.path || []).join('.'),
                 message: e.message,
             }));
+            const detailMsg = errors.length > 0
+                ? `Validation failed: ${errors.map(e => `${e.field ? e.field + ': ' : ''}${e.message}`).join(', ')}`
+                : 'Validation failed';
 
             return res.status(400).json({
                 success: false,
-                message: 'Validation failed',
+                message: detailMsg,
                 code: ERROR_CODES.VALIDATION_ERROR,
                 errors,
             });
@@ -47,10 +50,13 @@ function validateQuery(schema) {
                 field: (e.path || []).join('.'),
                 message: e.message,
             }));
+            const detailMsg = errors.length > 0
+                ? `Invalid query parameters: ${errors.map(e => `${e.field ? e.field + ': ' : ''}${e.message}`).join(', ')}`
+                : 'Invalid query parameters';
 
             return res.status(400).json({
                 success: false,
-                message: 'Invalid query parameters',
+                message: detailMsg,
                 code: ERROR_CODES.VALIDATION_ERROR,
                 errors,
             });

@@ -1,5 +1,18 @@
 const menuService = require('./menu.service');
 const { audit } = require('../../lib/audit');
+const { cacheDel, cacheDelPrefix } = require('../../lib/cache');
+
+const invalidateOutletCache = async (outletId) => {
+  if (!outletId) return;
+  try {
+    await cacheDel(`catalog:categories:${outletId}`);
+    await cacheDel(`catalog:menu:${outletId}`);
+    await cacheDelPrefix(`catalog:categories:${outletId}`);
+    await cacheDelPrefix(`catalog:menu:${outletId}`);
+  } catch (e) {
+    console.error('Failed to invalidate outlet catalog cache', e);
+  }
+};
 
 async function getOutletMenu(req, res, next) {
   try {
@@ -39,6 +52,7 @@ async function createMenuItem(req, res, next) {
       req,
     });
 
+    await invalidateOutletCache(outletId);
     res.status(201).json({ success: true, data: newItem });
   } catch (error) {
     next(error);
@@ -61,6 +75,7 @@ async function updateMenuItem(req, res, next) {
       req,
     });
 
+    await invalidateOutletCache(outletId);
     res.status(200).json({ success: true, data: updated });
   } catch (error) {
     next(error);
@@ -82,6 +97,7 @@ async function deleteMenuItem(req, res, next) {
       req,
     });
 
+    await invalidateOutletCache(outletId);
     res.status(200).json({ success: true, message: 'Menu item deleted successfully' });
   } catch (error) {
     next(error);
@@ -107,6 +123,7 @@ async function updateAvailability(req, res, next) {
       req,
     });
 
+    await invalidateOutletCache(outletId);
     res.status(200).json({ success: true, data: updated });
   } catch (error) {
     next(error);

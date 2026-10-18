@@ -4,25 +4,25 @@ const menuController = require('./menu.controller');
 const { OUTLET_ROLES, OUTLET_ADMIN_ROLES } = require('../../lib/constants');
 const { validateBody } = require('../../middleware/validation.middleware');
 const { menuItemCreateSchema, menuItemUpdateSchema, updateMenuAvailabilitySchema } = require('@nosh/validation');
+const { cacheDel, cacheDelPrefix } = require('../../lib/cache');
+const prisma = require('../../lib/prisma');
 
 const router = express.Router();
 
-// Menu viewing: both OUTLET_STAFF and OUTLET_ADMIN
-router.get('/', protect, authorizeRole(...OUTLET_ROLES), requireOutletScope, menuController.getOutletMenu);
-router.get('/:itemId', protect, authorizeRole(...OUTLET_ROLES), requireOutletScope, menuController.getMenuItem);
+// Helper to invalidate catalog cache for this outlet
+const invalidateOutletCache = async (outletId) => {
+  if (!outletId) return;
+  try {
+    await cacheDel(`catalog:categories:${outletId}`);
+    await cacheDel(`catalog:menu:${outletId}`);
+    await cacheDelPrefix(`catalog:categories:${outletId}`);
+    await cacheDelPrefix(`catalog:menu:${outletId}`);
+  } catch (e) {
+    console.error('Failed to invalidate outlet cache', e);
+  }
+};
 
-// Availability toggle: both OUTLET_STAFF and OUTLET_ADMIN (86 an item).
-// Mounted BEFORE /:itemId so PATCH /:itemId (admin-only) doesn't capture it.
-router.patch('/:itemId/availability', protect, authorizeRole(...OUTLET_ROLES), requireOutletScope, validateBody(updateMenuAvailabilitySchema), menuController.updateAvailability);
-
-// Menu management (create/update/delete): OUTLET_ADMIN only
-router.post('/', protect, authorizeRole(...OUTLET_ADMIN_ROLES), requireOutletScope, validateBody(menuItemCreateSchema), menuController.createMenuItem);
-router.patch('/:itemId', protect, authorizeRole(...OUTLET_ADMIN_ROLES), requireOutletScope, validateBody(menuItemUpdateSchema), menuController.updateMenuItem);
-router.delete('/:itemId', protect, authorizeRole(...OUTLET_ADMIN_ROLES), requireOutletScope, menuController.deleteMenuItem);
-
-// ─── Menu category CRUD (outlet admin only) ──────────────────────────────
-const prisma = require('../../lib/prisma');
-
+// ─── Menu category CRUD (Must be mounted BEFORE /:itemId) ─────────────────
 router.get('/categories', protect, authorizeRole(...OUTLET_ROLES), requireOutletScope, async (req, res, next) => {
   try {
     const cats = await prisma.menuCategory.findMany({
@@ -46,6 +46,7 @@ router.post('/categories', protect, authorizeRole(...OUTLET_ADMIN_ROLES), requir
         imageUrl: imageUrl ? imageUrl.trim() : null,
       },
     });
+    await invalidateOutletCache(req.user.outletId);
     res.status(201).json({ success: true, data: cat });
   } catch (err) {
     if (err.code === 'P2002') return res.status(409).json({ success: false, message: 'Category already exists' });
@@ -72,6 +73,7 @@ router.patch('/categories/:categoryId', protect, authorizeRole(...OUTLET_ADMIN_R
         ...(imageUrl !== undefined ? { imageUrl: imageUrl ? imageUrl.trim() : null } : {}),
       },
     });
+    await invalidateOutletCache(req.user.outletId);
     res.json({ success: true, data: cat });
   } catch (err) { next(err); }
 });
@@ -92,9 +94,23 @@ router.delete('/categories/:categoryId', protect, authorizeRole(...OUTLET_ADMIN_
       data: { categoryId: null },
     });
     await prisma.menuCategory.delete({ where: { id: categoryId } });
+    await invalidateOutletCache(req.user.outletId);
     res.json({ success: true, message: 'Category deleted' });
   } catch (err) { next(err); }
 });
 
+// ─── Menu item routes ─────────────────────────────────────────────────────
+// Menu viewing: both OUTLET_STAFF and OUTLET_ADMIN
+router.get('/', protect, authorizeRole(...OUTLET_ROLES), requireOutletScope, menuController.getOutletMenu);
+
+// Availability toggle: both OUTLET_STAFF and OUTLET_ADMIN (86 an item).
+// Mounted BEFORE /:itemId so PATCH /:itemId (admin-only) doesn't capture it.
+router.patch('/:itemId/availability', protect, authorizeRole(...OUTLET_ROLES), requireOutletScope, validateBody(updateMenuAvailabilitySchema), menuController.updateAvailability);
+
+// Menu management (create/update/delete): OUTLET_ADMIN only
+router.post('/', protect, authorizeRole(...OUTLET_ADMIN_ROLES), requireOutletScope, validateBody(menuItemCreateSchema), menuController.createMenuItem);
+router.patch('/:itemId', protect, authorizeRole(...OUTLET_ADMIN_ROLES), requireOutletScope, validateBody(menuItemUpdateSchema), menuController.updateMenuItem);
+router.delete('/:itemId', protect, authorizeRole(...OUTLET_ADMIN_ROLES), requireOutletScope, menuController.deleteMenuItem);
+router.get('/:itemId', protect, authorizeRole(...OUTLET_ROLES), requireOutletScope, menuController.getMenuItem);
 
 module.exports = router;

@@ -65,9 +65,10 @@ const OutletAdminMenu = () => {
 
   const filterCategories = useMemo(() => {
     const fromOutlet = categories.map((c) => c.name).filter(Boolean);
-    const set = new Set([...fromOutlet, ...CATEGORIES]);
+    const fromItems = items.map((i) => i.category).filter(Boolean);
+    const set = new Set([...fromOutlet, ...fromItems, ...CATEGORIES]);
     return Array.from(set);
-  }, [categories]);
+  }, [categories, items]);
 
   const filteredItems = useMemo(() => {
     return items.filter(item => {
@@ -209,138 +210,21 @@ const OutletAdminMenu = () => {
             <h1>Menu Management</h1>
             <p>Manage the food and beverages available at your outlet.</p>
           </div>
-          <button className="add-item-btn" onClick={handleOpenAddForm}>
-            + Add Item
-          </button>
-        </div>
-
-        {/* Category Management */}
-        <div
-          style={{
-            background: '#ffffff',
-            border: '1px solid #e5e7eb',
-            borderRadius: '12px',
-            padding: '0.85rem 1.1rem',
-            marginBottom: '1.25rem',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.03)',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '0.75rem',
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <span style={{ fontWeight: 700, fontSize: '0.95rem', color: '#111827' }}>Categories</span>
-              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#6b7280', background: '#f3f4f6', padding: '0.15rem 0.5rem', borderRadius: '12px' }}>
-                {categories.length}
-              </span>
-              <span style={{ fontSize: '0.78rem', color: '#9ca3af', marginLeft: '0.25rem' }}>
-                • Click any category to edit name & image
-              </span>
-            </div>
+          <div className="header-actions">
             <button
+              type="button"
+              className="add-category-btn"
               onClick={handleOpenAddCategory}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '0.35rem',
-                background: '#b10035',
-                color: 'white',
-                border: 'none',
-                borderRadius: '8px',
-                padding: '0.45rem 0.9rem',
-                cursor: 'pointer',
-                fontSize: '0.82rem',
-                fontWeight: 600,
-                boxShadow: '0 1px 2px rgba(177, 0, 53, 0.2)',
-                transition: 'all 0.15s ease',
-              }}
             >
-              <span>+</span> Add Category
+              + Add Category
             </button>
-          </div>
-
-          <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center', flexWrap: 'wrap' }}>
-            {categories.length === 0 ? (
-              <span style={{ fontSize: '0.85rem', color: '#9ca3af', fontStyle: 'italic' }}>
-                No categories yet. Click "+ Add Category" to create one with name and image.
-              </span>
-            ) : (
-              categories.map((cat) => (
-                <div
-                  key={cat.id}
-                  onClick={() => handleOpenEditCategory(cat)}
-                  title={`Click to edit "${cat.name}"`}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '0.5rem',
-                    background: '#ffffff',
-                    padding: '0.3rem 0.65rem 0.3rem 0.35rem',
-                    borderRadius: '8px',
-                    border: '1px solid #e5e7eb',
-                    fontSize: '0.85rem',
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease',
-                    boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.borderColor = '#b10035';
-                    e.currentTarget.style.boxShadow = '0 2px 6px rgba(177, 0, 53, 0.12)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.borderColor = '#e5e7eb';
-                    e.currentTarget.style.boxShadow = '0 1px 2px rgba(0,0,0,0.03)';
-                  }}
-                >
-                  {cat.imageUrl ? (
-                    <img
-                      src={cat.imageUrl}
-                      alt={cat.name}
-                      style={{
-                        width: 28,
-                        height: 28,
-                        borderRadius: '6px',
-                        objectFit: 'cover',
-                        border: '1px solid #f3f4f6',
-                        flexShrink: 0,
-                      }}
-                    />
-                  ) : (
-                    <span
-                      style={{
-                        width: 28,
-                        height: 28,
-                        borderRadius: '6px',
-                        background: '#f9fafb',
-                        border: '1px solid #f3f4f6',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontSize: '0.85rem',
-                        flexShrink: 0,
-                      }}
-                    >
-                      🍽️
-                    </span>
-                  )}
-                  <span style={{ fontWeight: 600, color: '#1f2937' }}>{cat.name}</span>
-                  <span style={{ fontSize: '0.75rem', color: '#9ca3af', fontWeight: 500 }}>
-                    ({cat._count?.items || 0})
-                  </span>
-                  <span
-                    style={{
-                      color: '#b10035',
-                      fontSize: '0.75rem',
-                      marginLeft: '0.15rem',
-                      opacity: 0.7,
-                    }}
-                  >
-                    ✎
-                  </span>
-                </div>
-              ))
-            )}
+            <button
+              type="button"
+              className="add-item-btn"
+              onClick={handleOpenAddForm}
+            >
+              + Add Item
+            </button>
           </div>
         </div>
 
@@ -349,7 +233,9 @@ const OutletAdminMenu = () => {
           <MenuFilters 
             categories={filterCategories} 
             activeCategory={activeCategory} 
-            setActiveCategory={setActiveCategory} 
+            setActiveCategory={setActiveCategory}
+            onEditCategory={handleOpenEditCategory}
+            outletCategories={categories}
           />
         </div>
 

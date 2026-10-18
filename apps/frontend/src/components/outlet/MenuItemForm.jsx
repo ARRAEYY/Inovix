@@ -10,19 +10,30 @@ const DEFAULT_CATEGORIES = [
 const MenuItemForm = ({ item, onSubmit, onCancel, isSaving, onDelete, availableCategories = [] }) => {
   const isEditMode = !!item;
   
-  const categoryOptions = React.useMemo(() => {
-    const fromOutlet = (availableCategories || [])
+  const outletCategoryNames = React.useMemo(() => {
+    return (availableCategories || [])
       .map(c => typeof c === 'string' ? c : c.name)
       .filter(Boolean);
-    const set = new Set([...fromOutlet, ...DEFAULT_CATEGORIES]);
-    return Array.from(set);
   }, [availableCategories]);
+
+  const generalCategories = React.useMemo(() => {
+    return DEFAULT_CATEGORIES.filter(c => !outletCategoryNames.includes(c));
+  }, [outletCategoryNames]);
+
+  const extraCategories = React.useMemo(() => {
+    if (item?.category && !outletCategoryNames.includes(item.category) && !generalCategories.includes(item.category)) {
+      return [item.category];
+    }
+    return [];
+  }, [item, outletCategoryNames, generalCategories]);
+
+  const defaultCategory = outletCategoryNames[0] || DEFAULT_CATEGORIES[0] || 'Popular';
   
   const [formData, setFormData] = useState({
     name: '',
     description: '',
     price: '',
-    category: categoryOptions[0] || 'Popular',
+    category: defaultCategory,
     image: '',
     isAvailable: true,
     // Persisted by the backend menu service but previously missing from
@@ -41,7 +52,7 @@ const MenuItemForm = ({ item, onSubmit, onCancel, isSaving, onDelete, availableC
         name: item.name || '',
         description: item.description || '',
         price: item.price || '',
-        category: item.category || 'Popular',
+        category: item.category || defaultCategory,
         image: item.image || '',
         isAvailable: item.isAvailable !== false,
         discount: item.discount != null ? String(item.discount) : '',
@@ -49,8 +60,13 @@ const MenuItemForm = ({ item, onSubmit, onCancel, isSaving, onDelete, availableC
         vegetarian: !!item.vegetarian,
         preparationTime: item.prepTimeMins ? String(item.prepTimeMins) : ''
       });
+    } else {
+      setFormData(prev => ({
+        ...prev,
+        category: prev.category || defaultCategory
+      }));
     }
-  }, [item]);
+  }, [item, defaultCategory]);
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -139,8 +155,26 @@ const MenuItemForm = ({ item, onSubmit, onCancel, isSaving, onDelete, availableC
         </div>
         <div className="form-group">
           <label>Category</label>
-          <select name="category" value={formData.category} onChange={handleChange}>
-            {categoryOptions.map(c => <option key={c} value={c}>{c}</option>)}
+          <select name="category" value={formData.category} onChange={handleChange} required>
+            {outletCategoryNames.length > 0 && (
+              <optgroup label="Your Outlet Categories">
+                {outletCategoryNames.map(c => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </optgroup>
+            )}
+            <optgroup label={outletCategoryNames.length > 0 ? "General Categories" : "Categories"}>
+              {generalCategories.map(c => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </optgroup>
+            {extraCategories.length > 0 && (
+              <optgroup label="Current Item Category">
+                {extraCategories.map(c => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </optgroup>
+            )}
           </select>
         </div>
       </div>

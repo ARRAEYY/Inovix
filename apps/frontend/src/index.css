@@ -159,6 +159,7 @@ img {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+  width: 100%;
 }
 
 .input-group label {
@@ -168,13 +169,15 @@ img {
 }
 
 .input-group input {
+  width: 100%;
+  box-sizing: border-box;
   padding: 0.875rem 1.25rem;
   border: 1px solid var(--input-border);
   border-radius: 12px;
   font-size: 1rem;
   font-family: inherit;
   outline: none;
-  transition: border-color 0.2s;
+  transition: border-color 0.2s, box-shadow 0.2s;
   color: var(--text-dark);
   background-color: var(--white);
 }
@@ -186,6 +189,72 @@ img {
 
 .input-group input:focus {
   border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(177, 0, 53, 0.08);
+}
+
+.password-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.password-wrapper input {
+  width: 100%;
+  box-sizing: border-box;
+  padding-right: 3rem !important;
+}
+
+.password-toggle {
+  position: absolute;
+  right: 0.85rem;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0.35rem;
+  color: var(--text-gray);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  line-height: 0;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.password-toggle:hover {
+  color: var(--text-dark);
+  background-color: rgba(0, 0, 0, 0.05);
+}
+
+.password-toggle:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+
+.login-error {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background-color: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #991b1b;
+  padding: 0.75rem 1rem;
+  border-radius: 10px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  margin-top: 0.25rem;
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.login-hint {
+  font-size: 0.825rem;
+  color: var(--text-gray);
+  text-align: center;
+  margin-top: 1.25rem;
+  line-height: 1.45;
 }
 
 .forgot-password-container {
@@ -274,6 +343,7 @@ img {
 @media (max-width: 992px) {
   .login-container {
     flex-direction: column;
+    min-height: 100vh;
   }
 
   .login-left .brand {
@@ -289,12 +359,110 @@ img {
   }
 
   .hero-title {
-    font-size: 3.5rem;
+    font-size: 3rem;
   }
 
   .login-right {
     padding: 2rem;
     justify-content: center;
+    width: 100%;
+  }
+
+  .login-card {
+    max-width: 480px;
+  }
+}
+
+@media (max-width: 768px) {
+  .login-left {
+    padding: 2.5rem 1.5rem 1rem;
+  }
+
+  .hero-title {
+    font-size: 2.5rem;
+  }
+
+  .hero-description {
+    font-size: 1.15rem;
+  }
+
+  .login-right {
+    padding: 1.5rem 1.25rem 2.5rem;
+  }
+
+  .login-card {
+    padding: 2.25rem 1.5rem;
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .login-left {
+    padding: 2rem 1.25rem 0.5rem;
+  }
+
+  .login-left .brand {
+    margin-bottom: 1.25rem;
+  }
+
+  .login-left .brand img {
+    height: 40px !important;
+  }
+
+  .hero-title {
+    font-size: 2.15rem;
+    line-height: 1.15;
+    letter-spacing: -0.02em;
+  }
+
+  .hero-description {
+    font-size: 1rem;
+    line-height: 1.45;
+  }
+
+  .login-right {
+    padding: 0.75rem 1rem 2.5rem;
+  }
+
+  .login-card {
+    padding: 1.75rem 1.25rem;
+    border-radius: 16px;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  .card-subheading {
+    margin-bottom: 0.5rem;
+    font-size: 0.75rem;
+  }
+
+  .card-title {
+    font-size: 1.65rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .input-group input {
+    padding: 0.8rem 1rem;
+    font-size: 0.95rem;
+  }
+
+  .password-wrapper input {
+    padding-right: 2.75rem !important;
+  }
+
+  .password-toggle {
+    right: 0.65rem;
+  }
+
+  .primary-btn,
+  .google-btn {
+    padding: 0.875rem 1rem;
+    font-size: 0.95rem;
+  }
+
+  .divider {
+    margin: 1.25rem 0;
   }
 }
 

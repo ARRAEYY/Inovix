@@ -8,7 +8,7 @@ const formatCurrency = (amount) => {
     style: 'currency',
     currency: 'INR',
     minimumFractionDigits: 0
-  }).format(amount);
+  }).format(amount || 0);
 };
 
 const Menu = () => {
@@ -21,23 +21,35 @@ const Menu = () => {
   const [search, setSearch] = useState('');
   
   const [selectedEditItem, setSelectedEditItem] = useState(null);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [newItem, setNewItem] = useState({
+    outletId: '',
+    name: '',
+    price: '',
+    categoryName: 'General',
+    description: '',
+    imageUrl: '',
+    vegetarian: true,
+    isAvailable: true,
+  });
 
   const fetchData = async () => {
     try {
+      setLoading(true);
       const [menuRes, outletsRes] = await Promise.all([
         api.get('/admin/menu'),
         api.get('/admin/outlets')
       ]);
 
-      // `category` arrives as an object (include) — flatten to its name and
-      // expose `image` from the imageUrl column for the existing card markup.
-      setMenuItems((menuRes.data.data || []).map(m => ({
+      const items = (menuRes.data.data || []).map(m => ({
         ...m,
-        category: m.category?.name || 'Other',
+        category: m.category?.name || 'General',
         image: m.imageUrl || null,
-        price: Number(m.price),
-      })));
+        price: Number(m.price || 0),
+      }));
+      setMenuItems(items);
       setOutlets(outletsRes.data.data || []);
+      setError(null);
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to load menu data');
     } finally {
@@ -50,41 +62,117 @@ const Menu = () => {
   }, []);
 
   const handleToggleAvailability = async (itemId, currentAvailability) => {
-    if (window.confirm(`Are you sure you want to mark this item as ${currentAvailability ? 'unavailable' : 'available'}?`)) {
-      try {
-        await api.patch(`/admin/menu/${itemId}/status`, { isAvailable: !currentAvailability });
-        setMenuItems(menuItems.map(m => m.id === itemId ? { ...m, isAvailable: !currentAvailability } : m));
-      } catch (err) {
-        toast('Failed to update menu item');
-      }
+    try {
+      await api.patch(`/admin/menu/${itemId}/status`, { isAvailable: !currentAvailability });
+      setMenuItems(menuItems.map(m => m.id === itemId ? { ...m, isAvailable: !currentAvailability } : m));
+      toast.success(`Item marked as ${!currentAvailability ? 'available' : 'unavailable'}`);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to update menu item status');
+    }
+  };
+
+  const handleAddSubmit = async (e) => {
+    e.preventDefault();
+    if (!newItem.outletId) {
+      toast.error('Please choose an outlet for this menu item');
+      return;
+    }
+    const priceNum = parseFloat(newItem.price);
+    if (!priceNum || priceNum <= 0) {
+      toast.error('Please enter a valid price');
+      return;
+    }
+
+    try {
+      const payload = {
+        outletId: newItem.outletId,
+        name: newItem.name.trim(),
+        price: priceNum,
+        description: newItem.description?.trim() || null,
+        imageUrl: newItem.imageUrl?.trim() || null,
+        vegetarian: Boolean(newItem.vegetarian),
+        isAvailable: Boolean(newItem.isAvailable),
+      };
+      const res = await api.post('/admin/menu', payload);
+      const created = {
+        ...res.data.data,
+        category: res.data.data.category?.name || newItem.categoryName || 'General',
+        image: res.data.data.imageUrl || null,
+        price: Number(res.data.data.price),
+      };
+      setMenuItems([created, ...menuItems]);
+      setShowAddModal(false);
+      setNewItem({
+        outletId: '',
+        name: '',
+        price: '',
+        categoryName: 'General',
+        description: '',
+        imageUrl: '',
+        vegetarian: true,
+        isAvailable: true,
+      });
+      toast.success('Menu item added successfully');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to create menu item');
     }
   };
 
   const handleEditSubmit = async (e) => {
     e.preventDefault();
+    const priceNum = parseFloat(selectedEditItem.price);
+    if (!priceNum || priceNum <= 0) {
+      toast.error('Please enter a valid price');
+      return;
+    }
+
     try {
-      await api.patch(`/admin/menu/${selectedEditItem.id}`, {
-        name: selectedEditItem.name,
-        price: selectedEditItem.price,
-        description: selectedEditItem.description,
+      const res = await api.patch(`/admin/menu/${selectedEditItem.id}`, {
+        name: selectedEditItem.name.trim(),
+        price: priceNum,
+        description: selectedEditItem.description || '',
+        imageUrl: selectedEditItem.imageUrl || selectedEditItem.image || null,
+        vegetarian: Boolean(selectedEditItem.vegetarian),
+        isAvailable: Boolean(selectedEditItem.isAvailable),
       });
-      setMenuItems(menuItems.map(m => m.id === selectedEditItem.id ? selectedEditItem : m));
+      const updated = {
+        ...selectedEditItem,
+        ...res.data.data,
+        price: priceNum,
+        image: res.data.data.imageUrl || selectedEditItem.imageUrl || null,
+      };
+      setMenuItems(menuItems.map(m => m.id === selectedEditItem.id ? updated : m));
       setSelectedEditItem(null);
+      toast.success('Menu item updated successfully');
     } catch (err) {
-      toast(err.response?.data?.message || 'Failed to update menu item');
+      toast.error(err.response?.data?.message || 'Failed to update menu item');
+    }
+  };
+
+  const handleDeleteItem = async (item) => {
+    if (window.confirm(`Are you sure you want to delete "${item.name}"? This cannot be undone.`)) {
+      try {
+        await api.delete(`/admin/menu/${item.id}`);
+        setMenuItems(menuItems.filter(m => m.id !== item.id));
+        toast.success('Menu item deleted successfully');
+      } catch (err) {
+        toast.error(err.response?.data?.message || 'Failed to delete menu item');
+      }
     }
   };
 
   const getOutletName = (id) => outlets.find(o => o.id === id)?.name || 'Unknown Outlet';
 
   const filteredMenu = menuItems.filter(m => {
-    const matchesSearch = (m.name || "").toLowerCase().includes(search.toLowerCase()) || 
-                          (m.category || "").toLowerCase().includes(search.toLowerCase());
+    const outletName = getOutletName(m.outletId).toLowerCase();
+    const itemName = (m.name || '').toLowerCase();
+    const catName = (m.category || '').toLowerCase();
+    const q = search.toLowerCase();
+
+    const matchesSearch = itemName.includes(q) || catName.includes(q) || outletName.includes(q);
     
     if (!matchesSearch) return false;
-    
     if (filterOutlet !== 'All' && m.outletId !== filterOutlet) return false;
-    
     if (filterAvailability === 'Available' && !m.isAvailable) return false;
     if (filterAvailability === 'Unavailable' && m.isAvailable) return false;
     
@@ -98,25 +186,33 @@ const Menu = () => {
     <AdminLayout>
       <div style={{ maxWidth: '1200px', width: '100%', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '32px', paddingBottom: '40px' }}>
         
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px' }}>
           <div>
             <h1 style={{ margin: '0 0 8px 0', fontSize: '1.75rem', fontWeight: '800', color: '#111827', letterSpacing: '-0.5px' }}>
               Menu Management
             </h1>
             <p style={{ margin: 0, color: '#4b5563', fontSize: '0.95rem' }}>
-              Manage menu items across all outlets.
+              Inspect and control dishes, pricing, and availability across all dining outlets.
             </p>
           </div>
-          <button 
-            onClick={fetchData}
-            style={{ padding: '8px 16px', background: 'white', border: '1px solid #e5e7eb', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', color: '#374151', fontWeight: '500' }}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ animation: loading ? 'spin 1s linear infinite' : 'none' }}>
-              <polyline points="23 4 23 10 17 10"></polyline>
-              <polyline points="1 20 1 14 7 14"></polyline>
-              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-            </svg>
-            Refresh
-          </button>
+          <div style={{ display: 'flex', gap: '12px' }}>
+            <button 
+              onClick={fetchData}
+              style={{ padding: '10px 18px', background: 'white', border: '1px solid #e5e7eb', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', color: '#374151', fontWeight: '500' }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ animation: loading ? 'spin 1s linear infinite' : 'none' }}>
+                <polyline points="23 4 23 10 17 10"></polyline>
+                <polyline points="1 20 1 14 7 14"></polyline>
+                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+              </svg>
+              Refresh
+            </button>
+            <button 
+              onClick={() => setShowAddModal(true)}
+              style={{ padding: '10px 20px', background: '#b10035', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: '600', fontSize: '0.9rem' }}
+            >
+              + Add Menu Item
+            </button>
+          </div>
         </div>
 
         <div style={cardStyle}>
@@ -128,7 +224,7 @@ const Menu = () => {
                 onChange={(e) => setFilterOutlet(e.target.value)}
                 style={selectStyle}
               >
-                <option value="All">All Outlets</option>
+                <option value="All">All Outlets ({menuItems.length})</option>
                 {outlets.map(o => (
                   <option key={o.id} value={o.id}>{o.name}</option>
                 ))}
@@ -162,7 +258,7 @@ const Menu = () => {
               placeholder="Search items or categories..." 
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              style={{ padding: '8px 16px', border: '1px solid #d1d5db', borderRadius: '8px', width: '250px', fontSize: '0.9rem' }}
+              style={{ padding: '8px 16px', border: '1px solid #d1d5db', borderRadius: '8px', width: '260px', fontSize: '0.9rem' }}
             />
           </div>
 
@@ -179,77 +275,164 @@ const Menu = () => {
                 </tr>
               </thead>
               <tbody>
-                {filteredMenu.map((item, idx) => (
-                  <tr key={item.id} style={{ borderBottom: idx !== filteredMenu.length - 1 ? '1px solid #f3f4f6' : 'none' }}>
-                    <td style={{ padding: '16px 24px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <img src={item.image} alt={item.name} style={{ width: '40px', height: '40px', borderRadius: '8px', objectFit: 'cover' }} />
-                        <div>
-                          <div style={{ fontWeight: '700', color: '#111827' }}>{item.name}</div>
-                          <div style={{ fontSize: '0.8rem', color: '#6b7280' }}>
-                            {item.vegetarian ? '🟩 Veg' : '🟥 Non-Veg'}
-                          </div>
-                        </div>
-                      </div>
-                    </td>
-                    <td style={{ padding: '16px 24px', color: '#374151' }}>{getOutletName(item.outletId)}</td>
-                    <td style={{ padding: '16px 24px', color: '#4b5563' }}>{item.category}</td>
-                    <td style={{ padding: '16px 24px', color: '#111827', fontWeight: '500' }}>{formatCurrency(item.price)}</td>
-                    <td style={{ padding: '16px 24px' }}>
-                      <span style={{
-                        display: 'inline-block',
-                        padding: '4px 10px',
-                        borderRadius: '12px',
-                        fontSize: '0.75rem',
-                        fontWeight: '700',
-                        background: item.isAvailable ? '#ecfdf5' : '#fef2f2',
-                        color: item.isAvailable ? '#10b981' : '#b10035'
-                      }}>
-                        {item.isAvailable ? 'Available' : 'Unavailable'}
-                      </span>
-                    </td>
-                    <td style={{ padding: '16px 24px' }}>
-                      <div style={{ display: 'flex', gap: '12px' }}>
-                        <button onClick={() => setSelectedEditItem(item)} style={{ background: 'none', border: 'none', color: '#3b82f6', fontWeight: '500', cursor: 'pointer', fontSize: '0.85rem' }}>Edit</button>
-                        <button 
-                          onClick={() => handleToggleAvailability(item.id, item.isAvailable)} 
-                          style={{ background: 'none', border: 'none', color: item.isAvailable ? '#b10035' : '#10b981', fontWeight: '500', cursor: 'pointer', fontSize: '0.85rem' }}
-                        >
-                          {item.isAvailable ? 'Disable' : 'Enable'}
-                        </button>
-                      </div>
+                {filteredMenu.length === 0 ? (
+                  <tr>
+                    <td colSpan="6" style={{ padding: '32px', textAlign: 'center', color: '#6b7280' }}>
+                      No menu items match the filter criteria.
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  filteredMenu.map((item, idx) => (
+                    <tr key={item.id} style={{ borderBottom: idx !== filteredMenu.length - 1 ? '1px solid #f3f4f6' : 'none' }}>
+                      <td style={{ padding: '16px 24px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                          {item.image ? (
+                            <img
+                              src={item.image}
+                              alt={item.name}
+                              onError={(e) => { e.target.style.display = 'none'; }}
+                              style={{ width: '42px', height: '42px', borderRadius: '8px', objectFit: 'cover' }}
+                            />
+                          ) : (
+                            <div style={{ width: '42px', height: '42px', borderRadius: '8px', background: '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.2rem' }}>
+                              🍽
+                            </div>
+                          )}
+                          <div>
+                            <div style={{ fontWeight: '700', color: '#111827' }}>{item.name}</div>
+                            <div style={{ fontSize: '0.78rem', color: '#6b7280', marginTop: '2px' }}>
+                              {item.vegetarian ? '🟩 Veg' : '🟥 Non-Veg'}
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+                      <td style={{ padding: '16px 24px', color: '#374151', fontWeight: '500' }}>{getOutletName(item.outletId)}</td>
+                      <td style={{ padding: '16px 24px', color: '#4b5563' }}>{item.category}</td>
+                      <td style={{ padding: '16px 24px', color: '#111827', fontWeight: '600' }}>{formatCurrency(item.price)}</td>
+                      <td style={{ padding: '16px 24px' }}>
+                        <span style={{
+                          display: 'inline-block',
+                          padding: '4px 10px',
+                          borderRadius: '12px',
+                          fontSize: '0.75rem',
+                          fontWeight: '700',
+                          background: item.isAvailable ? '#ecfdf5' : '#fef2f2',
+                          color: item.isAvailable ? '#10b981' : '#b10035'
+                        }}>
+                          {item.isAvailable ? 'Available' : 'Unavailable'}
+                        </span>
+                      </td>
+                      <td style={{ padding: '16px 24px' }}>
+                        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                          <button onClick={() => setSelectedEditItem({
+                            ...item,
+                            imageUrl: item.imageUrl || item.image || '',
+                          })} style={{ background: 'none', border: 'none', color: '#3b82f6', fontWeight: '500', cursor: 'pointer', fontSize: '0.85rem' }}>Edit</button>
+                          <button 
+                            onClick={() => handleToggleAvailability(item.id, item.isAvailable)} 
+                            style={{ background: 'none', border: 'none', color: item.isAvailable ? '#f59e0b' : '#10b981', fontWeight: '500', cursor: 'pointer', fontSize: '0.85rem' }}
+                          >
+                            {item.isAvailable ? 'Disable' : 'Enable'}
+                          </button>
+                          <button 
+                            onClick={() => handleDeleteItem(item)} 
+                            style={{ background: 'none', border: 'none', color: '#dc2626', fontWeight: '500', cursor: 'pointer', fontSize: '0.85rem' }}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
         </div>
       </div>
 
+      {/* Add Menu Item Modal */}
+      {showAddModal && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }}>
+          <div style={{ background: 'white', padding: '32px', borderRadius: '16px', width: '100%', maxWidth: '480px', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)' }}>
+            <h2 style={{ margin: '0 0 24px 0', fontSize: '1.5rem', fontWeight: '800' }}>Add Menu Item</h2>
+            <form onSubmit={handleAddSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', fontSize: '0.9rem', color: '#374151' }}>Outlet *</label>
+                <select required value={newItem.outletId} onChange={e => setNewItem({...newItem, outletId: e.target.value})} style={{...inputStyle, background: 'white'}}>
+                  <option value="">-- Choose Outlet --</option>
+                  {outlets.map(o => (
+                    <option key={o.id} value={o.id}>{o.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', fontSize: '0.9rem', color: '#374151' }}>Item Name *</label>
+                <input required type="text" placeholder="e.g. Masala Dosa" value={newItem.name} onChange={e => setNewItem({...newItem, name: e.target.value})} style={inputStyle} />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                <div>
+                  <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', fontSize: '0.9rem', color: '#374151' }}>Price (₹) *</label>
+                  <input required type="number" min="1" step="0.5" placeholder="80" value={newItem.price} onChange={e => setNewItem({...newItem, price: e.target.value})} style={inputStyle} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', fontSize: '0.9rem', color: '#374151' }}>Dietary</label>
+                  <select value={newItem.vegetarian ? 'VEG' : 'NONVEG'} onChange={e => setNewItem({...newItem, vegetarian: e.target.value === 'VEG'})} style={{...inputStyle, background: 'white'}}>
+                    <option value="VEG">🟩 Vegetarian</option>
+                    <option value="NONVEG">🟥 Non-Vegetarian</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', fontSize: '0.9rem', color: '#374151' }}>Image URL (Optional)</label>
+                <input type="url" placeholder="https://..." value={newItem.imageUrl} onChange={e => setNewItem({...newItem, imageUrl: e.target.value})} style={inputStyle} />
+              </div>
+              <div>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', fontSize: '0.9rem', color: '#374151' }}>Description</label>
+                <textarea placeholder="Brief description of the dish..." value={newItem.description} onChange={e => setNewItem({...newItem, description: e.target.value})} style={{...inputStyle, minHeight: '80px', resize: 'vertical'}} />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '16px' }}>
+                <button type="button" onClick={() => setShowAddModal(false)} style={{ padding: '10px 20px', background: '#f3f4f6', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: '600', color: '#374151' }}>Cancel</button>
+                <button type="submit" style={{ padding: '10px 20px', background: '#b10035', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: '600' }}>Create Item</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Edit Menu Item Modal */}
       {selectedEditItem && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }}>
-          <div style={{ background: 'white', padding: '32px', borderRadius: '16px', width: '100%', maxWidth: '500px', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)' }}>
+          <div style={{ background: 'white', padding: '32px', borderRadius: '16px', width: '100%', maxWidth: '480px', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)' }}>
             <h2 style={{ margin: '0 0 24px 0', fontSize: '1.5rem', fontWeight: '800' }}>Edit Menu Item</h2>
             <form onSubmit={handleEditSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div>
                 <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', fontSize: '0.9rem', color: '#374151' }}>Item Name</label>
                 <input required type="text" value={selectedEditItem.name} onChange={e => setSelectedEditItem({...selectedEditItem, name: e.target.value})} style={inputStyle} />
               </div>
-              <div>
-                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', fontSize: '0.9rem', color: '#374151' }}>Category</label>
-                <input required type="text" value={selectedEditItem.category} onChange={e => setSelectedEditItem({...selectedEditItem, category: e.target.value})} style={inputStyle} />
-              </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                 <div>
                   <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', fontSize: '0.9rem', color: '#374151' }}>Price (₹)</label>
-                  <input required type="number" min="0" value={selectedEditItem.price} onChange={e => setSelectedEditItem({...selectedEditItem, price: parseFloat(e.target.value)})} style={inputStyle} />
+                  <input required type="number" min="1" step="0.5" value={selectedEditItem.price} onChange={e => setSelectedEditItem({...selectedEditItem, price: e.target.value})} style={inputStyle} />
                 </div>
                 <div>
-                  <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', fontSize: '0.9rem', color: '#374151' }}>Outlet ID</label>
-                  <input required type="text" value={selectedEditItem.outletId} disabled style={{...inputStyle, background: '#f3f4f6', cursor: 'not-allowed'}} />
+                  <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', fontSize: '0.9rem', color: '#374151' }}>Dietary</label>
+                  <select value={selectedEditItem.vegetarian ? 'VEG' : 'NONVEG'} onChange={e => setSelectedEditItem({...selectedEditItem, vegetarian: e.target.value === 'VEG'})} style={{...inputStyle, background: 'white'}}>
+                    <option value="VEG">🟩 Vegetarian</option>
+                    <option value="NONVEG">🟥 Non-Vegetarian</option>
+                  </select>
                 </div>
+              </div>
+              <div>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', fontSize: '0.9rem', color: '#374151' }}>Image URL</label>
+                <input type="url" placeholder="https://..." value={selectedEditItem.imageUrl || ''} onChange={e => setSelectedEditItem({...selectedEditItem, imageUrl: e.target.value})} style={inputStyle} />
+              </div>
+              <div>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', fontSize: '0.9rem', color: '#374151' }}>Availability</label>
+                <select value={selectedEditItem.isAvailable ? 'YES' : 'NO'} onChange={e => setSelectedEditItem({...selectedEditItem, isAvailable: e.target.value === 'YES'})} style={{...inputStyle, background: 'white'}}>
+                  <option value="YES">In Stock / Available</option>
+                  <option value="NO">Out of Stock / Unavailable</option>
+                </select>
               </div>
               <div>
                 <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', fontSize: '0.9rem', color: '#374151' }}>Description</label>

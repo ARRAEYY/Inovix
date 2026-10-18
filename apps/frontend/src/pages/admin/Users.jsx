@@ -5,6 +5,7 @@ import { toast } from 'react-hot-toast';
 
 const Users = () => {
   const [users, setUsers] = useState([]);
+  const [outlets, setOutlets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [filter, setFilter] = useState('All');
@@ -12,12 +13,25 @@ const Users = () => {
   
   const [selectedViewUser, setSelectedViewUser] = useState(null);
   const [selectedEditUser, setSelectedEditUser] = useState(null);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [newUser, setNewUser] = useState({
+    name: '',
+    email: '',
+    password: '',
+    role: 'STUDENT',
+    outletId: '',
+  });
 
-  const fetchUsers = async () => {
+  const fetchData = async () => {
     try {
-      const response = await api.get('/admin/users');
-      // Backend returns a paginated envelope: { items, total, page, pageSize }
-      setUsers(response.data.data?.items || []);
+      setLoading(true);
+      const [usersRes, outletsRes] = await Promise.all([
+        api.get('/admin/users?pageSize=100'),
+        api.get('/admin/outlets'),
+      ]);
+      setUsers(usersRes.data.data?.items || []);
+      setOutlets(outletsRes.data.data || []);
+      setError(null);
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to load users');
     } finally {
@@ -26,7 +40,7 @@ const Users = () => {
   };
 
   useEffect(() => {
-    fetchUsers();
+    fetchData();
   }, []);
 
   const handleSuspend = async (userId, currentStatus) => {
@@ -39,37 +53,76 @@ const Users = () => {
       try {
         await api.patch(`/admin/users/${userId}/status`, { status: newStatus });
         setUsers(users.map(u => u.id === userId ? { ...u, status: newStatus } : u));
+        toast.success(`User ${newStatus === 'ACTIVE' ? 'reactivated' : 'suspended'} successfully`);
       } catch (err) {
-        toast(err.response?.data?.message || 'Failed to update user status');
+        toast.error(err.response?.data?.message || 'Failed to update user status');
       }
+    }
+  };
+
+  const handleDeleteUser = async (user) => {
+    if (window.confirm(`Are you sure you want to permanently delete user "${user.name}" (${user.email})?`)) {
+      try {
+        await api.delete(`/admin/users/${user.id}`);
+        setUsers(users.filter(u => u.id !== user.id));
+        toast.success('User deleted successfully');
+      } catch (err) {
+        toast.error(err.response?.data?.message || 'Failed to delete user');
+      }
+    }
+  };
+
+  const handleAddSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const payload = {
+        name: newUser.name.trim(),
+        email: newUser.email.trim(),
+        password: newUser.password || 'Admin@123',
+        role: newUser.role,
+        outletId: (newUser.role === 'OUTLET_STAFF' || newUser.role === 'OUTLET_ADMIN') ? (newUser.outletId || null) : null,
+      };
+      const res = await api.post('/admin/users', payload);
+      setUsers([res.data.data, ...users]);
+      setShowAddModal(false);
+      setNewUser({ name: '', email: '', password: '', role: 'STUDENT', outletId: '' });
+      toast.success('User created successfully');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to create user');
     }
   };
 
   const handleEditSubmit = async (e) => {
     e.preventDefault();
     try {
-      await api.patch(`/admin/users/${selectedEditUser.id}`, {
-        name: selectedEditUser.name,
-        email: selectedEditUser.email,
+      const payload = {
+        name: selectedEditUser.name.trim(),
+        email: selectedEditUser.email.trim(),
         role: selectedEditUser.role,
-      });
-      setUsers(users.map(u => u.id === selectedEditUser.id ? { ...u, ...selectedEditUser } : u));
+        outletId: (selectedEditUser.role === 'OUTLET_STAFF' || selectedEditUser.role === 'OUTLET_ADMIN')
+          ? (selectedEditUser.outletId || null)
+          : null,
+      };
+      const res = await api.patch(`/admin/users/${selectedEditUser.id}`, payload);
+      setUsers(users.map(u => u.id === selectedEditUser.id ? { ...u, ...res.data.data } : u));
       setSelectedEditUser(null);
+      toast.success('User updated successfully');
     } catch (err) {
-      toast(err.response?.data?.message || 'Failed to update user');
+      toast.error(err.response?.data?.message || 'Failed to update user');
     }
   };
 
+  const getOutletName = (outletId) => outlets.find(o => o.id === outletId)?.name || 'None';
+
   const filteredUsers = users.filter(u => {
-    const matchesSearch = u.name?.toLowerCase().includes(search.toLowerCase()) || 
-                          u.email?.toLowerCase().includes(search.toLowerCase());
+    const matchesSearch = (u.name || '').toLowerCase().includes(search.toLowerCase()) || 
+                          (u.email || '').toLowerCase().includes(search.toLowerCase());
     
     if (!matchesSearch) return false;
     
     if (filter === 'All') return true;
     if (filter === 'Suspended') return u.status === 'SUSPENDED';
     
-    // Map filter tab to role string
     const roleMap = {
       'Students': 'STUDENT',
       'Outlet Staff': 'OUTLET_STAFF',
@@ -87,25 +140,33 @@ const Users = () => {
     <AdminLayout>
       <div style={{ maxWidth: '1200px', width: '100%', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '32px', paddingBottom: '40px' }}>
         
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px' }}>
           <div>
             <h1 style={{ margin: '0 0 8px 0', fontSize: '1.75rem', fontWeight: '800', color: '#111827', letterSpacing: '-0.5px' }}>
               Users
             </h1>
             <p style={{ margin: 0, color: '#4b5563', fontSize: '0.95rem' }}>
-              Manage users and platform access.
+              Manage users, assign outlet staff, and control platform access.
             </p>
           </div>
-          <button 
-            onClick={fetchUsers}
-            style={{ padding: '8px 16px', background: 'white', border: '1px solid #e5e7eb', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', color: '#374151', fontWeight: '500' }}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ animation: loading ? 'spin 1s linear infinite' : 'none' }}>
-              <polyline points="23 4 23 10 17 10"></polyline>
-              <polyline points="1 20 1 14 7 14"></polyline>
-              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-            </svg>
-            Refresh
-          </button>
+          <div style={{ display: 'flex', gap: '12px' }}>
+            <button 
+              onClick={fetchData}
+              style={{ padding: '10px 18px', background: 'white', border: '1px solid #e5e7eb', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', color: '#374151', fontWeight: '500' }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ animation: loading ? 'spin 1s linear infinite' : 'none' }}>
+                <polyline points="23 4 23 10 17 10"></polyline>
+                <polyline points="1 20 1 14 7 14"></polyline>
+                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+              </svg>
+              Refresh
+            </button>
+            <button 
+              onClick={() => setShowAddModal(true)}
+              style={{ padding: '10px 20px', background: '#b10035', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: '600', fontSize: '0.9rem' }}
+            >
+              + Add User
+            </button>
+          </div>
         </div>
 
         <div style={cardStyle}>
@@ -149,13 +210,13 @@ const Users = () => {
                   <th style={thStyle}>Name</th>
                   <th style={thStyle}>Email</th>
                   <th style={thStyle}>Role</th>
+                  <th style={thStyle}>Assigned Outlet</th>
                   <th style={thStyle}>Status</th>
                   <th style={thStyle}>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredUsers.map((user, idx) => {
-                  
                   let roleDisplay = user.role;
                   let roleColor = '#4b5563';
                   let roleBg = '#f3f4f6';
@@ -164,6 +225,8 @@ const Users = () => {
                   if (user.role === 'OUTLET_ADMIN') { roleDisplay = 'Outlet Admin'; roleColor = '#4338ca'; roleBg = '#e0e7ff'; }
                   if (user.role === 'OUTLET_STAFF') { roleDisplay = 'Outlet Staff'; roleColor = '#0369a1'; roleBg = '#e0f2fe'; }
                   if (user.role === 'STUDENT') { roleDisplay = 'Student'; roleColor = '#15803d'; roleBg = '#dcfce3'; }
+
+                  const assignedOutletName = user.outletStaff?.outlet?.name || getOutletName(user.outletStaff?.outletId);
 
                   return (
                     <tr key={user.id} style={{ borderBottom: idx !== filteredUsers.length - 1 ? '1px solid #f3f4f6' : 'none' }}>
@@ -182,6 +245,9 @@ const Users = () => {
                           {roleDisplay}
                         </span>
                       </td>
+                      <td style={{ padding: '16px 24px', color: '#4b5563', fontSize: '0.9rem' }}>
+                        {user.role === 'OUTLET_STAFF' || user.role === 'OUTLET_ADMIN' ? (assignedOutletName || 'Not assigned') : '—'}
+                      </td>
                       <td style={{ padding: '16px 24px' }}>
                         <span style={{
                           display: 'inline-block',
@@ -196,14 +262,23 @@ const Users = () => {
                         </span>
                       </td>
                       <td style={{ padding: '16px 24px' }}>
-                        <div style={{ display: 'flex', gap: '12px' }}>
+                        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
                           <button onClick={() => setSelectedViewUser(user)} style={{ background: 'none', border: 'none', color: '#b10035', fontWeight: '500', cursor: 'pointer', fontSize: '0.85rem' }}>View</button>
-                          <button onClick={() => setSelectedEditUser(user)} style={{ background: 'none', border: 'none', color: '#3b82f6', fontWeight: '500', cursor: 'pointer', fontSize: '0.85rem' }}>Edit</button>
+                          <button onClick={() => setSelectedEditUser({
+                            ...user,
+                            outletId: user.outletStaff?.outletId || '',
+                          })} style={{ background: 'none', border: 'none', color: '#3b82f6', fontWeight: '500', cursor: 'pointer', fontSize: '0.85rem' }}>Edit</button>
                           <button 
                             onClick={() => handleSuspend(user.id, user.status)} 
-                            style={{ background: 'none', border: 'none', color: user.status === 'ACTIVE' ? '#b10035' : '#10b981', fontWeight: '500', cursor: 'pointer', fontSize: '0.85rem' }}
+                            style={{ background: 'none', border: 'none', color: user.status === 'ACTIVE' ? '#f59e0b' : '#10b981', fontWeight: '500', cursor: 'pointer', fontSize: '0.85rem' }}
                           >
                             {user.status === 'ACTIVE' ? 'Suspend' : 'Activate'}
+                          </button>
+                          <button 
+                            onClick={() => handleDeleteUser(user)} 
+                            style={{ background: 'none', border: 'none', color: '#dc2626', fontWeight: '500', cursor: 'pointer', fontSize: '0.85rem' }}
+                          >
+                            Delete
                           </button>
                         </div>
                       </td>
@@ -216,10 +291,57 @@ const Users = () => {
         </div>
       </div>
 
+      {/* Add User Modal */}
+      {showAddModal && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }}>
+          <div style={{ background: 'white', padding: '32px', borderRadius: '16px', width: '100%', maxWidth: '440px', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)' }}>
+            <h2 style={{ margin: '0 0 24px 0', fontSize: '1.5rem', fontWeight: '800' }}>Add New User</h2>
+            <form onSubmit={handleAddSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', fontSize: '0.9rem', color: '#374151' }}>Full Name</label>
+                <input required type="text" placeholder="John Doe" value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} style={inputStyle} />
+              </div>
+              <div>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', fontSize: '0.9rem', color: '#374151' }}>Email Address</label>
+                <input required type="email" placeholder="user@example.com" value={newUser.email} onChange={e => setNewUser({...newUser, email: e.target.value})} style={inputStyle} />
+              </div>
+              <div>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', fontSize: '0.9rem', color: '#374151' }}>Password (Default: Admin@123)</label>
+                <input type="password" placeholder="Leave empty for default" value={newUser.password} onChange={e => setNewUser({...newUser, password: e.target.value})} style={inputStyle} />
+              </div>
+              <div>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', fontSize: '0.9rem', color: '#374151' }}>Role</label>
+                <select value={newUser.role} onChange={e => setNewUser({...newUser, role: e.target.value})} style={{...inputStyle, background: 'white'}}>
+                  <option value="STUDENT">Student</option>
+                  <option value="OUTLET_STAFF">Outlet Staff</option>
+                  <option value="OUTLET_ADMIN">Outlet Admin</option>
+                  <option value="SUPER_ADMIN">Super Admin</option>
+                </select>
+              </div>
+              {(newUser.role === 'OUTLET_STAFF' || newUser.role === 'OUTLET_ADMIN') && (
+                <div>
+                  <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', fontSize: '0.9rem', color: '#374151' }}>Assigned Outlet</label>
+                  <select value={newUser.outletId} onChange={e => setNewUser({...newUser, outletId: e.target.value})} style={{...inputStyle, background: 'white'}}>
+                    <option value="">-- Select Outlet --</option>
+                    {outlets.map(o => (
+                      <option key={o.id} value={o.id}>{o.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '16px' }}>
+                <button type="button" onClick={() => setShowAddModal(false)} style={{ padding: '10px 20px', background: '#f3f4f6', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: '600', color: '#374151' }}>Cancel</button>
+                <button type="submit" style={{ padding: '10px 20px', background: '#b10035', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: '600' }}>Create User</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* View User Modal */}
       {selectedViewUser && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }}>
-          <div style={{ background: 'white', padding: '32px', borderRadius: '16px', width: '100%', maxWidth: '400px', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)' }}>
+          <div style={{ background: 'white', padding: '32px', borderRadius: '16px', width: '100%', maxWidth: '440px', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
               <h2 style={{ margin: 0, fontSize: '1.5rem', fontWeight: '800' }}>{selectedViewUser.name}</h2>
               <span style={{ 
@@ -234,6 +356,10 @@ const Users = () => {
               <div><strong style={{ color: '#111827' }}>User ID:</strong> {selectedViewUser.id}</div>
               <div><strong style={{ color: '#111827' }}>Email:</strong> {selectedViewUser.email}</div>
               <div><strong style={{ color: '#111827' }}>Role:</strong> {selectedViewUser.role.replace('_', ' ')}</div>
+              {(selectedViewUser.role === 'OUTLET_STAFF' || selectedViewUser.role === 'OUTLET_ADMIN') && (
+                <div><strong style={{ color: '#111827' }}>Assigned Outlet:</strong> {selectedViewUser.outletStaff?.outlet?.name || getOutletName(selectedViewUser.outletStaff?.outletId)}</div>
+              )}
+              <div><strong style={{ color: '#111827' }}>Created:</strong> {new Date(selectedViewUser.createdAt).toLocaleDateString()}</div>
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '24px' }}>
               <button onClick={() => setSelectedViewUser(null)} style={{ padding: '10px 20px', background: '#f3f4f6', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: '600', color: '#374151' }}>Close</button>
@@ -245,7 +371,7 @@ const Users = () => {
       {/* Edit User Modal */}
       {selectedEditUser && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }}>
-          <div style={{ background: 'white', padding: '32px', borderRadius: '16px', width: '100%', maxWidth: '400px', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)' }}>
+          <div style={{ background: 'white', padding: '32px', borderRadius: '16px', width: '100%', maxWidth: '440px', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)' }}>
             <h2 style={{ margin: '0 0 24px 0', fontSize: '1.5rem', fontWeight: '800' }}>Edit User</h2>
             <form onSubmit={handleEditSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div>
@@ -265,6 +391,17 @@ const Users = () => {
                   <option value="SUPER_ADMIN">Super Admin</option>
                 </select>
               </div>
+              {(selectedEditUser.role === 'OUTLET_STAFF' || selectedEditUser.role === 'OUTLET_ADMIN') && (
+                <div>
+                  <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', fontSize: '0.9rem', color: '#374151' }}>Assigned Outlet</label>
+                  <select value={selectedEditUser.outletId || ''} onChange={e => setSelectedEditUser({...selectedEditUser, outletId: e.target.value})} style={{...inputStyle, background: 'white'}}>
+                    <option value="">-- No Outlet Assigned --</option>
+                    {outlets.map(o => (
+                      <option key={o.id} value={o.id}>{o.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '16px' }}>
                 <button type="button" onClick={() => setSelectedEditUser(null)} style={{ padding: '10px 20px', background: '#f3f4f6', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: '600', color: '#374151' }}>Cancel</button>
                 <button type="submit" style={{ padding: '10px 20px', background: '#b10035', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: '600' }}>Save Changes</button>

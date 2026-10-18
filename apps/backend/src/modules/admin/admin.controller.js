@@ -144,10 +144,22 @@ const issueManualRefund = wrap(async (req, res) => {
 });
 
 // ─── General Edit (update name/email/role, outlet details, menu item) ────
+const createUser = wrap(async (req, res) => {
+  const user = await adminService.createUser(req.body);
+  await audit({ actorId: req.user.id, action: 'USER_CREATED', targetType: 'User', targetId: user.id, after: { name: user.name, email: user.email, role: user.role }, req });
+  res.status(201).json({ success: true, data: user });
+});
+
 const updateUser = wrap(async (req, res) => {
   const { user, before } = await adminService.updateUser(req.params.userId, req.body, req.user.id);
   await audit({ actorId: req.user.id, action: 'USER_UPDATED', targetType: 'User', targetId: user.id, before, after: { name: user.name, email: user.email, role: user.role }, req });
   res.status(200).json({ success: true, data: user });
+});
+
+const deleteUser = wrap(async (req, res) => {
+  const result = await adminService.deleteUser(req.params.userId, req.user.id);
+  await audit({ actorId: req.user.id, action: 'USER_DELETED', targetType: 'User', targetId: req.params.userId, after: result, req });
+  res.status(200).json({ success: true, data: result });
 });
 
 const updateOutlet = wrap(async (req, res) => {
@@ -156,12 +168,23 @@ const updateOutlet = wrap(async (req, res) => {
   res.status(200).json({ success: true, data: outlet });
 });
 
+const createMenuItem = wrap(async (req, res) => {
+  const item = await adminService.createMenuItem(req.body);
+  await audit({ actorId: req.user.id, action: 'MENU_ITEM_CREATED', targetType: 'MenuItem', targetId: item.id, after: { name: item.name, price: item.price }, req });
+  res.status(201).json({ success: true, data: item });
+});
+
 const updateMenuItem = wrap(async (req, res) => {
   const { item, before } = await adminService.updateMenuItem(req.params.itemId, req.body);
   await audit({ actorId: req.user.id, action: 'MENU_ITEM_UPDATED', targetType: 'MenuItem', targetId: item.id, before, after: { name: item.name, price: item.price, description: item.description }, req });
   res.status(200).json({ success: true, data: item });
 });
 
+const deleteMenuItem = wrap(async (req, res) => {
+  const result = await adminService.deleteMenuItem(req.params.itemId);
+  await audit({ actorId: req.user.id, action: 'MENU_ITEM_DELETED', targetType: 'MenuItem', targetId: req.params.itemId, after: result, req });
+  res.status(200).json({ success: true, data: result });
+});
 
 const deleteOutlet = wrap(async (req, res) => {
   const result = await adminService.deleteOutlet(req.params.outletId);
@@ -169,6 +192,16 @@ const deleteOutlet = wrap(async (req, res) => {
   res.status(200).json({ success: true, data: result });
 });
 
+const getSettings = wrap(async (req, res) => {
+  const settings = adminService.getSettings();
+  res.status(200).json({ success: true, data: settings });
+});
+
+const updateSettings = wrap(async (req, res) => {
+  const settings = adminService.updateSettings(req.body);
+  await audit({ actorId: req.user.id, action: 'SETTINGS_UPDATED', targetType: 'System', targetId: 'settings', after: settings, req });
+  res.status(200).json({ success: true, data: settings });
+});
 
 const runSchemaSync = wrap(async (req, res) => {
   const { ensureSchema } = require('../../lib/ensureSchema');
@@ -178,13 +211,30 @@ const runSchemaSync = wrap(async (req, res) => {
 });
 
 module.exports = {
-  getOverview, getUsers, getUser, updateUserStatus,
-  getOutlets, getOutlet, createOutlet, getAllStaff, updateOutletStatus,
-  getOrders, getOrder, getMenu, getMenuItem, updateMenuItemStatus,
+  getOverview,
+  getUsers,
+  getUser,
+  createUser,
+  updateUserStatus,
+  deleteUser,
+  getOutlets,
+  getOutlet,
+  createOutlet,
+  getAllStaff,
+  updateOutletStatus,
+  getOrders,
+  getOrder,
+  getMenu,
+  getMenuItem,
+  createMenuItem,
+  updateMenuItemStatus,
+  updateMenuItem,
+  deleteMenuItem,
   issueManualRefund,
   updateUser,
   updateOutlet,
-  updateMenuItem,
   deleteOutlet,
+  getSettings,
+  updateSettings,
   runSchemaSync,
 };

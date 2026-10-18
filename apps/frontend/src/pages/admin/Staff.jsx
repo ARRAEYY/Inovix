@@ -4,7 +4,7 @@ import api from '../../services/api/client';
 import { toast } from 'react-hot-toast';
 
 const Staff = () => {
-  const [users, setUsers] = useState([]);
+  const [staffList, setStaffList] = useState([]);
   const [outlets, setOutlets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -14,21 +14,35 @@ const Staff = () => {
   
   const [selectedViewStaff, setSelectedViewStaff] = useState(null);
   const [selectedEditStaff, setSelectedEditStaff] = useState(null);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [newStaff, setNewStaff] = useState({
+    name: '',
+    email: '',
+    password: '',
+    role: 'OUTLET_STAFF',
+    outletId: '',
+  });
 
   const fetchData = async () => {
     try {
+      setLoading(true);
       const [usersRes, outletsRes] = await Promise.all([
-        api.get('/admin/users'),
-        api.get('/admin/outlets')
+        api.get('/admin/users?pageSize=200'),
+        api.get('/admin/outlets'),
       ]);
 
-      // Backend returns a paginated envelope { items, ... }; each user carries
-      // the outlet link under `outletStaff` — flatten it to `outletId`.
-      setUsers((usersRes.data.data?.items || []).map(u => ({
-        ...u,
-        outletId: u.outletStaff?.outletId || null,
-      })));
+      const allUsers = usersRes.data.data?.items || [];
+      const staffOnly = allUsers
+        .filter(u => u.role === 'OUTLET_STAFF' || u.role === 'OUTLET_ADMIN')
+        .map(u => ({
+          ...u,
+          outletId: u.outletStaff?.outletId || null,
+          outletName: u.outletStaff?.outlet?.name || null,
+        }));
+
+      setStaffList(staffOnly);
       setOutlets(outletsRes.data.data || []);
+      setError(null);
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to load staff data');
     } finally {
@@ -40,34 +54,96 @@ const Staff = () => {
     fetchData();
   }, []);
 
-  const handleEditSubmit = async (e) => {
+  const handleAddSubmit = async (e) => {
     e.preventDefault();
+    if (!newStaff.outletId) {
+      toast.error('Please select an outlet for this staff member');
+      return;
+    }
     try {
-      await api.patch(`/admin/users/${selectedEditStaff.id}`, {
-        name: selectedEditStaff.name,
-        email: selectedEditStaff.email,
-        role: selectedEditStaff.role,
-      });
-      setUsers(users.map(u => u.id === selectedEditStaff.id ? { ...u, ...selectedEditStaff } : u));
-      setSelectedEditStaff(null);
+      const payload = {
+        name: newStaff.name.trim(),
+        email: newStaff.email.trim(),
+        password: newStaff.password || 'Admin@123',
+        role: newStaff.role,
+        outletId: newStaff.outletId,
+      };
+      const res = await api.post('/admin/users', payload);
+      const created = {
+        ...res.data.data,
+        outletId: newStaff.outletId,
+        outletName: outlets.find(o => o.id === newStaff.outletId)?.name || 'Unknown',
+      };
+      setStaffList([created, ...staffList]);
+      setShowAddModal(false);
+      setNewStaff({ name: '', email: '', password: '', role: 'OUTLET_STAFF', outletId: '' });
+      toast.success('Staff member created successfully');
     } catch (err) {
-      toast(err.response?.data?.message || 'Failed to update staff member');
+      toast.error(err.response?.data?.message || 'Failed to create staff member');
     }
   };
 
-  const getOutletName = (id) => outlets.find(o => o.id === id)?.name || 'Unknown Outlet';
+  const handleEditSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const payload = {
+        name: selectedEditStaff.name.trim(),
+        email: selectedEditStaff.email.trim(),
+        role: selectedEditStaff.role,
+        outletId: selectedEditStaff.outletId || null,
+      };
+      const res = await api.patch(`/admin/users/${selectedEditStaff.id}`, payload);
+      const updated = {
+        ...selectedEditStaff,
+        ...res.data.data,
+        outletId: selectedEditStaff.outletId,
+        outletName: outlets.find(o => o.id === selectedEditStaff.outletId)?.name || null,
+      };
+      setStaffList(staffList.map(s => s.id === selectedEditStaff.id ? updated : s));
+      setSelectedEditStaff(null);
+      toast.success('Staff member updated successfully');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to update staff member');
+    }
+  };
 
-  // Filter only staff and outlet admins
-  const staffMembers = users.filter(u => u.role === 'OUTLET_STAFF' || u.role === 'OUTLET_ADMIN');
+  const handleSuspend = async (staffId, currentStatus) => {
+    const newStatus = currentStatus === 'ACTIVE' ? 'SUSPENDED' : 'ACTIVE';
+    const confirmMsg = currentStatus === 'ACTIVE'
+      ? 'Are you sure you want to suspend this staff member?'
+      : 'Are you sure you want to reactivate this staff member?';
 
-  const filteredStaff = staffMembers.filter(m => {
-    const matchesSearch = (m.name || "").toLowerCase().includes(search.toLowerCase()) || 
-                          (m.email || "").toLowerCase().includes(search.toLowerCase());
+    if (window.confirm(confirmMsg)) {
+      try {
+        await api.patch(`/admin/users/${staffId}/status`, { status: newStatus });
+        setStaffList(staffList.map(s => s.id === staffId ? { ...s, status: newStatus } : s));
+        toast.success(`Staff member ${newStatus === 'ACTIVE' ? 'reactivated' : 'suspended'}`);
+      } catch (err) {
+        toast.error(err.response?.data?.message || 'Failed to update status');
+      }
+    }
+  };
+
+  const handleDeleteStaff = async (staff) => {
+    if (window.confirm(`Permanently remove "${staff.name}" (${staff.email})?`)) {
+      try {
+        await api.delete(`/admin/users/${staff.id}`);
+        setStaffList(staffList.filter(s => s.id !== staff.id));
+        toast.success('Staff member deleted successfully');
+      } catch (err) {
+        toast.error(err.response?.data?.message || 'Failed to delete staff member');
+      }
+    }
+  };
+
+  const getOutletName = (id) => outlets.find(o => o.id === id)?.name || 'Not assigned';
+
+  const filteredStaff = staffList.filter(m => {
+    const matchesSearch = (m.name || '').toLowerCase().includes(search.toLowerCase()) || 
+                          (m.email || '').toLowerCase().includes(search.toLowerCase());
     
     if (!matchesSearch) return false;
-    
     if (filterOutlet !== 'All' && m.outletId !== filterOutlet) return false;
-    
     return true;
   });
 
@@ -78,25 +154,33 @@ const Staff = () => {
     <AdminLayout>
       <div style={{ maxWidth: '1200px', width: '100%', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '32px', paddingBottom: '40px' }}>
         
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px' }}>
           <div>
             <h1 style={{ margin: '0 0 8px 0', fontSize: '1.75rem', fontWeight: '800', color: '#111827', letterSpacing: '-0.5px' }}>
               Staff Management
             </h1>
             <p style={{ margin: 0, color: '#4b5563', fontSize: '0.95rem' }}>
-              Manage outlet staff and access.
+              Manage outlet staff assignments, roles, and access across all campus outlets.
             </p>
           </div>
-          <button 
-            onClick={fetchData}
-            style={{ padding: '8px 16px', background: 'white', border: '1px solid #e5e7eb', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', color: '#374151', fontWeight: '500' }}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ animation: loading ? 'spin 1s linear infinite' : 'none' }}>
-              <polyline points="23 4 23 10 17 10"></polyline>
-              <polyline points="1 20 1 14 7 14"></polyline>
-              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-            </svg>
-            Refresh
-          </button>
+          <div style={{ display: 'flex', gap: '12px' }}>
+            <button 
+              onClick={fetchData}
+              style={{ padding: '10px 18px', background: 'white', border: '1px solid #e5e7eb', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', color: '#374151', fontWeight: '500' }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ animation: loading ? 'spin 1s linear infinite' : 'none' }}>
+                <polyline points="23 4 23 10 17 10"></polyline>
+                <polyline points="1 20 1 14 7 14"></polyline>
+                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+              </svg>
+              Refresh
+            </button>
+            <button 
+              onClick={() => setShowAddModal(true)}
+              style={{ padding: '10px 20px', background: '#b10035', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: '600', fontSize: '0.9rem' }}
+            >
+              + Add Staff
+            </button>
+          </div>
         </div>
 
         <div style={cardStyle}>
@@ -107,7 +191,7 @@ const Staff = () => {
                 onChange={(e) => setFilterOutlet(e.target.value)}
                 style={selectStyle}
               >
-                <option value="All">All Outlets</option>
+                <option value="All">All Outlets ({staffList.length})</option>
                 {outlets.map(o => (
                   <option key={o.id} value={o.id}>{o.name}</option>
                 ))}
@@ -127,64 +211,132 @@ const Staff = () => {
             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
               <thead>
                 <tr style={{ background: '#fafafa', borderBottom: '1px solid #e5e7eb' }}>
-                  <th style={thStyle}>Staff Name</th>
-                  <th style={thStyle}>Outlet</th>
+                  <th style={thStyle}>Staff Member</th>
+                  <th style={thStyle}>Assigned Outlet</th>
                   <th style={thStyle}>Role</th>
                   <th style={thStyle}>Status</th>
                   <th style={thStyle}>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredStaff.map((staff, idx) => (
-                  <tr key={staff.id} style={{ borderBottom: idx !== filteredStaff.length - 1 ? '1px solid #f3f4f6' : 'none' }}>
-                    <td style={{ padding: '16px 24px' }}>
-                      <div style={{ fontWeight: '700', color: '#111827' }}>{staff.name}</div>
-                      <div style={{ fontSize: '0.85rem', color: '#6b7280' }}>{staff.email}</div>
-                    </td>
-                    <td style={{ padding: '16px 24px', color: '#374151' }}>{getOutletName(staff.outletId)}</td>
-                    <td style={{ padding: '16px 24px' }}>
-                      <span style={{
-                        display: 'inline-block',
-                        padding: '4px 10px',
-                        borderRadius: '12px',
-                        fontSize: '0.75rem',
-                        fontWeight: '700',
-                        background: staff.role === 'OUTLET_ADMIN' ? '#e0e7ff' : '#e0f2fe',
-                        color: staff.role === 'OUTLET_ADMIN' ? '#4338ca' : '#0369a1'
-                      }}>
-                        {staff.role === 'OUTLET_ADMIN' ? 'Outlet Admin' : 'Staff'}
-                      </span>
-                    </td>
-                    <td style={{ padding: '16px 24px' }}>
-                      <span style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                        fontSize: '0.85rem',
-                        fontWeight: '600',
-                        color: staff.status === 'ACTIVE' ? '#10b981' : '#b10035'
-                      }}>
-                        <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: staff.status === 'ACTIVE' ? '#10b981' : '#b10035' }}></div>
-                        {staff.status === 'ACTIVE' ? 'Active' : 'Suspended'}
-                      </span>
-                    </td>
-                    <td style={{ padding: '16px 24px' }}>
-                      <div style={{ display: 'flex', gap: '12px' }}>
-                        <button onClick={() => setSelectedViewStaff(staff)} style={{ background: 'none', border: 'none', color: '#b10035', fontWeight: '500', cursor: 'pointer', fontSize: '0.85rem' }}>View</button>
-                        <button onClick={() => setSelectedEditStaff(staff)} style={{ background: 'none', border: 'none', color: '#3b82f6', fontWeight: '500', cursor: 'pointer', fontSize: '0.85rem' }}>Edit</button>
-                      </div>
+                {filteredStaff.length === 0 ? (
+                  <tr>
+                    <td colSpan="5" style={{ padding: '32px', textAlign: 'center', color: '#6b7280' }}>
+                      No staff members match the current filter.
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  filteredStaff.map((staff, idx) => (
+                    <tr key={staff.id} style={{ borderBottom: idx !== filteredStaff.length - 1 ? '1px solid #f3f4f6' : 'none' }}>
+                      <td style={{ padding: '16px 24px' }}>
+                        <div style={{ fontWeight: '700', color: '#111827' }}>{staff.name}</div>
+                        <div style={{ fontSize: '0.85rem', color: '#6b7280' }}>{staff.email}</div>
+                      </td>
+                      <td style={{ padding: '16px 24px', color: '#374151', fontWeight: '500' }}>
+                        {staff.outletName || getOutletName(staff.outletId)}
+                      </td>
+                      <td style={{ padding: '16px 24px' }}>
+                        <span style={{
+                          display: 'inline-block',
+                          padding: '4px 10px',
+                          borderRadius: '12px',
+                          fontSize: '0.75rem',
+                          fontWeight: '700',
+                          background: staff.role === 'OUTLET_ADMIN' ? '#e0e7ff' : '#e0f2fe',
+                          color: staff.role === 'OUTLET_ADMIN' ? '#4338ca' : '#0369a1'
+                        }}>
+                          {staff.role === 'OUTLET_ADMIN' ? 'Outlet Admin' : 'Outlet Staff'}
+                        </span>
+                      </td>
+                      <td style={{ padding: '16px 24px' }}>
+                        <span style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          fontSize: '0.85rem',
+                          fontWeight: '600',
+                          color: staff.status === 'ACTIVE' ? '#10b981' : '#b10035'
+                        }}>
+                          <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: staff.status === 'ACTIVE' ? '#10b981' : '#b10035' }}></div>
+                          {staff.status === 'ACTIVE' ? 'Active' : 'Suspended'}
+                        </span>
+                      </td>
+                      <td style={{ padding: '16px 24px' }}>
+                        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                          <button onClick={() => setSelectedViewStaff(staff)} style={{ background: 'none', border: 'none', color: '#b10035', fontWeight: '500', cursor: 'pointer', fontSize: '0.85rem' }}>View</button>
+                          <button onClick={() => setSelectedEditStaff({
+                            ...staff,
+                            outletId: staff.outletId || '',
+                          })} style={{ background: 'none', border: 'none', color: '#3b82f6', fontWeight: '500', cursor: 'pointer', fontSize: '0.85rem' }}>Edit</button>
+                          <button 
+                            onClick={() => handleSuspend(staff.id, staff.status)} 
+                            style={{ background: 'none', border: 'none', color: staff.status === 'ACTIVE' ? '#f59e0b' : '#10b981', fontWeight: '500', cursor: 'pointer', fontSize: '0.85rem' }}
+                          >
+                            {staff.status === 'ACTIVE' ? 'Suspend' : 'Activate'}
+                          </button>
+                          <button 
+                            onClick={() => handleDeleteStaff(staff)} 
+                            style={{ background: 'none', border: 'none', color: '#dc2626', fontWeight: '500', cursor: 'pointer', fontSize: '0.85rem' }}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
         </div>
 
+      {/* Add Staff Modal */}
+      {showAddModal && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }}>
+          <div style={{ background: 'white', padding: '32px', borderRadius: '16px', width: '100%', maxWidth: '440px', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)' }}>
+            <h2 style={{ margin: '0 0 24px 0', fontSize: '1.5rem', fontWeight: '800' }}>Add Outlet Staff</h2>
+            <form onSubmit={handleAddSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', fontSize: '0.9rem', color: '#374151' }}>Staff Full Name</label>
+                <input required type="text" placeholder="John Doe" value={newStaff.name} onChange={e => setNewStaff({...newStaff, name: e.target.value})} style={inputStyle} />
+              </div>
+              <div>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', fontSize: '0.9rem', color: '#374151' }}>Email Address</label>
+                <input required type="email" placeholder="staff@example.com" value={newStaff.email} onChange={e => setNewStaff({...newStaff, email: e.target.value})} style={inputStyle} />
+              </div>
+              <div>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', fontSize: '0.9rem', color: '#374151' }}>Initial Password</label>
+                <input type="password" placeholder="Default: Admin@123" value={newStaff.password} onChange={e => setNewStaff({...newStaff, password: e.target.value})} style={inputStyle} />
+              </div>
+              <div>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', fontSize: '0.9rem', color: '#374151' }}>Role</label>
+                <select value={newStaff.role} onChange={e => setNewStaff({...newStaff, role: e.target.value})} style={{...inputStyle, background: 'white'}}>
+                  <option value="OUTLET_STAFF">Outlet Staff (Order Prep / Counter)</option>
+                  <option value="OUTLET_ADMIN">Outlet Admin (Full Outlet Manager)</option>
+                </select>
+              </div>
+              <div>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', fontSize: '0.9rem', color: '#374151' }}>Assign to Outlet *</label>
+                <select required value={newStaff.outletId} onChange={e => setNewStaff({...newStaff, outletId: e.target.value})} style={{...inputStyle, background: 'white'}}>
+                  <option value="">-- Choose Outlet --</option>
+                  {outlets.map(o => (
+                    <option key={o.id} value={o.id}>{o.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '16px' }}>
+                <button type="button" onClick={() => setShowAddModal(false)} style={{ padding: '10px 20px', background: '#f3f4f6', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: '600', color: '#374151' }}>Cancel</button>
+                <button type="submit" style={{ padding: '10px 20px', background: '#b10035', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: '600' }}>Add Staff</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* View Staff Modal */}
       {selectedViewStaff && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }}>
-          <div style={{ background: 'white', padding: '32px', borderRadius: '16px', width: '100%', maxWidth: '400px', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)' }}>
+          <div style={{ background: 'white', padding: '32px', borderRadius: '16px', width: '100%', maxWidth: '420px', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
               <h2 style={{ margin: 0, fontSize: '1.5rem', fontWeight: '800' }}>{selectedViewStaff.name}</h2>
               <span style={{ 
@@ -199,7 +351,8 @@ const Staff = () => {
               <div><strong style={{ color: '#111827' }}>Staff ID:</strong> {selectedViewStaff.id}</div>
               <div><strong style={{ color: '#111827' }}>Email:</strong> {selectedViewStaff.email}</div>
               <div><strong style={{ color: '#111827' }}>Role:</strong> {selectedViewStaff.role.replace('_', ' ')}</div>
-              <div><strong style={{ color: '#111827' }}>Outlet:</strong> {getOutletName(selectedViewStaff.outletId)}</div>
+              <div><strong style={{ color: '#111827' }}>Assigned Outlet:</strong> {selectedViewStaff.outletName || getOutletName(selectedViewStaff.outletId)}</div>
+              <div><strong style={{ color: '#111827' }}>Created:</strong> {new Date(selectedViewStaff.createdAt).toLocaleDateString()}</div>
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '24px' }}>
               <button onClick={() => setSelectedViewStaff(null)} style={{ padding: '10px 20px', background: '#f3f4f6', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: '600', color: '#374151' }}>Close</button>
@@ -211,7 +364,7 @@ const Staff = () => {
       {/* Edit Staff Modal */}
       {selectedEditStaff && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }}>
-          <div style={{ background: 'white', padding: '32px', borderRadius: '16px', width: '100%', maxWidth: '400px', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)' }}>
+          <div style={{ background: 'white', padding: '32px', borderRadius: '16px', width: '100%', maxWidth: '420px', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)' }}>
             <h2 style={{ margin: '0 0 24px 0', fontSize: '1.5rem', fontWeight: '800' }}>Edit Staff Member</h2>
             <form onSubmit={handleEditSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div>
@@ -231,7 +384,8 @@ const Staff = () => {
               </div>
               <div>
                 <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', fontSize: '0.9rem', color: '#374151' }}>Assigned Outlet</label>
-                <select value={selectedEditStaff.outletId} onChange={e => setSelectedEditStaff({...selectedEditStaff, outletId: e.target.value})} style={{...inputStyle, background: 'white'}}>
+                <select value={selectedEditStaff.outletId || ''} onChange={e => setSelectedEditStaff({...selectedEditStaff, outletId: e.target.value})} style={{...inputStyle, background: 'white'}}>
+                  <option value="">-- No Outlet Assigned --</option>
                   {outlets.map(o => (
                     <option key={o.id} value={o.id}>{o.name}</option>
                   ))}

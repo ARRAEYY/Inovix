@@ -327,21 +327,45 @@ const updateUserSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
   email: z.string().email().optional(),
   role: z.enum(['STUDENT', 'OUTLET_STAFF', 'OUTLET_ADMIN', 'SUPER_ADMIN']).optional(),
+  outletId: z.string().nullable().optional(),
+}).strict();
+
+const createUserSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  email: z.string().email(),
+  password: z.string().min(6).optional(),
+  role: z.enum(['STUDENT', 'OUTLET_STAFF', 'OUTLET_ADMIN', 'SUPER_ADMIN']).default('STUDENT'),
+  outletId: z.string().nullable().optional(),
 }).strict();
 
 const updateOutletSchema = z.object({
   name: z.string().trim().min(1).optional(),
-  description: z.string().optional(),
-  location: z.string().optional(),
+  description: z.string().nullable().optional(),
+  location: z.string().nullable().optional(),
+  contactEmail: z.string().email().nullable().optional().or(z.literal('')),
+  contactNumber: z.string().nullable().optional().or(z.literal('')),
   status: z.enum(['OPEN', 'BUSY', 'CLOSED', 'PENDING', 'SUSPENDED']).optional(),
 }).strict();
 
 const updateMenuItemSchema = z.object({
   name: z.string().trim().min(1).optional(),
-  description: z.string().optional(),
+  description: z.string().nullable().optional(),
   price: z.number().positive().optional(),
-  imageUrl: z.string().url().nullable().optional(),
+  imageUrl: z.string().url().nullable().optional().or(z.literal('')),
   isAvailable: z.boolean().optional(),
+  vegetarian: z.boolean().optional(),
+  categoryId: z.string().nullable().optional(),
+}).strict();
+
+const createMenuItemSchema = z.object({
+  outletId: z.string().min(1),
+  name: z.string().trim().min(1),
+  description: z.string().nullable().optional(),
+  price: z.number().positive(),
+  imageUrl: z.string().url().nullable().optional().or(z.literal('')),
+  isAvailable: z.boolean().optional().default(true),
+  vegetarian: z.boolean().optional().default(false),
+  categoryId: z.string().nullable().optional(),
 }).strict();
 
 
@@ -379,8 +403,10 @@ module.exports = {
   refundCreateSchema,
   outletStaffInviteSchema,
   updateUserSchema,
+  createUserSchema,
   updateOutletSchema,
   updateMenuItemSchema,
+  createMenuItemSchema,
   outletProfileUpdateSchema,
   operatingHoursSchema,
   operatingHoursListSchema,

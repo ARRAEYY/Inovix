@@ -9,8 +9,10 @@ const {
   updateMenuAvailabilitySchema,
   refundCreateSchema,
   updateUserSchema,
+  createUserSchema,
   updateOutletSchema,
   updateMenuItemSchema,
+  createMenuItemSchema,
 } = require('@nosh/validation');
 const { z } = require('zod');
 
@@ -25,9 +27,11 @@ router.get('/users', validateQuery(z.object({
   page: z.coerce.number().int().min(1).optional(),
   pageSize: z.coerce.number().int().min(1).max(500).optional(),
 })), adminController.getUsers);
+router.post('/users', validateBody(createUserSchema), adminController.createUser);
 router.get('/users/:userId', adminController.getUser);
 router.patch('/users/:userId/status', validateBody(updateUserStatusSchema), adminController.updateUserStatus);
 router.patch('/users/:userId', validateBody(updateUserSchema), adminController.updateUser);
+router.delete('/users/:userId', adminController.deleteUser);
 
 router.get('/outlets', adminController.getOutlets);
 router.post('/outlets', adminController.createOutlet);
@@ -45,18 +49,17 @@ router.get('/orders', validateQuery(z.object({
 router.get('/orders/:orderId', adminController.getOrder);
 
 // INO-P0-7 / INO-P0-8 / INO-P0-9: manual super-admin refund endpoint.
-// - Issues a fresh SUPER_ADMIN_MANUAL refund for a PAID payment, OR
-// - Retries an existing PENDING refund (recovery for finding #8 — auto-
-//   refund left the system in CANCELLED+PAID+PENDING state).
-// - Rejects if a COMPLETED refund already exists.
-// - The client-supplied `trigger` field in the schema is intentionally
-//   ignored — the service always sets triggeredBy = SUPER_ADMIN_MANUAL.
 router.post('/refunds', validateBody(refundCreateSchema), adminController.issueManualRefund);
 
 router.get('/menu', adminController.getMenu);
+router.post('/menu', validateBody(createMenuItemSchema), adminController.createMenuItem);
 router.get('/menu/:itemId', adminController.getMenuItem);
 router.patch('/menu/:itemId/status', validateBody(updateMenuAvailabilitySchema), adminController.updateMenuItemStatus);
 router.patch('/menu/:itemId', validateBody(updateMenuItemSchema), adminController.updateMenuItem);
+router.delete('/menu/:itemId', adminController.deleteMenuItem);
+
+router.get('/settings', adminController.getSettings);
+router.put('/settings', adminController.updateSettings);
 
 router.post('/maintenance/migrate', adminController.runSchemaSync);
 

@@ -9,15 +9,16 @@ const Profile = () => {
   const [saving, setSaving] = useState(false);
   const [nameDraft, setNameDraft] = useState(user?.name || '');
   const [emailDraft, setEmailDraft] = useState(user?.email || '');
+  const [oldPassword, setOldPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [changingPassword, setChangingPassword] = useState(false);
   const [status, setStatus] = useState(null); // { ok: boolean, text: string }
 
-  // Persist the name change via PUT /auth/me (handled in AuthContext). Email
-  // is read-only for super admins (the backend rejects email edits in V1) —
-  // we render the field disabled to be honest about that.
   const handleSave = async () => {
     const name = nameDraft.trim();
     if (!name) {
       setStatus({ ok: false, text: 'Name cannot be empty' });
+      toast.error('Name cannot be empty');
       return;
     }
     try {
@@ -26,13 +27,39 @@ const Profile = () => {
       const updated = await updateProfile({ name });
       if (updated) {
         setStatus({ ok: true, text: 'Profile updated successfully' });
+        toast.success('Profile updated successfully');
       } else {
         setStatus({ ok: false, text: 'Could not update profile' });
+        toast.error('Could not update profile');
       }
     } catch (err) {
       setStatus({ ok: false, text: err.message || 'Could not update profile' });
+      toast.error(err.message || 'Could not update profile');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleChangePassword = async (e) => {
+    e.preventDefault();
+    if (!oldPassword || !newPassword) {
+      toast.error('Please enter both current and new password');
+      return;
+    }
+    if (newPassword.length < 8) {
+      toast.error('New password must be at least 8 characters');
+      return;
+    }
+    try {
+      setChangingPassword(true);
+      await client.patch('/auth/me/password', { oldPassword, newPassword });
+      setOldPassword('');
+      setNewPassword('');
+      toast.success('Password changed successfully');
+    } catch (e) {
+      toast.error(e.response?.data?.message || 'Failed to change password');
+    } finally {
+      setChangingPassword(false);
     }
   };
 
@@ -50,23 +77,23 @@ const Profile = () => {
         
         <div>
           <h1 style={{ margin: '0 0 8px 0', fontSize: '1.75rem', fontWeight: '800', color: '#111827', letterSpacing: '-0.5px' }}>
-            Profile
+            Admin Profile
           </h1>
           <p style={{ margin: 0, color: '#4b5563', fontSize: '0.95rem' }}>
-            Manage your Super Admin account.
+            Manage your Super Admin credentials and account settings.
           </p>
         </div>
 
         <div style={cardStyle}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '24px', marginBottom: '32px' }}>
             <div style={{ 
-              width: '80px', height: '80px', borderRadius: '50%', background: '#b10035', color: 'white', 
-              display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '2rem', fontWeight: '800' 
+              width: '76px', height: '76px', borderRadius: '50%', background: '#b10035', color: 'white', 
+              display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.8rem', fontWeight: '800' 
             }}>
               {user?.name ? user.name.charAt(0).toUpperCase() : 'A'}
             </div>
             <div>
-              <h2 style={{ margin: '0 0 4px 0', fontSize: '1.5rem', fontWeight: '800', color: '#111827' }}>
+              <h2 style={{ margin: '0 0 4px 0', fontSize: '1.4rem', fontWeight: '800', color: '#111827' }}>
                 {user?.name || 'Admin User'}
               </h2>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -80,19 +107,19 @@ const Profile = () => {
                   color: '#10b981'
                 }}>
                   <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10b981' }}></div>
-                  Active
+                  Active Super Admin
                 </span>
               </div>
             </div>
           </div>
 
-          <div style={{ borderTop: '1px solid #e5e7eb', paddingTop: '32px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '200px 1fr', alignItems: 'center' }}>
+          <div style={{ borderTop: '1px solid #e5e7eb', paddingTop: '28px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr', alignItems: 'center' }}>
               <span style={{ fontWeight: '600', color: '#374151' }}>Role</span>
-              <span style={{ color: '#111827', fontWeight: '500' }}>Super Admin (Unchangeable)</span>
+              <span style={{ color: '#b10035', fontWeight: '700' }}>Super Admin (Platform Owner)</span>
             </div>
             
-            <div style={{ display: 'grid', gridTemplateColumns: '200px 1fr', alignItems: 'center' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr', alignItems: 'center' }}>
               <span style={{ fontWeight: '600', color: '#374151' }}>Full Name</span>
               <input
                 type="text"
@@ -102,7 +129,7 @@ const Profile = () => {
               />
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '200px 1fr', alignItems: 'center' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr', alignItems: 'center' }}>
               <span style={{ fontWeight: '600', color: '#374151' }}>Email Address</span>
               <input
                 type="email"
@@ -112,33 +139,39 @@ const Profile = () => {
               />
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '200px 1fr', alignItems: 'center' }}>
-              <span style={{ fontWeight: '600', color: '#374151' }}>Change Password</span>
-              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                <input type="password" placeholder="Current password" id="oldPw" style={{ width: '150px', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: '8px', fontSize: '0.9rem' }} />
-                <input type="password" placeholder="New password (8+)" id="newPw" minLength="8" style={{ width: '150px', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: '8px', fontSize: '0.9rem' }} />
-                <button onClick={async () => {
-                  const oldPw = document.getElementById('oldPw').value;
-                  const newPw = document.getElementById('newPw').value;
-                  if (!oldPw || !newPw) { toast('Fill in both passwords'); return; }
-                  try {
-                    client
-                    await client.patch('/auth/me/password', { oldPassword: oldPw, newPassword: newPw });
-                    document.getElementById('oldPw').value = '';
-                    document.getElementById('newPw').value = '';
-                    toast('Password changed successfully');
-                  } catch (e) { toast(e.response?.data?.message || 'Failed to change password'); }
-                }} style={{ padding: '8px 16px', background: '#b10035', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '600', cursor: 'pointer' }}>
-                  Change
+            <div style={{ borderTop: '1px solid #f3f4f6', paddingTop: '20px', display: 'grid', gridTemplateColumns: '180px 1fr', alignItems: 'flex-start' }}>
+              <span style={{ fontWeight: '600', color: '#374151', paddingTop: '8px' }}>Security</span>
+              <form onSubmit={handleChangePassword} style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+                <input
+                  type="password"
+                  placeholder="Current password"
+                  value={oldPassword}
+                  onChange={(e) => setOldPassword(e.target.value)}
+                  style={{ width: '160px', padding: '9px 12px', border: '1px solid #d1d5db', borderRadius: '8px', fontSize: '0.9rem' }}
+                />
+                <input
+                  type="password"
+                  placeholder="New password (8+)"
+                  minLength="8"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  style={{ width: '160px', padding: '9px 12px', border: '1px solid #d1d5db', borderRadius: '8px', fontSize: '0.9rem' }}
+                />
+                <button
+                  type="submit"
+                  disabled={changingPassword}
+                  style={{ padding: '9px 18px', background: '#b10035', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '600', cursor: 'pointer', opacity: changingPassword ? 0.7 : 1 }}
+                >
+                  {changingPassword ? 'Updating...' : 'Change Password'}
                 </button>
-              </div>
+              </form>
             </div>
           </div>
 
           {status && (
             <div style={{
-              marginTop: '8px',
-              padding: '0.65rem 1rem',
+              marginTop: '16px',
+              padding: '0.75rem 1rem',
               borderRadius: '8px',
               fontSize: '0.9rem',
               fontWeight: 600,
@@ -154,7 +187,7 @@ const Profile = () => {
             <button onClick={handleDiscard} disabled={saving} style={{ padding: '10px 20px', background: 'white', color: '#374151', border: '1px solid #d1d5db', borderRadius: '8px', cursor: saving ? 'not-allowed' : 'pointer', fontWeight: '600', opacity: saving ? 0.7 : 1 }}>
               Discard Changes
             </button>
-            <button onClick={handleSave} disabled={saving} style={{ padding: '10px 20px', background: '#b10035', color: 'white', border: 'none', borderRadius: '8px', cursor: saving ? 'not-allowed' : 'pointer', fontWeight: '600', opacity: saving ? 0.7 : 1 }}>
+            <button onClick={handleSave} disabled={saving} style={{ padding: '10px 22px', background: '#b10035', color: 'white', border: 'none', borderRadius: '8px', cursor: saving ? 'not-allowed' : 'pointer', fontWeight: '600', opacity: saving ? 0.7 : 1 }}>
               {saving ? 'Saving...' : 'Save Profile'}
             </button>
           </div>
@@ -177,7 +210,7 @@ const cardStyle = {
 const inputStyle = {
   width: '100%',
   maxWidth: '400px',
-  padding: '10px 16px',
+  padding: '10px 14px',
   border: '1px solid #d1d5db',
   borderRadius: '8px',
   fontSize: '0.95rem'

@@ -547,7 +547,7 @@ const Orders = () => {
                               <div className="pickup-panel">
                                 <span className="pickup-label">PICKUP CODE</span>
                                 <span className="pickup-code">{order.pickupCode}</span>
-                                <span className="pickup-note">Show this at the outlet counter</span>
+                                <span className="pickup-note">Show this at the outlet counter • Please pick up within 15 minutes</span>
                               </div>
                             )}
 

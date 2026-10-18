@@ -272,220 +272,301 @@ const OutletAdminHistory = () => {
         </div>
 
         {/* View Switcher Tabs: Live Orders vs History */}
-        <div style={{ display: 'flex', borderBottom: '1px solid #e5e7eb', gap: '8px' }}>
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: '1fr 1fr',
+          background: '#f3f4f6',
+          padding: '4px',
+          borderRadius: '12px',
+          gap: '4px',
+          maxWidth: '360px',
+          width: '100%',
+        }}>
           <NavLink
             to="/outlet/admin/orders"
-            style={{
-              padding: '10px 20px',
-              fontWeight: '600',
-              fontSize: '0.95rem',
-              color: '#6b7280',
+            style={({ isActive }) => ({
+              padding: '8px 16px',
+              fontWeight: isActive ? '700' : '600',
+              fontSize: '0.88rem',
+              color: isActive ? '#111827' : '#6b7280',
+              background: isActive ? 'white' : 'transparent',
+              borderRadius: '9px',
               textDecoration: 'none',
-              borderBottom: '2px solid transparent',
               display: 'flex',
               alignItems: 'center',
-              gap: '8px'
-            }}
+              justifyContent: 'center',
+              gap: '6px',
+              boxShadow: isActive ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+              transition: 'all 0.15s ease'
+            })}
           >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <rect x="3" y="3" width="7" height="7"></rect>
               <rect x="14" y="3" width="7" height="7"></rect>
               <rect x="14" y="14" width="7" height="7"></rect>
               <rect x="3" y="14" width="7" height="7"></rect>
             </svg>
-            Live Orders (Kanban)
+            Live Orders
           </NavLink>
 
           <NavLink
             to="/outlet/admin/history"
-            style={{
-              padding: '10px 20px',
-              fontWeight: '700',
-              fontSize: '0.95rem',
-              color: '#b10035',
+            style={({ isActive }) => ({
+              padding: '8px 16px',
+              fontWeight: isActive ? '700' : '600',
+              fontSize: '0.88rem',
+              color: isActive ? '#111827' : '#6b7280',
+              background: isActive ? 'white' : 'transparent',
+              borderRadius: '9px',
               textDecoration: 'none',
-              borderBottom: '2px solid #b10035',
               display: 'flex',
               alignItems: 'center',
-              gap: '8px'
-            }}
+              justifyContent: 'center',
+              gap: '6px',
+              boxShadow: isActive ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+              transition: 'all 0.15s ease'
+            })}
           >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="12" cy="12" r="10"></circle>
               <polyline points="12 6 12 12 16 14"></polyline>
             </svg>
-            Order History
+            History
           </NavLink>
         </div>
 
-        {/* Day Filter Section */}
-        <div style={{ background: 'white', borderRadius: '16px', border: '1px solid #e5e7eb', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-            
-            {/* Quick Day Presets */}
-            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
-              <span style={{ fontSize: '0.9rem', fontWeight: '700', color: '#374151', marginRight: '4px' }}>
-                Filter Day:
+        {/* Search & Filter Bar */}
+        <div style={{
+          background: 'white',
+          borderRadius: '16px',
+          border: '1px solid #e5e7eb',
+          padding: '16px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '12px',
+          boxShadow: '0 1px 2px rgba(0,0,0,0.02)'
+        }}>
+          {/* Row 1: Search Bar */}
+          <div style={{ position: 'relative', width: '100%' }}>
+            <input
+              type="text"
+              placeholder="Search order #, customer, item..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '10px 14px 10px 38px',
+                borderRadius: '10px',
+                border: '1px solid #d1d5db',
+                fontSize: '0.88rem',
+                outline: 'none',
+                background: '#fafafa',
+                boxSizing: 'border-box'
+              }}
+            />
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="#9ca3af"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }}
+            >
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+          </div>
+
+          {/* Row 2: Date Navigator & Picker */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            background: '#f9fafb',
+            padding: '6px 8px',
+            borderRadius: '10px',
+            border: '1px solid #e5e7eb',
+            gap: '8px'
+          }}>
+            <button
+              type="button"
+              onClick={() => handleShiftDay(-1)}
+              title="Previous Day"
+              style={{
+                width: '32px',
+                height: '32px',
+                borderRadius: '8px',
+                border: '1px solid #e5e7eb',
+                background: 'white',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '1.2rem',
+                color: '#374151',
+                flexShrink: 0
+              }}
+            >
+              ‹
+            </button>
+
+            <label style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
+              cursor: 'pointer',
+              position: 'relative',
+              flex: 1,
+              textAlign: 'center',
+              margin: 0
+            }}>
+              <span style={{ fontWeight: '700', fontSize: '0.9rem', color: '#111827' }}>
+                {dayFilter === 'ALL'
+                  ? 'All Days'
+                  : dayFilter === 'LAST_7_DAYS'
+                  ? 'Last 7 Days'
+                  : customDate === todayStr
+                  ? `Today · ${new Date(customDate).toLocaleDateString('en-US', { day: 'numeric', month: 'short' })}`
+                  : customDate === yesterdayStr
+                  ? `Yesterday · ${new Date(customDate).toLocaleDateString('en-US', { day: 'numeric', month: 'short' })}`
+                  : new Date(customDate).toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
               </span>
-              {[
-                { key: 'TODAY', label: 'Today' },
-                { key: 'YESTERDAY', label: 'Yesterday' },
-                { key: 'LAST_7_DAYS', label: 'Last 7 Days' },
-                { key: 'ALL', label: 'All Days' },
-              ].map((p) => {
-                const isActive = dayFilter === p.key;
-                return (
-                  <button
-                    key={p.key}
-                    type="button"
-                    onClick={() => handleSelectPreset(p.key)}
-                    style={{
-                      padding: '6px 14px',
-                      borderRadius: '20px',
-                      border: isActive ? '1px solid #b10035' : '1px solid #d1d5db',
-                      background: isActive ? '#b10035' : 'white',
-                      color: isActive ? 'white' : '#4b5563',
-                      fontWeight: isActive ? '700' : '500',
-                      fontSize: '0.85rem',
-                      cursor: 'pointer',
-                      transition: 'all 0.15s ease'
-                    }}
-                  >
-                    {p.label}
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Custom Day Picker with Prev / Next Buttons */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <button
-                type="button"
-                onClick={() => handleShiftDay(-1)}
-                title="Previous Day"
-                style={{
-                  width: '32px',
-                  height: '32px',
-                  borderRadius: '8px',
-                  border: '1px solid #d1d5db',
-                  background: 'white',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: '#374151'
-                }}
-              >
-                ‹
-              </button>
-
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                <line x1="16" y1="2" x2="16" y2="6"></line>
+                <line x1="8" y1="2" x2="8" y2="6"></line>
+                <line x1="3" y1="10" x2="21" y2="10"></line>
+              </svg>
               <input
                 type="date"
                 value={customDate}
                 onChange={(e) => {
-                  setCustomDate(e.target.value);
-                  setDayFilter('CUSTOM');
+                  if (e.target.value) {
+                    setCustomDate(e.target.value);
+                    setDayFilter('CUSTOM');
+                  }
                 }}
                 style={{
-                  padding: '6px 10px',
-                  borderRadius: '8px',
-                  border: dayFilter === 'CUSTOM' ? '1px solid #b10035' : '1px solid #d1d5db',
-                  fontSize: '0.85rem',
-                  fontWeight: '600',
-                  color: '#111827',
-                  outline: 'none',
-                  background: dayFilter === 'CUSTOM' ? '#fff5f5' : 'white'
+                  position: 'absolute',
+                  opacity: 0,
+                  width: '100%',
+                  height: '100%',
+                  left: 0,
+                  top: 0,
+                  cursor: 'pointer'
                 }}
               />
+            </label>
 
-              <button
-                type="button"
-                onClick={() => handleShiftDay(1)}
-                title="Next Day"
-                style={{
-                  width: '32px',
-                  height: '32px',
-                  borderRadius: '8px',
-                  border: '1px solid #d1d5db',
-                  background: 'white',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: '#374151'
-                }}
-              >
-                ›
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => handleShiftDay(1)}
+              title="Next Day"
+              style={{
+                width: '32px',
+                height: '32px',
+                borderRadius: '8px',
+                border: '1px solid #e5e7eb',
+                background: 'white',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '1.2rem',
+                color: '#374151',
+                flexShrink: 0
+              }}
+            >
+              ›
+            </button>
           </div>
 
-          {/* Status & Search Row */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', borderTop: '1px solid #f3f4f6', paddingTop: '16px' }}>
-            {/* Status Pills */}
-            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-              {[
-                { key: 'ALL', label: 'All Statuses' },
-                { key: 'COMPLETED', label: 'Completed' },
-                { key: 'READY', label: 'Ready' },
-                { key: 'PREPARING', label: 'Preparing' },
-                { key: 'NEW', label: 'New' },
-                { key: 'CANCELLED', label: 'Cancelled' },
-              ].map((s) => {
-                const isActive = statusFilter === s.key;
-                return (
-                  <button
-                    key={s.key}
-                    type="button"
-                    onClick={() => setStatusFilter(s.key)}
-                    style={{
-                      padding: '4px 10px',
-                      borderRadius: '6px',
-                      border: 'none',
-                      background: isActive ? '#f3f4f6' : 'transparent',
-                      color: isActive ? '#111827' : '#6b7280',
-                      fontWeight: isActive ? '700' : '500',
-                      fontSize: '0.82rem',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    {s.label}
-                  </button>
-                );
-              })}
-            </div>
+          {/* Row 3: Swipeable Quick Day Preset Chips */}
+          <div style={{
+            display: 'flex',
+            gap: '6px',
+            overflowX: 'auto',
+            paddingBottom: '2px',
+            scrollbarWidth: 'none',
+            WebkitOverflowScrolling: 'touch'
+          }}>
+            {[
+              { key: 'TODAY', label: 'Today' },
+              { key: 'YESTERDAY', label: 'Yesterday' },
+              { key: 'LAST_7_DAYS', label: 'Last 7 Days' },
+              { key: 'ALL', label: 'All Days' },
+            ].map((p) => {
+              const isActive = dayFilter === p.key;
+              return (
+                <button
+                  key={p.key}
+                  type="button"
+                  onClick={() => handleSelectPreset(p.key)}
+                  style={{
+                    padding: '5px 12px',
+                    borderRadius: '16px',
+                    border: isActive ? '1px solid #b10035' : '1px solid #e5e7eb',
+                    background: isActive ? '#b10035' : 'white',
+                    color: isActive ? 'white' : '#4b5563',
+                    fontWeight: isActive ? '700' : '500',
+                    fontSize: '0.8rem',
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0,
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  {p.label}
+                </button>
+              );
+            })}
+          </div>
 
-            {/* Search Input */}
-            <div style={{ position: 'relative', minWidth: '240px', flex: '1', maxWidth: '360px' }}>
-              <input
-                type="text"
-                placeholder="Search order #, customer, item..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '8px 12px 8px 34px',
-                  borderRadius: '8px',
-                  border: '1px solid #d1d5db',
-                  fontSize: '0.85rem',
-                  outline: 'none'
-                }}
-              />
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="#9ca3af"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)' }}
-              >
-                <circle cx="11" cy="11" r="8"></circle>
-                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-              </svg>
-            </div>
+          {/* Row 4: Swipeable Status Filter Chips */}
+          <div style={{
+            display: 'flex',
+            gap: '6px',
+            overflowX: 'auto',
+            paddingTop: '8px',
+            borderTop: '1px solid #f3f4f6',
+            scrollbarWidth: 'none',
+            WebkitOverflowScrolling: 'touch'
+          }}>
+            {[
+              { key: 'ALL', label: 'All' },
+              { key: 'COMPLETED', label: 'Completed' },
+              { key: 'READY', label: 'Ready' },
+              { key: 'PREPARING', label: 'Preparing' },
+              { key: 'NEW', label: 'New' },
+              { key: 'CANCELLED', label: 'Cancelled' },
+            ].map((s) => {
+              const isActive = statusFilter === s.key;
+              return (
+                <button
+                  key={s.key}
+                  type="button"
+                  onClick={() => setStatusFilter(s.key)}
+                  style={{
+                    padding: '4px 10px',
+                    borderRadius: '6px',
+                    border: 'none',
+                    background: isActive ? '#f3f4f6' : 'transparent',
+                    color: isActive ? '#111827' : '#6b7280',
+                    fontWeight: isActive ? '700' : '500',
+                    fontSize: '0.8rem',
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0
+                  }}
+                >
+                  {s.label}
+                </button>
+              );
+            })}
           </div>
         </div>
 

@@ -1,14 +1,17 @@
 import React from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useLocation } from 'react-router-dom';
 import useKeyboardStatus from '../../hooks/useKeyboardStatus';
 
 const OutletAdminBottomNav = () => {
   const isKeyboardOpen = useKeyboardStatus();
+  const location = useLocation();
 
   if (isKeyboardOpen) return null;
 
+  const isOrdersActive = location.pathname.startsWith('/outlet/admin/orders') || location.pathname.startsWith('/outlet/admin/history');
+
   return (
-    <nav className="outlet-bottom-nav mobile-only" style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)' }}>
+    <nav className="outlet-bottom-nav mobile-only" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)' }}>
       <NavLink 
         to="/outlet/admin" 
         end
@@ -20,29 +23,18 @@ const OutletAdminBottomNav = () => {
           <rect x="14" y="14" width="7" height="7"></rect>
           <rect x="3" y="14" width="7" height="7"></rect>
         </svg>
-        <span className="nav-label" style={{ fontSize: '0.7rem' }}>Dashboard</span>
+        <span className="nav-label">Dashboard</span>
       </NavLink>
 
       <NavLink 
         to="/outlet/admin/orders" 
-        className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+        className={() => `nav-item ${isOrdersActive ? 'active' : ''}`}
       >
         <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <polyline points="9 11 12 14 22 4"></polyline>
           <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
         </svg>
-        <span className="nav-label" style={{ fontSize: '0.7rem' }}>Orders</span>
-      </NavLink>
-
-      <NavLink 
-        to="/outlet/admin/history" 
-        className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
-      >
-        <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="12" cy="12" r="10"></circle>
-          <polyline points="12 6 12 12 16 14"></polyline>
-        </svg>
-        <span className="nav-label" style={{ fontSize: '0.7rem' }}>History</span>
+        <span className="nav-label">Orders</span>
       </NavLink>
 
       <NavLink 
@@ -57,7 +49,7 @@ const OutletAdminBottomNav = () => {
           <line x1="3" y1="12" x2="3.01" y2="12"></line>
           <line x1="3" y1="18" x2="3.01" y2="18"></line>
         </svg>
-        <span className="nav-label" style={{ fontSize: '0.7rem' }}>Menu</span>
+        <span className="nav-label">Menu</span>
       </NavLink>
 
       <NavLink 
@@ -70,7 +62,7 @@ const OutletAdminBottomNav = () => {
           <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
           <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
         </svg>
-        <span className="nav-label" style={{ fontSize: '0.7rem' }}>Staff</span>
+        <span className="nav-label">Staff</span>
       </NavLink>
     </nav>
   );

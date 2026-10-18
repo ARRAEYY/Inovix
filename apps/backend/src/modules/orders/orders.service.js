@@ -25,8 +25,8 @@ const { cached, cacheDelPrefix } = require('../../lib/cache');
 const ORDERS_CACHE_TTL = 20;
 const userOrdersKey = (studentId, { page, pageSize, status }) =>
   `orders:u:${studentId}:p${page || 1}:s${pageSize || 20}:st${status || 'all'}`;
-const outletOrdersKey = (outletId, { page, pageSize, status }) =>
-  `orders:o:${outletId}:p${page || 1}:s${pageSize || 20}:st${status || 'all'}`;
+const outletOrdersKey = (outletId, { page, pageSize, status, date }) =>
+  `orders:o:${outletId}:p${page || 1}:s${pageSize || 20}:st${status || 'all'}:d${date || 'all'}`;
 
 // INO-AUDIT3-4 fix: use integer paise internally for money arithmetic.
 // PLATFORM_FEE is in rupees; the paise equivalent is 500.
@@ -180,9 +180,9 @@ async function getOrderById(studentId, orderId) {
   return order;
 }
 
-async function getOutletOrders(outletId, { page, pageSize, status } = {}) {
-  return cached(outletOrdersKey(outletId, { page, pageSize, status }), ORDERS_CACHE_TTL, () =>
-    ordersRepo.findByOutletId(outletId, { page, pageSize, status })
+async function getOutletOrders(outletId, { page, pageSize, status, date } = {}) {
+  return cached(outletOrdersKey(outletId, { page, pageSize, status, date }), ORDERS_CACHE_TTL, () =>
+    ordersRepo.findByOutletId(outletId, { page, pageSize, status, date })
   );
 }
 

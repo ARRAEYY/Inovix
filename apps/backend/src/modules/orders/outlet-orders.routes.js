@@ -13,8 +13,9 @@ router.use(protect, authorizeRole(...OUTLET_ROLES), requireOutletScope);
 
 router.get('/', validateQuery(z.object({
   page: z.coerce.number().int().min(1).optional(),
-  pageSize: z.coerce.number().int().min(1).max(200).optional(),
+  pageSize: z.coerce.number().int().min(1).max(500).optional(),
   status: z.string().optional(),
+  date: z.string().optional(),
 })), getOutletOrders);
 
 // INO-P1-32: dedicated KPIs and Analytics endpoints — mounted BEFORE /:orderId

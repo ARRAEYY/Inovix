@@ -119,13 +119,20 @@ async function getOutletOrders(req, res, next) {
     const outletId = req.user.outletId;
     if (!outletId) throw { statusCode: 403, message: 'User is not assigned to an outlet' };
 
-    const { page, pageSize, status } = req.query;
+    const { page, pageSize, status, date } = req.query;
     const orders = await ordersService.getOutletOrders(outletId, {
       page: page ? Number(page) : 1,
-      pageSize: pageSize ? Number(pageSize) : 50,
+      pageSize: pageSize ? Number(pageSize) : 100,
       status,
+      date,
     });
-    res.status(200).json({ success: true, data: orders });
+    res.status(200).json({ 
+      success: true, 
+      data: orders.map(o => ({
+        ...o,
+        studentName: o.student?.name || o.studentName || 'Student',
+      })) 
+    });
   } catch (error) {
     next(error);
   }

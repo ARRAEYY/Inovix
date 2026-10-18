@@ -10,6 +10,7 @@ const prisma = require('../../lib/prisma');
 
 const ORDER_INCLUDE = {
   items: true,
+  student: { select: { id: true, name: true, email: true, phone: true } },
   payment: { include: { refunds: true } },
 };
 
@@ -96,12 +97,28 @@ async function findByUserId(studentId, { page = 1, pageSize = 20, status } = {})
   });
 }
 
-async function findByOutletId(outletId, { page = 1, pageSize = 50, status } = {}) {
+async function findByOutletId(outletId, { page = 1, pageSize = 50, status, date } = {}) {
   const where = {
     outletId,
-    payment: { status: { in: ['PAID', 'REFUNDED'] } },
+    OR: [
+      { payment: { status: { in: ['PAID', 'REFUNDED'] } } },
+      { payment: null },
+    ],
   };
   if (status) where.status = status;
+  if (date) {
+    const d = new Date(date);
+    if (!isNaN(d.getTime())) {
+      const startOfDay = new Date(date);
+      startOfDay.setHours(0, 0, 0, 0);
+      const endOfDay = new Date(date);
+      endOfDay.setHours(23, 59, 59, 999);
+      where.createdAt = {
+        gte: startOfDay,
+        lte: endOfDay,
+      };
+    }
+  }
   return prisma.order.findMany({
     where,
     orderBy: { createdAt: 'desc' },

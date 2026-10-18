@@ -39,8 +39,8 @@ export const getDashboardStats = async () => {
   };
 };
 
-export const getOrders = async () => {
-  const response = await api.get('/outlet/orders');
+export const getOrders = async (params = {}) => {
+  const response = await api.get('/outlet/orders', { params });
   return response.data;
 };
 

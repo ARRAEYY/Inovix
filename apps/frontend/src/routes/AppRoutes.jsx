@@ -21,6 +21,7 @@ import OutletMenuPage from '../pages/outlet/OutletMenuPage';
 import OutletProfile from '../pages/outlet/OutletProfile';
 import OutletAdminDashboard from '../pages/outlet/admin/OutletAdminDashboard';
 import OutletAdminOrders from '../pages/outlet/admin/OutletAdminOrders';
+import OutletAdminHistory from '../pages/outlet/admin/OutletAdminHistory';
 import OutletAdminMenu from '../pages/outlet/admin/OutletAdminMenu';
 import OutletAdminStaff from '../pages/outlet/admin/OutletAdminStaff';
 import OutletAdminHours from '../pages/outlet/admin/OutletAdminHours';
@@ -117,6 +118,7 @@ const AppRoutes = () => {
             <Routes>
               <Route path="/" element={<OutletAdminDashboard />} />
               <Route path="/orders" element={<OutletAdminOrders />} />
+              <Route path="/history" element={<OutletAdminHistory />} />
               <Route path="/menu" element={<OutletAdminMenu />} />
               <Route path="/staff" element={<OutletAdminStaff />} />
               <Route path="/hours" element={<OutletAdminHours />} />

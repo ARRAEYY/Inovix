@@ -31,6 +31,7 @@ export const getDashboardStats = async () => {
       weeklyOrders: (d.weeklyOrders || []).map((w) => ({ ...w, day: (w.day || '?').charAt(0) })),
       attentionNeeded: (d.attentionNeeded || []).map((a) => ({
         ...a,
+        path: a.path || (a.action === 'Update menu' ? '/outlet/admin/menu' : '/outlet/admin/orders'),
         color: alertColor[a.type] || '#6b7280',
       })),
       recentOrders: (d.recentOrders || []).map((o) => ({ ...o })),

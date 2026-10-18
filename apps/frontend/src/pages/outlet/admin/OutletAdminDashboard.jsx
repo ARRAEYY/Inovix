@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import OutletAdminLayout from '../../../components/layout/OutletAdminLayout';
 import { getDashboardStats } from '../../../services/outletAdminService';
 import { useAuth } from '../../../hooks/useAuth';
@@ -16,6 +17,7 @@ const OutletAdminDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const { user } = useAuth();
+  const navigate = useNavigate();
 
   useEffect(() => {
     const fetchStats = async () => {
@@ -30,6 +32,22 @@ const OutletAdminDashboard = () => {
     };
     fetchStats();
   }, []);
+
+  const handleAlertClick = (alert) => {
+    if (alert?.path) {
+      navigate(alert.path);
+      return;
+    }
+    const actionLower = (alert?.action || '').toLowerCase();
+    const msgLower = (alert?.message || '').toLowerCase();
+    if (actionLower.includes('menu') || msgLower.includes('menu')) {
+      navigate('/outlet/admin/menu');
+    } else if (actionLower.includes('kitchen') || actionLower.includes('order') || msgLower.includes('kitchen') || msgLower.includes('order')) {
+      navigate('/outlet/admin/orders');
+    } else {
+      navigate('/outlet/admin/orders');
+    }
+  };
 
   if (loading) return <OutletAdminLayout><p style={{ padding: '24px' }}>Loading dashboard...</p></OutletAdminLayout>;
   if (error) return <OutletAdminLayout><div className="error-message" style={{ margin: '24px' }}>{error}</div></OutletAdminLayout>;
@@ -60,7 +78,12 @@ const OutletAdminDashboard = () => {
             <h2 style={statValueStyle}>{formatCurrency(stats.todaySales)}</h2>
             <p style={statGrowthStyle}>{stats.percentChange?.sales}</p>
           </div>
-          <div className="stat-card" style={cardStyle}>
+          <div 
+            className="stat-card" 
+            style={{ ...cardStyle, cursor: 'pointer' }} 
+            onClick={() => navigate('/outlet/admin/orders')}
+            title="Click to view orders"
+          >
             <p style={statLabelStyle}>Orders</p>
             <h2 style={statValueStyle}>{stats.totalOrders}</h2>
             <p style={statGrowthStyle}>{stats.percentChange?.orders}</p>
@@ -88,18 +111,30 @@ const OutletAdminDashboard = () => {
           <h3 style={{ margin: '0 0 20px 0', fontSize: '1.15rem', fontWeight: '800' }}>Attention needed</h3>
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             {stats.attentionNeeded?.map((alert, idx) => (
-              <div key={idx} style={{ 
-                display: 'flex', 
-                justifyContent: 'space-between', 
-                alignItems: 'center',
-                padding: '16px 0',
-                borderBottom: idx !== stats.attentionNeeded.length - 1 ? '1px solid #f3f4f6' : 'none'
-              }}>
+              <div 
+                key={idx} 
+                onClick={() => handleAlertClick(alert)}
+                style={{ 
+                  display: 'flex', 
+                  justifyContent: 'space-between', 
+                  alignItems: 'center',
+                  padding: '16px 0',
+                  borderBottom: idx !== stats.attentionNeeded.length - 1 ? '1px solid #f3f4f6' : 'none',
+                  cursor: 'pointer'
+                }}
+              >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                   <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: alert.color }}></div>
                   <span style={{ fontWeight: '600', color: '#111827', fontSize: '0.95rem' }}>{alert.message}</span>
                 </div>
-                <button style={{ background: 'none', border: 'none', color: '#b10035', fontWeight: '500', cursor: 'pointer', fontSize: '0.9rem' }}>
+                <button 
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleAlertClick(alert);
+                  }}
+                  style={{ background: 'none', border: 'none', color: '#b10035', fontWeight: '600', cursor: 'pointer', fontSize: '0.9rem' }}
+                >
                   {alert.action}
                 </button>
               </div>
@@ -111,7 +146,13 @@ const OutletAdminDashboard = () => {
         <div style={{...cardStyle, padding: 0, overflow: 'hidden'}}>
           <div style={{ padding: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #f3f4f6' }}>
             <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: '800' }}>Recent orders</h3>
-            <button style={{ background: 'none', border: 'none', color: '#b10035', fontWeight: '500', cursor: 'pointer', fontSize: '0.9rem' }}>View all</button>
+            <button 
+              type="button"
+              onClick={() => navigate('/outlet/admin/orders')}
+              style={{ background: 'none', border: 'none', color: '#b10035', fontWeight: '600', cursor: 'pointer', fontSize: '0.9rem' }}
+            >
+              View all
+            </button>
           </div>
           
           <div style={{ overflowX: 'auto' }}>
@@ -135,7 +176,14 @@ const OutletAdminDashboard = () => {
                   const studentName = order.studentName || 'Student';
 
                   return (
-                    <tr key={order.id} style={{ borderBottom: idx !== 2 ? '1px solid #f3f4f6' : 'none' }}>
+                    <tr 
+                      key={order.id} 
+                      onClick={() => navigate('/outlet/admin/orders')}
+                      style={{ 
+                        borderBottom: idx !== Math.min(stats.recentOrders.length, 3) - 1 ? '1px solid #f3f4f6' : 'none',
+                        cursor: 'pointer'
+                      }}
+                    >
                       <td style={{ padding: '16px 24px', fontWeight: '700', color: '#111827' }}>#{order.orderNumber}</td>
                       <td style={{ padding: '16px 24px', color: '#374151' }}>{studentName}</td>
                       <td style={{ padding: '16px 24px', color: '#374151' }}>{order.outletName || user?.outlet?.name || '—'}</td>

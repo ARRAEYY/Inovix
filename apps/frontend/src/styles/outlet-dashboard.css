@@ -699,6 +699,13 @@
   box-shadow: 0 -1px 3px rgba(0,0,0,0.02);
 }
 
+/* Ensure bottom nav is completely hidden whenever a modal is open */
+body:has(.modal-overlay) .outlet-bottom-nav,
+.outlet-layout:has(.modal-overlay) .outlet-bottom-nav,
+body:has(.modal-overlay) .mobile-bottom-nav {
+  display: none !important;
+}
+
 .outlet-bottom-nav .nav-item {
   display: flex;
   flex-direction: column;

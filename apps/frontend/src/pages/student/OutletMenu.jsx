@@ -584,23 +584,7 @@ const OutletMenu = () => {
                     className="menu-section"
                     ref={el => sectionRefs.current[section.category] = el}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
-                      {section.categoryImage && (
-                        <img
-                          src={section.categoryImage}
-                          alt={section.category}
-                          style={{
-                            width: 34,
-                            height: 34,
-                            borderRadius: 8,
-                            objectFit: 'cover',
-                            border: '1px solid #f3f4f6',
-                            flexShrink: 0,
-                          }}
-                        />
-                      )}
-                      <h2 className="section-title" style={{ margin: 0 }}>{section.category}</h2>
-                    </div>
+                    <h2 className="section-title">{section.category}</h2>
                     {section.items.length > 0 ? (
                       <div className="food-grid">
                         {section.items.map(item => (

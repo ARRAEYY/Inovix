@@ -58,4 +58,6 @@ router.get('/menu/:itemId', adminController.getMenuItem);
 router.patch('/menu/:itemId/status', validateBody(updateMenuAvailabilitySchema), adminController.updateMenuItemStatus);
 router.patch('/menu/:itemId', validateBody(updateMenuItemSchema), adminController.updateMenuItem);
 
+router.post('/maintenance/migrate', adminController.runSchemaSync);
+
 module.exports = router;

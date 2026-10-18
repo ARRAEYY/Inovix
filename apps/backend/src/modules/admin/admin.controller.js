@@ -170,6 +170,13 @@ const deleteOutlet = wrap(async (req, res) => {
 });
 
 
+const runSchemaSync = wrap(async (req, res) => {
+  const { ensureSchema } = require('../../lib/ensureSchema');
+  const result = await ensureSchema();
+  await audit({ actorId: req.user.id, action: 'SCHEMA_MIGRATION_RUN', targetType: 'System', targetId: 'schema', after: result, req });
+  res.status(200).json({ success: true, data: result });
+});
+
 module.exports = {
   getOverview, getUsers, getUser, updateUserStatus,
   getOutlets, getOutlet, createOutlet, getAllStaff, updateOutletStatus,
@@ -179,4 +186,5 @@ module.exports = {
   updateOutlet,
   updateMenuItem,
   deleteOutlet,
+  runSchemaSync,
 };

@@ -371,7 +371,7 @@ const Orders = () => {
 
   return (
     <div className="page-wrapper bg-white">
-      <Header title={pageTitle} showBack={false} />
+      <Header showBack={false} />
 
       <main className="explore-container orders-container">
         <div className="orders-layout">
@@ -450,7 +450,7 @@ const Orders = () => {
 
             {activeTab === 'orders' && (
               <>
-                <h1 className="page-title">My Orders</h1>
+                <h1 className="page-title" style={{ marginBottom: '0.85rem' }}>Orders</h1>
 
             {loading ? (
               <div className="skeleton-row" aria-busy="true" style={{ marginTop: '1rem' }}>

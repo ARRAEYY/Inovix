@@ -3545,13 +3545,6 @@ img {
   }
 }
 
-/* Mobile: the sticky header already reads "Orders" — drop the duplicated
-   page heading on small screens (desktop keeps it beside the sidebar). */
-@media (max-width: 768px) {
-  .orders-main .page-title {
-    display: none;
-  }
-}
 
 /* ─── Expanded order summary (Blinkit-style bill + order details) ─── */
 .osummary-heading {

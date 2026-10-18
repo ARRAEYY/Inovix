@@ -126,38 +126,38 @@ const ActiveOrderBanner = () => {
       style={{
         flex: '0 0 auto',
         width: '100%',
-        maxWidth: '380px',
+        maxWidth: '280px',
       }}
     >
       <div
         onClick={() => navigate('/student/orders')}
         style={{
           background: '#ffffff',
-          borderRadius: '20px',
+          borderRadius: '16px',
           border: `1.5px solid ${isReady ? '#86efac' : '#e5e7eb'}`,
           boxShadow: isReady
-            ? '0 10px 30px rgba(22, 163, 74, 0.15)'
-            : '0 10px 28px rgba(0, 0, 0, 0.06)',
-          padding: '1.15rem 1.25rem',
+            ? '0 6px 20px rgba(22, 163, 74, 0.12)'
+            : '0 6px 18px rgba(0, 0, 0, 0.05)',
+          padding: '0.75rem 0.85rem',
           cursor: 'pointer',
-          transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+          transition: 'all 0.2s ease',
           position: 'relative',
           overflow: 'hidden',
           display: 'flex',
           flexDirection: 'column',
-          gap: '0.85rem',
+          gap: '0.45rem',
         }}
         onMouseEnter={(e) => {
-          e.currentTarget.style.transform = 'translateY(-3px)';
+          e.currentTarget.style.transform = 'translateY(-2px)';
           e.currentTarget.style.boxShadow = isReady
-            ? '0 14px 34px rgba(22, 163, 74, 0.22)'
-            : '0 14px 32px rgba(0, 0, 0, 0.1)';
+            ? '0 8px 24px rgba(22, 163, 74, 0.18)'
+            : '0 8px 22px rgba(0, 0, 0, 0.08)';
         }}
         onMouseLeave={(e) => {
           e.currentTarget.style.transform = 'translateY(0)';
           e.currentTarget.style.boxShadow = isReady
-            ? '0 10px 30px rgba(22, 163, 74, 0.15)'
-            : '0 10px 28px rgba(0, 0, 0, 0.06)';
+            ? '0 6px 20px rgba(22, 163, 74, 0.12)'
+            : '0 6px 18px rgba(0, 0, 0, 0.05)';
         }}
       >
         {/* Top Accent Strip */}
@@ -167,7 +167,7 @@ const ActiveOrderBanner = () => {
             top: 0,
             left: 0,
             right: 0,
-            height: '4px',
+            height: '3px',
             background: isReady
               ? 'linear-gradient(90deg, #16a34a, #4ade80)'
               : `linear-gradient(90deg, ${config.tone}, #f59e0b)`,
@@ -175,26 +175,26 @@ const ActiveOrderBanner = () => {
         />
 
         {/* Top Row: Live Pulse + Status Badge */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.4rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
             <span
               style={{
-                width: '8px',
-                height: '8px',
+                width: '7px',
+                height: '7px',
                 borderRadius: '50%',
                 backgroundColor: '#16a34a',
                 display: 'inline-block',
-                boxShadow: '0 0 0 3px rgba(22, 163, 74, 0.25)',
+                boxShadow: '0 0 0 2.5px rgba(22, 163, 74, 0.25)',
                 animation: 'pulse 1.8s infinite',
               }}
             />
             <span
               style={{
-                fontSize: '0.72rem',
+                fontSize: '0.65rem',
                 fontWeight: 800,
-                letterSpacing: '0.06em',
+                letterSpacing: '0.05em',
                 textTransform: 'uppercase',
-                color: '#374151',
+                color: '#4b5563',
               }}
             >
               Live Order
@@ -205,10 +205,10 @@ const ActiveOrderBanner = () => {
             style={{
               display: 'inline-flex',
               alignItems: 'center',
-              gap: '0.3rem',
-              fontSize: '0.72rem',
+              gap: '0.25rem',
+              fontSize: '0.68rem',
               fontWeight: 700,
-              padding: '0.2rem 0.6rem',
+              padding: '0.12rem 0.45rem',
               borderRadius: '9999px',
               background: config.bg,
               color: config.tone,
@@ -221,11 +221,11 @@ const ActiveOrderBanner = () => {
 
         {/* Outlet Name, Order # & Items */}
         <div>
-          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '0.5rem' }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '0.4rem' }}>
             <h3
               style={{
                 margin: 0,
-                fontSize: '1.05rem',
+                fontSize: '0.92rem',
                 fontWeight: 800,
                 color: '#111827',
                 whiteSpace: 'nowrap',
@@ -237,12 +237,12 @@ const ActiveOrderBanner = () => {
             </h3>
             <span
               style={{
-                fontSize: '0.72rem',
+                fontSize: '0.65rem',
                 fontWeight: 600,
                 color: '#6b7280',
                 background: '#f3f4f6',
-                padding: '0.1rem 0.45rem',
-                borderRadius: '6px',
+                padding: '0.08rem 0.35rem',
+                borderRadius: '4px',
                 flexShrink: 0,
               }}
             >
@@ -252,8 +252,8 @@ const ActiveOrderBanner = () => {
 
           <p
             style={{
-              margin: '0.25rem 0 0 0',
-              fontSize: '0.82rem',
+              margin: '0.15rem 0 0 0',
+              fontSize: '0.74rem',
               color: '#4b5563',
               whiteSpace: 'nowrap',
               overflow: 'hidden',
@@ -262,14 +262,14 @@ const ActiveOrderBanner = () => {
           >
             {itemsSummary}
             {order.totalAmount && (
-              <span style={{ fontWeight: 700, color: '#111827', marginLeft: '0.4rem' }}>
+              <span style={{ fontWeight: 700, color: '#111827', marginLeft: '0.35rem' }}>
                 • ₹{Math.round(Number(order.totalAmount))}
               </span>
             )}
           </p>
         </div>
 
-        {/* Square-styled Pickup OTP Container */}
+        {/* Compact Square-styled Pickup OTP Box */}
         {order.pickupCode ? (
           <div
             onClick={(e) => handleCopyCode(e, order.pickupCode, order.id)}
@@ -277,17 +277,16 @@ const ActiveOrderBanner = () => {
             style={{
               background: isReady ? '#f0fdf4' : '#faf5f6',
               border: `1.5px dashed ${isReady ? '#22c55e' : '#b10035'}`,
-              borderRadius: '14px',
-              padding: '0.75rem 1rem',
+              borderRadius: '10px',
+              padding: '0.35rem 0.65rem',
               display: 'flex',
-              flexDirection: 'column',
               alignItems: 'center',
-              justifyContent: 'center',
+              justifyContent: 'space-between',
               cursor: 'pointer',
               transition: 'all 0.15s ease',
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.transform = 'scale(1.02)';
+              e.currentTarget.style.transform = 'scale(1.01)';
               e.currentTarget.style.borderColor = isReady ? '#16a34a' : '#8e002a';
             }}
             onMouseLeave={(e) => {
@@ -295,54 +294,55 @@ const ActiveOrderBanner = () => {
               e.currentTarget.style.borderColor = isReady ? '#22c55e' : '#b10035';
             }}
           >
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.35rem',
-                fontSize: '0.68rem',
-                fontWeight: 800,
-                letterSpacing: '0.08em',
-                color: isReady ? '#16a34a' : '#b10035',
-                textTransform: 'uppercase',
-                marginBottom: '0.1rem',
-              }}
-            >
-              <span>{isReady ? '🎉 READY FOR PICKUP' : 'PICKUP OTP'}</span>
-              <span style={{ fontSize: '0.75rem' }}>📋</span>
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              <span
+                style={{
+                  fontSize: '0.6rem',
+                  fontWeight: 800,
+                  letterSpacing: '0.06em',
+                  color: isReady ? '#16a34a' : '#b10035',
+                  textTransform: 'uppercase',
+                  lineHeight: 1.1,
+                }}
+              >
+                {isReady ? '🎉 READY' : 'PICKUP OTP'}
+              </span>
+              <span
+                style={{
+                  fontSize: '0.6rem',
+                  color: copiedId === order.id ? '#16a34a' : '#6b7280',
+                  fontWeight: copiedId === order.id ? 700 : 500,
+                  lineHeight: 1.1,
+                  marginTop: '0.1rem',
+                }}
+              >
+                {copiedId === order.id ? '✓ Copied!' : 'Show at counter'}
+              </span>
             </div>
 
-            <div
-              style={{
-                fontSize: '1.75rem',
-                fontWeight: 900,
-                letterSpacing: '0.22em',
-                color: isReady ? '#15803d' : '#8e002a',
-                fontFamily: 'monospace, ui-monospace, sans-serif',
-                lineHeight: 1.1,
-              }}
-            >
-              {order.pickupCode}
-            </div>
-
-            <div
-              style={{
-                fontSize: '0.68rem',
-                color: copiedId === order.id ? '#16a34a' : '#6b7280',
-                fontWeight: copiedId === order.id ? 700 : 500,
-                marginTop: '0.2rem',
-              }}
-            >
-              {copiedId === order.id ? '✓ Copied to clipboard!' : isReady ? 'Show at counter now' : 'Show at counter'}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+              <span
+                style={{
+                  fontSize: '1.25rem',
+                  fontWeight: 900,
+                  letterSpacing: '0.12em',
+                  color: isReady ? '#15803d' : '#8e002a',
+                  fontFamily: 'monospace, ui-monospace, sans-serif',
+                  lineHeight: 1,
+                }}
+              >
+                {order.pickupCode}
+              </span>
+              <span style={{ fontSize: '0.75rem', opacity: 0.7 }}>📋</span>
             </div>
           </div>
         ) : (
           <div
             style={{
               background: '#f9fafb',
-              borderRadius: '12px',
-              padding: '0.75rem 1rem',
-              fontSize: '0.8rem',
+              borderRadius: '8px',
+              padding: '0.35rem 0.65rem',
+              fontSize: '0.72rem',
               color: '#6b7280',
               textAlign: 'center',
             }}
@@ -351,8 +351,8 @@ const ActiveOrderBanner = () => {
           </div>
         )}
 
-        {/* Compact Stepper */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.2rem' }}>
+        {/* Compact Mini Stepper */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.15rem' }}>
           {STEPS.map((s, idx) => {
             const isCompleted = idx < config.step;
             const isCurrent = idx === config.step - 1;
@@ -363,13 +363,13 @@ const ActiveOrderBanner = () => {
                   style={{
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '0.25rem',
+                    gap: '0.15rem',
                   }}
                 >
                   <span
                     style={{
-                      width: '16px',
-                      height: '16px',
+                      width: '13px',
+                      height: '13px',
                       borderRadius: '50%',
                       background: isCompleted
                         ? '#16a34a'
@@ -377,7 +377,7 @@ const ActiveOrderBanner = () => {
                         ? config.tone
                         : '#e5e7eb',
                       color: isCompleted || isCurrent ? '#ffffff' : '#9ca3af',
-                      fontSize: '9px',
+                      fontSize: '8px',
                       fontWeight: 700,
                       display: 'flex',
                       alignItems: 'center',
@@ -388,7 +388,7 @@ const ActiveOrderBanner = () => {
                   </span>
                   <span
                     style={{
-                      fontSize: '0.7rem',
+                      fontSize: '0.62rem',
                       fontWeight: isCurrent ? 700 : 500,
                       color: isCurrent ? config.tone : isCompleted ? '#374151' : '#9ca3af',
                     }}
@@ -417,9 +417,8 @@ const ActiveOrderBanner = () => {
             alignItems: 'center',
             justifyContent: 'space-between',
             borderTop: '1px solid #f3f4f6',
-            paddingTop: '0.65rem',
-            marginTop: '-0.2rem',
-            fontSize: '0.76rem',
+            paddingTop: '0.35rem',
+            fontSize: '0.68rem',
           }}
         >
           {activeOrders.length > 1 ? (
@@ -428,16 +427,16 @@ const ActiveOrderBanner = () => {
                 color: '#b10035',
                 fontWeight: 600,
                 background: '#fff1f2',
-                padding: '0.15rem 0.5rem',
+                padding: '0.1rem 0.35rem',
                 borderRadius: '9999px',
                 border: '1px solid #fecdd3',
               }}
             >
-              +{activeOrders.length - 1} more active
+              +{activeOrders.length - 1} more
             </span>
           ) : (
             <span style={{ color: '#9ca3af', fontWeight: 500 }}>
-              Live tracking
+              Live status
             </span>
           )}
 
@@ -447,10 +446,10 @@ const ActiveOrderBanner = () => {
               fontWeight: 700,
               display: 'flex',
               alignItems: 'center',
-              gap: '0.2rem',
+              gap: '0.15rem',
             }}
           >
-            {activeOrders.length > 1 ? `View all (${activeOrders.length}) →` : 'View details →'}
+            {activeOrders.length > 1 ? `View all (${activeOrders.length}) →` : 'View order →'}
           </span>
         </div>
       </div>

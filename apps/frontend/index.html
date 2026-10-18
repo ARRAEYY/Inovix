@@ -2,8 +2,35 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <!-- Adaptive Favicon (Black for light mode, White for dark mode) -->
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/png" href="/favicon-dark.png" media="(prefers-color-scheme: dark)" />
+    <link rel="icon" type="image/png" href="/favicon-light.png" media="(prefers-color-scheme: light)" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <link rel="alternate icon" href="/favicon.ico" />
+    <script>
+      (function() {
+        var mq = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)');
+        function updateFavicon() {
+          var isDark = mq && mq.matches;
+          var dyn = document.querySelector('link[data-dynamic-favicon]');
+          if (!dyn) {
+            dyn = document.createElement('link');
+            dyn.rel = 'icon';
+            dyn.type = 'image/png';
+            dyn.setAttribute('data-dynamic-favicon', 'true');
+            document.head.appendChild(dyn);
+          }
+          dyn.href = isDark ? '/favicon-dark.png' : '/favicon-light.png';
+        }
+        if (mq) {
+          try { mq.addEventListener('change', updateFavicon); } catch (e) { mq.addListener(updateFavicon); }
+        }
+        updateFavicon();
+      })();
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-visual" />
     <title>Nosh — Campus Food Ordering</title>
     <!-- Google Identity Services — async, won't block the app -->

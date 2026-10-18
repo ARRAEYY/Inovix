@@ -104,7 +104,7 @@ const AdminDashboard = () => {
           </button>
         </div>
 
-        {/* Primary KPIs — the four numbers that matter most */}
+        {/* Key Metrics */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '16px' }}>
 
           <div style={metricCardStyle}>
@@ -127,25 +127,26 @@ const AdminDashboard = () => {
             <h2 style={{ margin: 0, fontSize: '1.7rem', fontWeight: '800', color: '#111827', letterSpacing: '-0.5px' }}>{Number(metrics.totalUsers || 0).toLocaleString()}</h2>
           </div>
 
-        </div>
+          <div style={metricCardStyle}>
+            <p style={{ margin: '0 0 6px 0', color: '#6b7280', fontSize: '0.85rem', fontWeight: '600' }}>This month</p>
+            <h2 style={{ margin: 0, fontSize: '1.7rem', fontWeight: '800', color: '#111827', letterSpacing: '-0.5px' }}>{formatCurrency(metrics.revenueThisMonth || 0)}</h2>
+          </div>
 
-        {/* Secondary metrics — compact strip, no giant cards (§16) */}
-        <div style={{
-          display: 'flex', flexWrap: 'wrap', gap: '12px 32px', alignItems: 'center',
-          background: '#f9fafb', border: '1px solid #f3f4f6', borderRadius: '12px', padding: '14px 20px',
-        }}>
-          <span style={{ fontSize: '0.85rem', color: '#6b7280' }}>
-            This month <strong style={{ color: '#111827', marginLeft: 6 }}>{formatCurrency(metrics.revenueThisMonth || 0)}</strong>
-          </span>
-          <span style={{ fontSize: '0.85rem', color: '#6b7280' }}>
-            Lifetime <strong style={{ color: '#111827', marginLeft: 6 }}>{formatCurrency(metrics.revenueTotal || 0)}</strong>
-          </span>
-          <span style={{ fontSize: '0.85rem', color: '#6b7280' }}>
-            Orders this week <strong style={{ color: '#111827', marginLeft: 6 }}>{Number(metrics.ordersThisWeek || 0).toLocaleString()}</strong>
-          </span>
-          <span style={{ fontSize: '0.85rem', color: '#6b7280' }}>
-            Refund rate <strong style={{ color: '#111827', marginLeft: 6 }}>{metrics.refundRate || '0.0%'}</strong>
-          </span>
+          <div style={metricCardStyle}>
+            <p style={{ margin: '0 0 6px 0', color: '#6b7280', fontSize: '0.85rem', fontWeight: '600' }}>Lifetime</p>
+            <h2 style={{ margin: 0, fontSize: '1.7rem', fontWeight: '800', color: '#111827', letterSpacing: '-0.5px' }}>{formatCurrency(metrics.revenueTotal || 0)}</h2>
+          </div>
+
+          <div style={metricCardStyle}>
+            <p style={{ margin: '0 0 6px 0', color: '#6b7280', fontSize: '0.85rem', fontWeight: '600' }}>Orders this week</p>
+            <h2 style={{ margin: 0, fontSize: '1.7rem', fontWeight: '800', color: '#111827', letterSpacing: '-0.5px' }}>{Number(metrics.ordersThisWeek || 0).toLocaleString()}</h2>
+          </div>
+
+          <div style={metricCardStyle}>
+            <p style={{ margin: '0 0 6px 0', color: '#6b7280', fontSize: '0.85rem', fontWeight: '600' }}>Refund rate</p>
+            <h2 style={{ margin: 0, fontSize: '1.7rem', fontWeight: '800', color: '#111827', letterSpacing: '-0.5px' }}>{metrics.refundRate || '0.0%'}</h2>
+          </div>
+
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '24px' }}>

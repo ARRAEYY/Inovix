@@ -30,13 +30,17 @@ const Profile = () => {
 
   // Auto-open the view from the URL query param (?view=account, etc.)
   useEffect(() => {
-    const view = searchParams.get('view');
+    const view = searchParams.get('view') || searchParams.get('tab');
+    if (window.innerWidth >= 769) {
+      navigate(`/student/orders?tab=${view || 'account'}`, { replace: true });
+      return;
+    }
     if (view && VIEWS.includes(view)) {
       setActiveView(view);
-    if (view === 'help') fetchDisputes();
+      if (view === 'help') fetchDisputes();
       if (view === 'account') fetchProfile();
     }
-  }, [searchParams]);
+  }, [searchParams, navigate]);
 
   const fetchDisputes = async () => {
     try {

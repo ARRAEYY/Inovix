@@ -116,7 +116,7 @@ const Header = ({ cartCount, onCartClick, title, subtitle, showBack = false }) =
                   className="dropdown-item"
                   onClick={() => {
                     setDropdownOpen(false);
-                    navigate('/student/profile?view=account');
+                    navigate('/student/orders?tab=account');
                   }}
                 >
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -130,7 +130,7 @@ const Header = ({ cartCount, onCartClick, title, subtitle, showBack = false }) =
                   className="dropdown-item"
                   onClick={() => {
                     setDropdownOpen(false);
-                    navigate('/student/profile?view=settings');
+                    navigate('/student/orders?tab=settings');
                   }}
                 >
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

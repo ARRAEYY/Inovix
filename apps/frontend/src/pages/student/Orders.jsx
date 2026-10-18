@@ -471,38 +471,45 @@ const Orders = () => {
                 <p className="state-sub">{error}</p>
                 <button className="primary-btn" onClick={fetchOrders}>Try Again</button>
               </div>
-            ) : filteredOrders.length === 0 ? (
-              <div className="empty-orders-state">
-                <div className="empty-icon-wrapper">
-                  <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path>
-                    <line x1="3" y1="6" x2="21" y2="6"></line>
-                    <path d="M16 10a4 4 0 0 1-8 0"></path>
-                  </svg>
-                </div>
-                <h2>No order history yet</h2>
-                <p>Looks like you haven't placed any orders. Discover your favorite campus food now!</p>
-                <button className="primary-btn" onClick={() => navigate('/student')} style={{ maxWidth: '200px', marginTop: '1.5rem' }}>
-                  Order now
-                </button>
-              </div>
             ) : (
               <>
-                {orders.length > 0 && (
-                  <div className="filter-pills" style={{ marginBottom: '0.9rem' }}>
-                    {FILTERS.map(filter => (
-                      <button
-                        key={filter}
-                        className={`pill ${activeFilter === filter ? 'active' : ''}`}
-                        onClick={() => setActiveFilter(filter)}
-                      >
-                        {filter}
-                      </button>
-                    ))}
-                  </div>
-                )}
+                <div className="filter-pills" style={{ marginBottom: '0.9rem' }}>
+                  {FILTERS.map(filter => (
+                    <button
+                      key={filter}
+                      className={`pill ${activeFilter === filter ? 'active' : ''}`}
+                      onClick={() => setActiveFilter(filter)}
+                    >
+                      {filter}
+                    </button>
+                  ))}
+                </div>
 
-                <div className="orders-list">
+                {filteredOrders.length === 0 ? (
+                  <div className="empty-orders-state" style={{ marginTop: '0.5rem' }}>
+                    <div className="empty-icon-wrapper">
+                      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path>
+                        <line x1="3" y1="6" x2="21" y2="6"></line>
+                        <path d="M16 10a4 4 0 0 1-8 0"></path>
+                      </svg>
+                    </div>
+                    <h2>{orders.length === 0 ? 'No order history yet' : `No orders ${activeFilter.toLowerCase()}`}</h2>
+                    <p>
+                      {orders.length === 0
+                        ? "Looks like you haven't placed any orders. Discover your favorite campus food now!"
+                        : `You don't have any orders placed under "${activeFilter}". Switch filters or order now!`}
+                    </p>
+                    <button
+                      className="primary-btn"
+                      onClick={() => orders.length === 0 ? navigate('/student') : setActiveFilter('All time')}
+                      style={{ maxWidth: '200px', marginTop: '1.5rem' }}
+                    >
+                      {orders.length === 0 ? 'Order now' : 'View all orders'}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="orders-list">
                   {filteredOrders.map(order => {
                     const pres = STATUS_PRESENTATION[order.rawStatus] || STATUS_PRESENTATION.PENDING;
                     const expanded = expandedId === order.id;
@@ -716,10 +723,11 @@ const Orders = () => {
                     );
                   })}
                 </div>
-              </>
-            )}
-          </>
-        )}
+              )}
+            </>
+          )}
+        </>
+      )}
 
             {/* ─── ACCOUNT VIEW ─── */}
             {activeTab === 'account' && (

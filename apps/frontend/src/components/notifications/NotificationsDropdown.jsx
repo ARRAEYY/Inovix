@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { notificationService } from '../../services/api/notificationService';
 import { cacheGet, cacheSet } from '../../services/cache/localCache';
@@ -28,6 +29,7 @@ const formatTime = (iso) => {
 };
 
 const NotificationsDropdown = () => {
+  const navigate = useNavigate();
   const { user } = useAuth();
   const isStudent = user?.role === 'STUDENT';
   const unreadKey = user ? `notif:${user.id}:unread` : null;
@@ -159,21 +161,24 @@ const NotificationsDropdown = () => {
   };
 
   const handleMarkOneRead = async (n) => {
-    if (n.isRead) return;
-    try {
-      await notificationService.markRead(n.id);
-      const nextItems = items.map((x) => (x.id === n.id ? { ...x, isRead: true } : x));
-      applyItems(nextItems, Math.max(0, unreadCount - 1));
-    } catch { /* keep the unread dot — it will retry next refresh */ }
+    if (!n.isRead) {
+      try {
+        await notificationService.markRead(n.id);
+        const nextItems = items.map((x) => (x.id === n.id ? { ...x, isRead: true } : x));
+        applyItems(nextItems, Math.max(0, unreadCount - 1));
+      } catch { /* keep the unread dot — it will retry next refresh */ }
+    }
+    setOpen(false);
+    navigate('/student/orders');
   };
 
   return (
-    <div ref={wrapRef} style={{ position: 'relative', display: 'flex' }}>
+    <div ref={wrapRef} className="notif-dropdown-wrapper">
       <button
         onClick={toggle}
         aria-label="Notifications"
         aria-expanded={open}
-        style={{ position: 'relative', background: 'none', border: 'none', cursor: 'pointer', padding: '0.5rem' }}
+        style={{ position: 'relative', background: 'none', border: 'none', cursor: 'pointer', padding: '0.45rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
       >
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
@@ -194,96 +199,113 @@ const NotificationsDropdown = () => {
       </button>
 
       {open && (
-        <div
-          role="dialog"
-          aria-label="Notifications"
-          style={{
-            position: 'absolute',
-            top: 'calc(100% + 0.5rem)',
-            right: 0,
-            width: 340,
-            maxWidth: 'calc(100vw - 2rem)',
-            background: 'var(--white)',
-            borderRadius: 12,
-            boxShadow: '0 4px 20px rgba(0, 0, 0, 0.08)',
-            border: '1px solid var(--border-color)',
-            zIndex: 100,
-            overflow: 'hidden',
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem 1rem', borderBottom: '1px solid var(--border-color)' }}>
-            <strong style={{ fontSize: '0.95rem', color: 'var(--text-dark)' }}>Notifications</strong>
-            {unreadCount > 0 && (
-              <button
-                onClick={handleMarkAllRead}
-                disabled={markingAll}
-                style={{
-                  padding: '0.3rem 0.75rem',
-                  border: '1px solid var(--border-color)',
-                  borderRadius: 20,
-                  background: 'var(--white)',
-                  fontSize: '0.75rem',
-                  fontWeight: 600,
-                  color: 'var(--primary)',
-                  cursor: markingAll ? 'wait' : 'pointer',
-                }}
-              >
-                {markingAll ? 'Marking…' : `Mark all read (${unreadCount})`}
-              </button>
-            )}
-          </div>
-
-          <div style={{ maxHeight: 380, overflowY: 'auto' }}>
-            {loading ? (
-              <p style={{ color: 'var(--text-gray)', padding: '1rem' }}>Loading notifications…</p>
-            ) : error ? (
-              <p style={{ color: '#b10035', padding: '1rem', fontSize: '0.88rem' }}>{error}</p>
-            ) : items.length === 0 ? (
-              <p style={{ color: 'var(--text-gray)', padding: '1rem', fontSize: '0.88rem' }}>
-                No notifications yet. Place an order and updates will appear here.
-              </p>
-            ) : (
-              items.map((n, idx) => (
+        <>
+          <div
+            className="notif-backdrop"
+            onClick={() => setOpen(false)}
+            aria-hidden="true"
+          />
+          <div
+            role="dialog"
+            aria-label="Notifications"
+            className="notif-dropdown-panel"
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.85rem 1rem', borderBottom: '1px solid var(--border-color)', background: '#fafafa' }}>
+              <strong style={{ fontSize: '0.95rem', color: 'var(--text-dark)', fontWeight: 700 }}>Notifications</strong>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                {unreadCount > 0 && (
+                  <button
+                    onClick={handleMarkAllRead}
+                    disabled={markingAll}
+                    style={{
+                      padding: '0.3rem 0.75rem',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: 20,
+                      background: 'var(--white)',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      color: 'var(--primary)',
+                      cursor: markingAll ? 'wait' : 'pointer',
+                    }}
+                  >
+                    {markingAll ? 'Marking…' : `Mark all read (${unreadCount})`}
+                  </button>
+                )}
                 <button
-                  key={n.id}
-                  onClick={() => handleMarkOneRead(n)}
+                  type="button"
+                  onClick={() => setOpen(false)}
+                  aria-label="Close notifications"
                   style={{
-                    display: 'flex',
-                    gap: '0.75rem',
-                    width: '100%',
-                    textAlign: 'left',
-                    padding: '0.85rem 1rem',
-                    background: n.isRead ? 'var(--white)' : '#fdf5f7',
+                    background: 'none',
                     border: 'none',
-                    borderBottom: idx !== items.length - 1 ? '1px solid var(--border-color)' : 'none',
-                    cursor: n.isRead ? 'default' : 'pointer',
+                    cursor: 'pointer',
+                    padding: '0.25rem',
+                    color: 'var(--text-gray)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    borderRadius: '50%',
                   }}
                 >
-                  <span style={{
-                    marginTop: '0.4rem',
-                    width: 8,
-                    height: 8,
-                    minWidth: 8,
-                    borderRadius: '50%',
-                    background: n.isRead ? 'transparent' : 'var(--primary)',
-                  }} />
-                  <span style={{ flex: 1 }}>
-                    <span style={{ display: 'block', fontWeight: n.isRead ? 500 : 700, color: 'var(--text-dark)', fontSize: '0.9rem' }}>
-                      {n.title}
-                    </span>
-                    <span style={{ display: 'block', color: 'var(--text-gray)', fontSize: '0.85rem', marginTop: '0.15rem', lineHeight: 1.4 }}>
-                      {n.message}
-                    </span>
-                    <span style={{ display: 'block', color: 'var(--text-light, #9ca3af)', fontSize: '0.75rem', marginTop: '0.3rem' }}>
-                      {formatTime(n.createdAt)}
-                      {!n.isRead && ' · tap to mark read'}
-                    </span>
-                  </span>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                  </svg>
                 </button>
-              ))
-            )}
+              </div>
+            </div>
+
+            <div style={{ maxHeight: 'min(420px, calc(100vh - 160px))', overflowY: 'auto' }}>
+              {loading ? (
+                <p style={{ color: 'var(--text-gray)', padding: '1.25rem', textAlign: 'center', fontSize: '0.9rem' }}>Loading notifications…</p>
+              ) : error ? (
+                <p style={{ color: '#b10035', padding: '1.25rem', fontSize: '0.88rem', textAlign: 'center' }}>{error}</p>
+              ) : items.length === 0 ? (
+                <div style={{ padding: '2rem 1.25rem', textAlign: 'center', color: 'var(--text-gray)' }}>
+                  <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ margin: '0 auto 0.75rem', opacity: 0.5 }}>
+                    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                    <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+                  </svg>
+                  <p style={{ margin: 0, fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-dark)' }}>No notifications yet</p>
+                  <p style={{ margin: '0.25rem 0 0', fontSize: '0.82rem', color: 'var(--text-gray)' }}>Order updates and announcements will appear here.</p>
+                </div>
+              ) : (
+                items.map((n, idx) => (
+                  <button
+                    key={n.id}
+                    onClick={() => handleMarkOneRead(n)}
+                    className="notif-item"
+                    style={{
+                      background: n.isRead ? 'var(--white)' : '#fdf5f7',
+                      borderBottom: idx !== items.length - 1 ? '1px solid var(--border-color)' : 'none',
+                    }}
+                  >
+                    <span style={{
+                      marginTop: '0.4rem',
+                      width: 8,
+                      height: 8,
+                      minWidth: 8,
+                      borderRadius: '50%',
+                      background: n.isRead ? 'transparent' : 'var(--primary)',
+                    }} />
+                    <span style={{ flex: 1 }}>
+                      <span style={{ display: 'block', fontWeight: n.isRead ? 600 : 700, color: 'var(--text-dark)', fontSize: '0.9rem' }}>
+                        {n.title}
+                      </span>
+                      <span style={{ display: 'block', color: 'var(--text-gray)', fontSize: '0.85rem', marginTop: '0.2rem', lineHeight: 1.4 }}>
+                        {n.message}
+                      </span>
+                      <span style={{ display: 'block', color: 'var(--text-light, #9ca3af)', fontSize: '0.75rem', marginTop: '0.35rem' }}>
+                        {formatTime(n.createdAt)}
+                        {!n.isRead && ' · tap to view order'}
+                      </span>
+                    </span>
+                  </button>
+                ))
+              )}
+            </div>
           </div>
-        </div>
+        </>
       )}
     </div>
   );

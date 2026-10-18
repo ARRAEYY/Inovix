@@ -98,14 +98,16 @@ const Home = () => {
       <Header />
 
       <main className="explore-container">
-        <div className="page-header">
-          <p className="welcome-greeting">Welcome back, {user?.name || 'Student'}</p>
-          <h1 className="page-title">Explore Outlets</h1>
-          <p className="page-subtitle">Order from your favorite campus outlets</p>
-        </div>
+        <div className="home-header-row">
+          <div className="page-header">
+            <p className="welcome-greeting">Welcome back, {user?.name || 'Student'}</p>
+            <h1 className="page-title">Explore Outlets</h1>
+            <p className="page-subtitle">Order from your favorite campus outlets</p>
+          </div>
 
-        {/* Live Active Order Status & Quick OTP */}
-        <ActiveOrderBanner />
+          {/* Live Active Order Status & Quick OTP (Square box on the right) */}
+          <ActiveOrderBanner />
+        </div>
 
         <div className="controls-row">
           <div className="search-container">

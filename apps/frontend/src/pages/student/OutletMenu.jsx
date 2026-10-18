@@ -513,7 +513,7 @@ const OutletMenu = () => {
 
         {/* Menu Content */}
         <main className="menu-content" style={isSearching ? { width: '100%', flex: '1 1 100%' } : {}}>
-          <div className="menu-sections">
+          <div className={`menu-sections ${cartItemsCount > 0 ? 'has-sticky-cart' : ''}`}>
             {loading ? (
               <div className="skeleton-row" aria-busy="true">
                 <SkeletonGrid count={4} cols={2} />

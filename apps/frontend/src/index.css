@@ -1187,7 +1187,8 @@ img {
     top: 60px;
     /* Below mobile header */
     width: 75px;
-    height: calc(100vh - 120px);
+    height: auto;
+    max-height: calc(100vh - 120px);
   }
 
   .category-nav-btn {
@@ -2715,16 +2716,21 @@ img {
   .checkout-btn { max-width: 100%; }
 }
 
-/* ─── Menu page scroll & nav fixes ───
-   Clearance so the last category is never hidden behind the sticky cart
-   bar + bottom nav; desktop only needs nominal spacing. */
+/* ─── Menu page scroll & nav clearance ───
+   Content already clears the bottom nav via .page-wrapper padding-bottom.
+   Only modest clearance is needed so items sit comfortably above the
+   sticky cart bar without excessive empty white space on mobile. */
 .menu-sections {
-  padding-bottom: 48px;
+  padding-bottom: 24px;
 }
 
 @media (max-width: 768px) {
   .menu-sections {
-    padding-bottom: 208px; /* bottom nav (64) + cart bar (~64) + breathing room */
+    padding-bottom: 1.5rem;
+  }
+
+  .menu-sections.has-sticky-cart {
+    padding-bottom: 3.5rem;
   }
 }
 

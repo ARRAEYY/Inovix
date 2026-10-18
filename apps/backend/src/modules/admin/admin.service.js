@@ -367,10 +367,10 @@ async function createOutlet(data) {
 
   return prisma.outlet.create({
     data: {
-      name,
+      name: name.trim(),
       slug,
-      description: description || null,
-      location: location || null,
+      description: description || '',
+      location: location || '',
       contactEmail: contactEmail || null,
       contactNumber: contactNumber || null,
       status: Object.values(OUTLET_STATUS).includes(status) ? status : OUTLET_STATUS.OPEN,
@@ -792,9 +792,28 @@ async function deleteUser(userId, reqUserId) {
   if (userId === reqUserId) {
     throw { statusCode: 400, message: 'Super Admins cannot delete their own account' };
   }
-  const user = await prisma.user.findUnique({ where: { id: userId } });
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    include: { _count: { select: { orders: true } } },
+  });
   if (!user) throw { statusCode: 404, message: 'User not found' };
-  await prisma.user.delete({ where: { id: userId } });
+
+  if (user._count?.orders > 0) {
+    throw {
+      statusCode: 400,
+      message: `Cannot delete user "${user.name}" because they have ${user._count.orders} order(s) on record. Please suspend the user instead to preserve order history.`,
+    };
+  }
+
+  await prisma.$transaction([
+    prisma.outletStaff.deleteMany({ where: { userId } }),
+    prisma.studentProfile.deleteMany({ where: { userId } }),
+    prisma.cart.deleteMany({ where: { studentId: userId } }),
+    prisma.review.deleteMany({ where: { userId } }),
+    prisma.favorite.deleteMany({ where: { userId } }),
+    prisma.user.delete({ where: { id: userId } }),
+  ]);
+
   return { deleted: true, name: user.name, email: user.email };
 }
 
@@ -811,8 +830,8 @@ async function updateOutlet(outletId, data) {
   };
   const updateData = {};
   if (data.name !== undefined) updateData.name = data.name.trim();
-  if (data.description !== undefined) updateData.description = data.description || null;
-  if (data.location !== undefined) updateData.location = data.location || null;
+  if (data.description !== undefined) updateData.description = data.description ?? '';
+  if (data.location !== undefined) updateData.location = data.location ?? '';
   if (data.contactEmail !== undefined) updateData.contactEmail = data.contactEmail || null;
   if (data.contactNumber !== undefined) updateData.contactNumber = data.contactNumber || null;
   if (data.status !== undefined) updateData.status = data.status;
@@ -872,16 +891,59 @@ async function updateMenuItem(itemId, data) {
 }
 
 async function deleteMenuItem(itemId) {
-  const item = await prisma.menuItem.findUnique({ where: { id: itemId } });
+  const item = await prisma.menuItem.findUnique({
+    where: { id: itemId },
+    include: { _count: { select: { orderItems: true } } },
+  });
   if (!item) throw { statusCode: 404, message: 'Menu item not found' };
-  await prisma.menuItem.delete({ where: { id: itemId } });
+
+  if (item._count?.orderItems > 0) {
+    throw {
+      statusCode: 400,
+      message: `Cannot delete menu item "${item.name}" because it appears in past order records. Please toggle its availability off instead.`,
+    };
+  }
+
+  await prisma.$transaction([
+    prisma.customizationOption.deleteMany({ where: { group: { menuItemId: itemId } } }),
+    prisma.customizationGroup.deleteMany({ where: { menuItemId: itemId } }),
+    prisma.cartItem.deleteMany({ where: { menuItemId: itemId } }),
+    prisma.favorite.deleteMany({ where: { menuItemId: itemId } }),
+    prisma.menuItemReview.deleteMany({ where: { menuItemId: itemId } }),
+    prisma.menuItem.delete({ where: { id: itemId } }),
+  ]);
+
   return { deleted: true, name: item.name };
 }
 
 async function deleteOutlet(outletId) {
-  const outlet = await prisma.outlet.findUnique({ where: { id: outletId } });
+  const outlet = await prisma.outlet.findUnique({
+    where: { id: outletId },
+    include: { _count: { select: { orders: true } } },
+  });
   if (!outlet) throw { statusCode: 404, message: 'Outlet not found' };
-  await prisma.outlet.delete({ where: { id: outletId } });
+
+  if (outlet._count?.orders > 0) {
+    throw {
+      statusCode: 400,
+      message: `Cannot delete outlet "${outlet.name}" because it has ${outlet._count.orders} order(s) on record. Please close or suspend the outlet instead to preserve order and financial records.`,
+    };
+  }
+
+  await prisma.$transaction([
+    prisma.cartItem.deleteMany({ where: { cart: { outletId } } }),
+    prisma.cart.deleteMany({ where: { outletId } }),
+    prisma.operatingHours.deleteMany({ where: { outletId } }),
+    prisma.customizationOption.deleteMany({ where: { group: { menuItem: { outletId } } } }),
+    prisma.customizationGroup.deleteMany({ where: { menuItem: { outletId } } }),
+    prisma.menuItem.deleteMany({ where: { outletId } }),
+    prisma.menuCategory.deleteMany({ where: { outletId } }),
+    prisma.outletStaff.deleteMany({ where: { outletId } }),
+    prisma.review.deleteMany({ where: { outletId } }),
+    prisma.favorite.deleteMany({ where: { outletId } }),
+    prisma.outlet.delete({ where: { id: outletId } }),
+  ]);
+
   return { deleted: true, name: outlet.name };
 }
 

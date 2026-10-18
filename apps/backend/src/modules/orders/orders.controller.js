@@ -131,6 +131,7 @@ async function getOutletOrders(req, res, next) {
       data: orders.map(o => ({
         ...o,
         studentName: o.student?.name || o.studentName || 'Student',
+        studentPhone: o.student?.studentProfile?.phone || null,
       })) 
     });
   } catch (error) {

@@ -10,7 +10,14 @@ const prisma = require('../../lib/prisma');
 
 const ORDER_INCLUDE = {
   items: true,
-  student: { select: { id: true, name: true, email: true, phone: true } },
+  student: {
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      studentProfile: { select: { phone: true } },
+    },
+  },
   payment: { include: { refunds: true } },
 };
 

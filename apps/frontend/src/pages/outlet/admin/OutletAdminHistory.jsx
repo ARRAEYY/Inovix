@@ -635,8 +635,10 @@ const OutletAdminHistory = () => {
                           <div style={{ fontWeight: '600', color: '#111827', fontSize: '0.9rem' }}>
                             {order.studentName || order.student?.name || 'Customer'}
                           </div>
-                          {order.student?.phone && (
-                            <div style={{ fontSize: '0.8rem', color: '#6b7280' }}>{order.student.phone}</div>
+                          {(order.studentPhone || order.student?.studentProfile?.phone) && (
+                            <div style={{ fontSize: '0.8rem', color: '#6b7280' }}>
+                              {order.studentPhone || order.student?.studentProfile?.phone}
+                            </div>
                           )}
                         </td>
 
@@ -779,8 +781,10 @@ const OutletAdminHistory = () => {
                 {selectedOrder.student?.email && (
                   <div style={{ fontSize: '0.85rem', color: '#6b7280' }}>{selectedOrder.student.email}</div>
                 )}
-                {selectedOrder.student?.phone && (
-                  <div style={{ fontSize: '0.85rem', color: '#6b7280' }}>Phone: {selectedOrder.student.phone}</div>
+                {(selectedOrder.studentPhone || selectedOrder.student?.studentProfile?.phone) && (
+                  <div style={{ fontSize: '0.85rem', color: '#6b7280' }}>
+                    Phone: {selectedOrder.studentPhone || selectedOrder.student?.studentProfile?.phone}
+                  </div>
                 )}
                 {selectedOrder.notes && (
                   <div style={{ marginTop: '8px', fontSize: '0.85rem', color: '#b45309', background: '#fffbeb', padding: '8px 12px', borderRadius: '6px' }}>

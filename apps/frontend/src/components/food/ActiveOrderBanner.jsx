@@ -269,6 +269,30 @@ const ActiveOrderBanner = () => {
           </p>
         </div>
 
+        {/* Pickup Time Notice - Above OTP Box */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.25rem',
+            fontSize: '0.62rem',
+            fontWeight: 600,
+            color: isReady ? '#15803d' : '#4b5563',
+            background: isReady ? '#f0fdf4' : '#f9fafb',
+            border: `1px solid ${isReady ? '#bbf7d0' : '#f3f4f6'}`,
+            borderRadius: '6px',
+            padding: '0.2rem 0.45rem',
+            lineHeight: 1.2,
+          }}
+        >
+          <span style={{ fontSize: '0.72rem', flexShrink: 0 }}>⏱</span>
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {isReady
+              ? 'Please pick up your order within 15 minutes'
+              : 'Please pick up your order within 15 minutes once ready'}
+          </span>
+        </div>
+
         {/* Compact Square-styled Pickup OTP Box */}
         {order.pickupCode ? (
           <div
@@ -350,30 +374,6 @@ const ActiveOrderBanner = () => {
             OTP ready upon confirmation
           </div>
         )}
-
-        {/* Pickup Time Notice */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.3rem',
-            fontSize: '0.62rem',
-            fontWeight: 600,
-            color: isReady ? '#15803d' : '#4b5563',
-            background: isReady ? '#f0fdf4' : '#f9fafb',
-            border: `1px solid ${isReady ? '#bbf7d0' : '#f3f4f6'}`,
-            borderRadius: '6px',
-            padding: '0.2rem 0.45rem',
-            lineHeight: 1.2,
-          }}
-        >
-          <span style={{ fontSize: '0.72rem', flexShrink: 0 }}>⏱</span>
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {isReady
-              ? 'Please pick up your order within 15 minutes'
-              : 'Please pick up your order within 15 minutes once ready'}
-          </span>
-        </div>
 
         {/* Compact Mini Stepper */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.15rem' }}>

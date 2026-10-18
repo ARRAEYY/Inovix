@@ -231,12 +231,14 @@ async function getOutletAnalytics(req, res, next) {
         type: 'warning',
         message: `${unavailableCount} menu items currently 86'd (unavailable)`,
         action: 'Update menu',
+        path: '/outlet/admin/menu',
       });
     }
     attentionNeeded.push({
       type: 'success',
       message: 'Kitchen line connected · Live real-time socket orders active',
       action: 'View kitchen',
+      path: '/outlet/admin/orders',
     });
 
     res.status(200).json({

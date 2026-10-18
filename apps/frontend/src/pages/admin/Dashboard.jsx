@@ -244,8 +244,15 @@ const AdminDashboard = () => {
 
         {/* Recent Orders */}
         <div style={{...cardStyle, padding: 0, overflow: 'hidden'}}>
-          <div style={{ padding: '24px', borderBottom: '1px solid #f3f4f6' }}>
+          <div style={{ padding: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #f3f4f6' }}>
             <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: '800' }}>Recent Orders</h3>
+            <button 
+              type="button" 
+              onClick={() => navigate('/admin/orders')}
+              style={{ background: 'none', border: 'none', color: '#b10035', fontWeight: '600', cursor: 'pointer', fontSize: '0.9rem' }}
+            >
+              View all
+            </button>
           </div>
           
           <div style={{ overflowX: 'auto' }}>
@@ -270,7 +277,14 @@ const AdminDashboard = () => {
                   const timeStr = new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
                   return (
-                    <tr key={order.id} style={{ borderBottom: idx !== recentOrders.length - 1 ? '1px solid #f3f4f6' : 'none' }}>
+                    <tr 
+                      key={order.id} 
+                      onClick={() => navigate('/admin/orders')}
+                      style={{ 
+                        borderBottom: idx !== recentOrders.length - 1 ? '1px solid #f3f4f6' : 'none',
+                        cursor: 'pointer'
+                      }}
+                    >
                       <td style={{ padding: '16px 24px', fontWeight: '700', color: '#111827', fontSize: '0.9rem' }}>
                         #{order.orderNumber || (order.id.includes('_') ? order.id.split('_')[1] : order.id.slice(-6))}
                       </td>

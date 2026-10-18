@@ -455,24 +455,24 @@ const OutletMenu = () => {
     <div className="page-wrapper bg-white">
       <Header cartCount={cartItemsCount} onCartClick={() => setIsCartOpen(true)} />
 
-      {/* Outlet Banner */}
+      {/* Outlet Banner — compact, sub-nav equivalent */}
       <div className="outlet-banner">
         <div className="banner-content">
           <div className="banner-left">
-            <div className="banner-title-group" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+            <div className="banner-title-group" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
               <BackButton onClick={() => navigate('/student')} style={{ flexShrink: 0 }} />
-              <h1 className="banner-title" style={{ marginBottom: 0 }}>{outlet?.name || 'Loading…'}</h1>
+              <h1 className="banner-title" style={{ margin: 0 }}>{outlet?.name || 'Loading…'}</h1>
             </div>
-            <p className="banner-desc" style={{ paddingLeft: 'calc(24px + 0.5rem)' }}>{outlet?.desc}</p>
-            <div className="banner-meta" style={{ paddingLeft: 'calc(24px + 0.5rem)' }}>
-                <span className="status-badge active"><span className="status-dot"></span>{outlet?.status || ''}</span>
-                {outlet?.rating && <span className="meta-info">★ {outlet.rating}</span>}
-                {outlet?.prepTime && <span className="meta-info">⏱ {outlet.prepTime}</span>}
-              </div>
+            {outlet?.desc && <p className="banner-desc">{outlet.desc}</p>}
+            <div className="banner-meta">
+              <span className="status-badge active"><span className="status-dot"></span>{outlet?.status || 'Open'}</span>
+              {outlet?.rating && <span className="meta-info">★ {outlet.rating}</span>}
+              {outlet?.prepTime && <span className="meta-info">⏱ {outlet.prepTime}</span>}
+            </div>
           </div>
           <div className="banner-right">
             <div className="menu-search-wrapper">
-              <svg className="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <svg className="search-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="11" cy="11" r="8"></circle>
                 <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
               </svg>

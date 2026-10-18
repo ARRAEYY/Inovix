@@ -127,6 +127,7 @@ const StudentLogin = () => {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   autoComplete="current-password"
+                  required
                 />
                 <button
                   type="button"

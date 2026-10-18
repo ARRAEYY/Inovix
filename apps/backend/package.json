@@ -6,7 +6,7 @@
   "type": "commonjs",
   "scripts": {
     "dev": "node --watch src/server.js",
-    "start": "npx prisma migrate deploy || true; node src/server.js",
+    "start": "node src/server.js",
     "test": "JWT_SECRET=test JWT_ACCESS_EXPIRES_IN=1h node --env-file=../../.env --test tests/",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
